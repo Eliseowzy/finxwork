@@ -45,12 +45,11 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   const st = useStore();
   const s = useFiles(session, cwd);
   // The Word editor's own root reaches the conversation through this: its in-document AI's turns.
-  const sessions = useRef(st.sessions);
-  sessions.current = st.sessions;
+  const lists = st.lists;
   useEffect(() => {
     if (!st.rpc) return;
-    setWordAiHost({ rpc: st.rpc, op: st.op, live: (id) => { const x = sessions.current.find((y) => y.session_id === id); return !!x && isRunning(x); } });
-  }, [st.rpc, st.op]);
+    setWordAiHost({ rpc: st.rpc, op: st.op, live: (id) => { const x = lists().sessions.find((y) => y.session_id === id); return !!x && isRunning(x); } });
+  }, [st.rpc, st.op, lists]);
   const docs = useSessionDocs(session);
   const tab = s.tabs.find((x) => x.path === s.active) ?? null;
   const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened || !!tab?.presentation || !!tab?.word));

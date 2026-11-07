@@ -35,9 +35,9 @@ export async function saveKey(st: ReturnType<typeof useStore>, provider: string,
   }
 }
 
-/** No model can run: the list has come (it always names providers), and nothing on it can be used. */
-export function needsKey(st: { models: { models: { available: boolean }[]; providers: unknown[] }; loaded: boolean }): boolean {
-  return st.loaded && st.models.providers.length > 0 && !st.models.models.some((m) => m.available);
+/** No model can run: the list has come (it always names providers; it comes with the session list), and nothing on it can be used. */
+export function needsKey(st: { models: { models: { available: boolean }[]; providers: unknown[] } }): boolean {
+  return st.models.providers.length > 0 && !st.models.models.some((m) => m.available);
 }
 
 /** The form: provider, key, save. `onDone` runs once finx has the key and the model list is fresh. */

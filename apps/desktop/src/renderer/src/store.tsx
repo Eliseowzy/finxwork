@@ -111,12 +111,11 @@ export type Store = UI & {
   status: KernelStatusView | null;
   /** finx's name and version as it introduced itself. */
   server: string;
-  sessions: ListSession[];
-  /** The list arrived. */
-  loaded: boolean;
-  /** Bot mode's bots, as finx pushes them, in the list's order. */
-  bots: BotSummary[];
-  botsLoaded: boolean;
+  /**
+   * The lists as they are now, for an action at the moment it runs. What draws from them reads them
+   * with `useLists`, so it renders again when they change and only then.
+   */
+  lists: () => Lists;
   /** The window's width, which lays it out (layout.ts). */
   width: number;
   /** Models, providers with their keys, and the defaults of a new session. */
@@ -147,6 +146,48 @@ export function useStore(): Store {
   return s;
 }
 
+/**
+ * The session list and the bots as finx pushes them (P1, no polling). They change many times a
+ * second while tasks run, so they are kept apart from the store: a change to them renders again
+ * only what reads them, each reader only when what it picked out changed (`useLists`), not the
+ * whole window. 1000+ sessions and bots stay cheap to keep up to date.
+ */
+export type Lists = {
+  sessions: ListSession[];
+  /** The session list arrived. */
+  loaded: boolean;
+  /** Bot mode's bots, in the list's order. */
+  bots: BotSummary[];
+  botsLoaded: boolean;
+};
+
+class ListStore {
+  private value: Lists = { sessions: [], loaded: false, bots: [], botsLoaded: false };
+  private readonly subs = new Set<() => void>();
+  readonly get = (): Lists => this.value;
+  readonly subscribe = (f: () => void) => {
+    this.subs.add(f);
+    return () => void this.subs.delete(f);
+  };
+  update(patch: (l: Lists) => Partial<Lists>) {
+    this.value = { ...this.value, ...patch(this.value) };
+    this.subs.forEach((f) => f());
+  }
+}
+
+const ListsCtx = createContext<ListStore | null>(null);
+
+/**
+ * What a component draws from the lists: it renders again when `pick` gives something else
+ * (compared with Object.is). Pick a list itself, one of its rows, or a plain value; work out
+ * anything new from them with useMemo, as a new array or object each time would never settle.
+ */
+export function useLists<T>(pick: (l: Lists) => T): T {
+  const lists = useContext(ListsCtx);
+  if (!lists) throw new Error("useLists outside FinxProvider");
+  return useSyncExternalStore(lists.subscribe, () => pick(lists.get()));
+}
+
 /** An error from finx, for the person. */
 export function errorText(e: unknown): string {
   if (e instanceof RpcError) {
@@ -175,10 +216,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const [kernel, setKernel] = useState<KernelState>("connecting");
   const [status, setStatus] = useState<KernelStatusView | null>(null);
   const [server, setServer] = useState("");
-  const [sessions, setSessions] = useState<ListSession[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [bots, setBots] = useState<BotSummary[]>([]);
-  const [botsLoaded, setBotsLoaded] = useState(false);
+  const [lists] = useState(() => new ListStore());
   const [listedModels, setModels] = useState<ModelsListResult>(noModels);
   const models = useMemo(() => modelsIn(listedModels, language()), [listedModels]);
   const [width, setWidth] = useState(() => window.innerWidth);
@@ -271,26 +309,24 @@ export function FinxProvider({ children }: { children: ReactNode }) {
     if (!rpc) return;
     let stop = false;
     const offModels = rpc.on("models/changed", () => { void rpc.request("models/list", {}).then(m => { if (!stop) setModels(m); }).catch(() => {}); });
-    const off = rpc.on("sessions/changed", (c) => setSessions((list) => mergeSessions(list, c.sessions, c.deleted ?? [])));
+    const off = rpc.on("sessions/changed", (c) => lists.update((l) => ({ sessions: mergeSessions(l.sessions, c.sessions, c.deleted ?? []) })));
     // A workbook edited, undone or saved anywhere: the grids showing it read it again.
     const offDocs = rpc.on("doc/changed", (p) => docChanged(p.info));
     Promise.all([rpc.request("sessions/subscribe", {}), rpc.request("models/list", {})])
       .then(([list, m]) => {
         if (stop) return;
-        setSessions(list.sessions);
+        lists.update(() => ({ sessions: list.sessions, loaded: true }));
         setModels(m);
-        setLoaded(true);
         setKernel("ready");
       })
       .catch(() => {});
     // The bots as well, as finx pushes them (bot-design §4).
-    const offBots = rpc.on("bots/changed", (c) => setBots((list) => sortBots(mergeBots(list, c.bots, c.deleted ?? []))));
+    const offBots = rpc.on("bots/changed", (c) => lists.update((l) => ({ bots: sortBots(mergeBots(l.bots, c.bots, c.deleted ?? [])) })));
     rpc
       .request("bots/subscribe", {})
       .then((r) => {
         if (stop) return;
-        setBots(sortBots(r.bots));
-        setBotsLoaded(true);
+        lists.update(() => ({ bots: sortBots(r.bots), botsLoaded: true }));
       })
       .catch(() => {});
     return () => {
@@ -300,7 +336,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       offDocs();
       offBots();
     };
-  }, [rpc]);
+  }, [rpc, lists]);
   const kernelState: KernelState = status?.state === "failed" ? "down" : kernel;
 
   useEffect(() => {
@@ -317,14 +353,12 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);
   const select = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "session", id } })), []);
   const selectBot = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "bot", id }, lastBot: id })), []);
-  const latestBots = useRef(bots);
-  latestBots.current = bots;
   const setMode = useCallback(
     (mode: Mode) =>
       setUI((u) => {
         if (u.mode === mode) return u;
         if (mode === "bots") {
-          const list = latestBots.current;
+          const list = lists.get().bots;
           const bot = list.find((b) => b.id === u.lastBot) ?? list[0];
           const lastSession = u.selection.kind === "bot" ? u.lastSession : u.selection;
           return { ...u, mode, lastSession, selection: bot ? { kind: "bot", id: bot.id } : u.selection.kind === "customize" ? u.selection : { kind: "new" } };
@@ -332,7 +366,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
         const lastBot = u.selection.kind === "bot" ? u.selection.id : u.lastBot;
         return { ...u, mode, lastBot, selection: u.lastSession.kind === "bot" ? { kind: "new" } : u.lastSession };
       }),
-    [],
+    [lists],
   );
   const show = useCallback((text: string, undo?: () => void, bad?: boolean) => {
     clearTimeout(toastTimer.current);
@@ -389,10 +423,14 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   );
 
   const store = useMemo<Store>(
-    () => ({ ...ui, rpc, kernel: kernelState, status, server, sessions, loaded, bots, botsLoaded, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start }),
-    [ui, rpc, kernelState, status, server, sessions, loaded, bots, botsLoaded, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start],
+    () => ({ ...ui, rpc, kernel: kernelState, status, server, lists: lists.get, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start }),
+    [ui, rpc, kernelState, status, server, lists, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start],
   );
-  return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
+  return (
+    <ListsCtx.Provider value={lists}>
+      <Ctx.Provider value={store}>{children}</Ctx.Provider>
+    </ListsCtx.Provider>
+  );
 }
 
 /**

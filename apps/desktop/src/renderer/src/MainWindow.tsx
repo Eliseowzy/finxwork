@@ -11,7 +11,7 @@ import { SessionPage } from "./session/SessionPage";
 import { useYoursWatcher } from "./session/Yours";
 import { Sidebar } from "./sidebar/Sidebar";
 import { useOverlay } from "./overlays";
-import { useStore } from "./store";
+import { useLists, useStore } from "./store";
 import { BotPage } from "./bots/BotPage";
 import { BotSheet } from "./bots/BotSheet";
 
@@ -37,7 +37,9 @@ export function MainWindow() {
   useYoursWatcher();
   useOpenTarget();
   const sel = st.selection;
-  const session = sel.kind === "session" ? st.sessions.find((s) => s.session_id === sel.id) : undefined;
+  // Only the selected session's and bot's rows: a change to any other leaves the window as it is.
+  const session = useLists((l) => (sel.kind === "session" ? l.sessions.find((s) => s.session_id === sel.id) : undefined));
+  const loaded = useLists((l) => l.loaded);
   // A selected session that is gone (deleted elsewhere): back to a new one. Gone only once the
   // list has had it: a session just started is selected before finx's push brings it to the
   // list. The selection the window opens with is checked against the list's first arrival.
@@ -45,15 +47,16 @@ export function MainWindow() {
   useEffect(() => {
     if (sel.kind !== "session") return;
     if (session) listed.current = sel.id;
-    else if (st.loaded && listed.current === sel.id) st.set({ selection: { kind: "new" } });
-  }, [sel, st.loaded, session, st.set]);
+    else if (loaded && listed.current === sel.id) st.set({ selection: { kind: "new" } });
+  }, [sel, loaded, session, st.set]);
   // Bot mode shows a bot: the one chosen last, else the first; one deleted makes way for the first.
-  const bot = sel.kind === "bot" ? st.bots.find((b) => b.id === sel.id) : undefined;
+  const bot = useLists((l) => (sel.kind === "bot" ? l.bots.find((b) => b.id === sel.id) : undefined));
+  const botsLoaded = useLists((l) => l.botsLoaded);
+  const next = useLists((l) => (l.bots.find((b) => b.id === st.lastBot) ?? l.bots[0])?.id);
   useEffect(() => {
-    if (st.mode !== "bots" || !st.botsLoaded || sel.kind === "customize" || bot) return;
-    const next = st.bots.find((b) => b.id === st.lastBot) ?? st.bots[0];
-    if (next) st.selectBot(next.id);
-  }, [st.mode, st.botsLoaded, sel, bot, st.bots]);
+    if (st.mode !== "bots" || !botsLoaded || sel.kind === "customize" || bot) return;
+    if (next) st.selectBot(next);
+  }, [st.mode, botsLoaded, sel, bot, next]);
   // A peek ends when it fits again, when another session or page is chosen, and with Esc.
   usePeekEnd(st);
   useEffect(() => {
@@ -121,11 +124,12 @@ function useOnboarding() {
   const [open, setOpen] = useState(location.hash === "#onboarding");
   const decided = useRef(false);
   const keyless = needsKey(st);
+  const loaded = useLists((l) => l.loaded);
   useEffect(() => {
-    if (decided.current || !st.loaded || st.models.providers.length === 0) return;
+    if (decided.current || !loaded || st.models.providers.length === 0) return;
     decided.current = true;
     if (keyless) setOpen(true);
-  }, [st.loaded, st.models.providers.length, keyless]);
+  }, [loaded, st.models.providers.length, keyless]);
   useEffect(() => {
     const show = () => setOpen(true);
     window.addEventListener(onboardingEvent, show);

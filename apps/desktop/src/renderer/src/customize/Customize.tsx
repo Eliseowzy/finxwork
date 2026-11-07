@@ -5,7 +5,7 @@ import type { McpServerView } from "@finx/protocol";
 import { oneClick, type CatalogConnector, type CatalogSkill } from "../../../shared/catalog";
 import { SidebarToggle } from "../components";
 import { Icon } from "../icons";
-import { errorText, useStore, type CustomizeView } from "../store";
+import { errorText, useLists, useStore, type CustomizeView } from "../store";
 import { AddConnector } from "./AddConnector";
 import { EditConnector } from "./EditConnector";
 import { ManagedConnector } from "./ManagedConnector";
@@ -26,7 +26,8 @@ type Sheet = { kind: "upload" } | { kind: "managed"; catalog: CatalogConnector }
 export function Customize() {
   const st = useStore();
   const { t } = useTranslation("customize");
-  const recent = useMemo(() => recentProjects(st.sessions.filter((s) => !s.archived)), [st.sessions]);
+  const sessions = useLists((l) => l.sessions);
+  const recent = useMemo(() => recentProjects(sessions.filter((s) => !s.archived)), [sessions]);
   const cwd = pageCwd(st, recent);
   const project = cwd ? (projectNames([cwd]).get(cwd) ?? cwd) : null;
   const c = useCustomize(cwd);

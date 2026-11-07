@@ -323,7 +323,7 @@ function kernelLine(status: KernelStatusView | null, server: string, t: TFunctio
 
 /** Starts finx again (fresh login environment); with tasks running, after asking. */
 function restart(st: ReturnType<typeof useStore>) {
-  const running = st.sessions.some((s) => s.state === "running" || s.state === "awaiting_approval");
+  const running = st.lists().sessions.some((s) => s.state === "running" || s.state === "awaiting_approval");
   if (!running) return window.finx?.restartKernel(true);
   const t = i18n.getFixedT(null, "settings");
   st.set({

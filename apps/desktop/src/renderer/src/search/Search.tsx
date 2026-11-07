@@ -7,7 +7,7 @@ import { StatusDot } from "../components";
 import { modelTitle, shortTime } from "../format";
 import { Icon } from "../icons";
 import { useOverlay } from "../overlays";
-import { useStore, type Store } from "../store";
+import { useLists, useStore, type Store } from "../store";
 
 type Action = { label: string; shortcut: string; run: (st: Store) => void };
 
@@ -33,8 +33,9 @@ function SessionSearch() {
   const [index, setIndex] = useState(0);
   const list = useRef<HTMLDivElement>(null);
 
-  const names = projectNames(projectsOf(st.sessions));
-  const found = searchSessions(st.sessions, query, filter);
+  const all = useLists((l) => l.sessions);
+  const names = projectNames(projectsOf(all));
+  const found = searchSessions(all, query, filter);
   const sessions = found.slice(0, 8);
   const q = query.trim().toLowerCase();
   const acts = actions().filter((a) => q === "" || a.label.toLowerCase().includes(q));
@@ -89,7 +90,7 @@ function SessionSearch() {
     </select>
   );
   const projects = [...names].sort((a, b) => a[1].localeCompare(b[1]));
-  const models = [...new Set(st.sessions.flatMap((s) => (s.model ? [s.model] : [])))].sort().map((m): [string, string] => [m, modelTitle(m, st.models)]);
+  const models = [...new Set(all.flatMap((s) => (s.model ? [s.model] : [])))].sort().map((m): [string, string] => [m, modelTitle(m, st.models)]);
   const now = new Date();
 
   return (
@@ -167,7 +168,8 @@ function BotSearch() {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const list = useRef<HTMLDivElement>(null);
-  const found = searchBots(st.bots, query);
+  const all = useLists((l) => l.bots);
+  const found = searchBots(all, query);
   const bots = found.slice(0, 8);
   const q = query.trim().toLowerCase();
   const acts: Action[] = [

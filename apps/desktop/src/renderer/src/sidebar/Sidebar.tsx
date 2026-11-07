@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
   clockText, displayTitle, elapsedSeconds, inTask, needsAttention, projectNames, projectsOf, sectionCounted, sections, stateOf, updatedAt,
@@ -12,13 +12,14 @@ import { bucketTitle, listTime } from "../format";
 import { Icon } from "../icons";
 import { setSidebar } from "../layout";
 import { keptView } from "../session/useSession";
-import { useNow, useStore, type Store } from "../store";
+import { useLists, useNow, useStore, type Store } from "../store";
 import { UpdateReminder } from "../updates";
 import { FootMenu } from "./FootMenu";
+import { measurePitch, spacer, useRowWindow, type RowPitch } from "./rowWindow";
 
 /** The list as the sidebar shows it, in the owner's view. */
 export function listSections(st: Store, now: Date): Section[] {
-  return sections(st.sessions, st.view, { archived: st.archived, now });
+  return sections(st.lists().sessions, st.view, { archived: st.archived, now });
 }
 
 export function Sidebar() {
@@ -27,11 +28,17 @@ export function Sidebar() {
   const { t: tb } = useTranslation("bots");
   const bots = st.mode === "bots";
   const now = useNow(30_000);
-  const secs = listSections(st, now);
-  const projects = useMemo(() => projectsOf(st.sessions), [st.sessions]);
+  const sessions = useLists((l) => l.sessions);
+  const loaded = useLists((l) => l.loaded);
+  // Sorted again only when the list, its view or the time changes, not on every change elsewhere in the window.
+  const secs = useMemo(() => sections(sessions, st.view, { archived: st.archived, now }), [sessions, st.view, st.archived, now]);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [pitch, setPitch] = useState<RowPitch>({ pitch: 33, gap: 1 });
+  useLayoutEffect(() => setPitch((p) => measurePitch(scroller, ".srow", p)));
+  const projects = useMemo(() => projectsOf(sessions), [sessions]);
   const names = useMemo(() => projectNames(projects), [projects]);
   // Read again when a session's last activity moves (a task may have switched branches).
-  const branches = useBranches(projects, st.sessions.reduce((n, s) => Math.max(n, updatedAt(s)), 0));
+  const branches = useBranches(projects, useMemo(() => sessions.reduce((n, s) => Math.max(n, updatedAt(s)), 0), [sessions]));
   const total = secs.reduce((n, x) => n + x.sessions.length, 0);
   // The rows get the store as of a click, so a change elsewhere doesn't render them again.
   const latest = useRef(st);
@@ -96,12 +103,12 @@ export function Sidebar() {
         </button>
         <ListViewMenu />
       </div>
-      <div className={`side-list ${byProject ? "by-project" : ""}`} role="list" aria-label={t("sidebar.sessions")}>
+      <div ref={setScroller} className={`side-list ${byProject ? "by-project" : ""}`} role="list" aria-label={t("sidebar.sessions")}>
         {secs.map((sec) => {
           const id = `${sec.grouping}:${sec.key}`;
           const open = !st.collapsed.includes(id);
           return (
-            <div key={id} role="group" aria-label={title(sec)}>
+            <SessionGroup key={id} sec={sec} label={title(sec)} scroller={scroller} pitch={pitch} rows={open ? sec.sessions.length : 0}>
               <div className="grp-row">
                 <button
                   className={`grp-h ${open ? "" : "shut"}`}
@@ -126,24 +133,23 @@ export function Sidebar() {
                   </button>
                 )}
               </div>
-              {open &&
-                sec.sessions.map((s) => (
-                  <SessionRow
-                    key={s.session_id}
-                    s={s}
-                    sel={st.selection.kind === "session" && st.selection.id === s.session_id}
-                    project={s.no_project ? null : (names.get(s.cwd) ?? s.cwd)}
-                    branch={s.no_project ? undefined : branches.get(s.cwd)}
-                    meta={st.view.metadata}
-                    grouping={st.view.group}
-                    renaming={st.renaming === s.session_id}
-                    store={latest}
-                  />
-                ))}
-            </div>
+              {(s: ListSession) => (
+                <SessionRow
+                  key={s.session_id}
+                  s={s}
+                  sel={st.selection.kind === "session" && st.selection.id === s.session_id}
+                  project={s.no_project ? null : (names.get(s.cwd) ?? s.cwd)}
+                  branch={s.no_project ? undefined : branches.get(s.cwd)}
+                  meta={st.view.metadata}
+                  grouping={st.view.group}
+                  renaming={st.renaming === s.session_id}
+                  store={latest}
+                />
+              )}
+            </SessionGroup>
           );
         })}
-        {!st.loaded ? (
+        {!loaded ? (
           st.kernel === "down" ? (
             <div className="endrow" style={{ paddingTop: 30 }}>
               {t("kernel.down")}
@@ -163,7 +169,7 @@ export function Sidebar() {
         ) : total === 0 ? (
           <div className="endrow" style={{ paddingTop: 30 }}>
             <Trans t={t} i18nKey="sidebar.empty" components={{ br: <br /> }} />
-            {st.sessions.some((s) => s.archived) && !st.archived && (
+            {sessions.some((s) => s.archived) && !st.archived && (
               <div style={{ marginTop: 8 }}>
                 <button className="link" onClick={() => st.set({ archived: true })}>{t("sidebar.showArchived")}</button>
               </div>
@@ -186,9 +192,12 @@ export function Sidebar() {
 function ModeSwitch() {
   const st = useStore();
   const { t } = useTranslation("bots");
-  const bots = attention(st.bots);
-  const sessionsWait = st.sessions.some((s) => !s.archived && stateOf(s) === "awaiting_approval");
-  const dot = st.mode === "sessions" ? (bots.unread ? "new" : bots.waiting ? "warn" : null) : null;
+  const botsMark = useLists((l) => {
+    const a = attention(l.bots);
+    return a.unread ? "new" : a.waiting ? "warn" : null;
+  });
+  const sessionsWait = useLists((l) => l.sessions.some((s) => !s.archived && stateOf(s) === "awaiting_approval"));
+  const dot = st.mode === "sessions" ? botsMark : null;
   const sessionsDot = st.mode === "bots" && sessionsWait ? "warn" : null;
   return (
     <div className="seg mode" role="tablist" aria-label={t("mode.label")}>
@@ -202,6 +211,32 @@ function ModeSwitch() {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * A group of the list: its heading, then its rows, those in sight drawn (rowWindow.ts). `rows` is how many
+ * it shows, 0 when it is collapsed; `children` is the heading and how to draw a row.
+ */
+function SessionGroup({ sec, label, scroller, pitch, rows, children: [heading, row] }: {
+  sec: Section; label: string; scroller: HTMLDivElement | null; pitch: RowPitch; rows: number; children: [ReactNode, (s: ListSession) => ReactNode];
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  // Its first row starts under its heading (which may be stuck to the top, so not where it is drawn).
+  const top = () => {
+    const g = box.current;
+    const head = g?.firstElementChild as HTMLElement | null;
+    if (!g || !scroller || !head) return null;
+    return g.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + head.offsetHeight + pitch.gap;
+  };
+  const [first, end] = useRowWindow(scroller, top, rows, pitch);
+  return (
+    <div ref={box} role="group" aria-label={label}>
+      {heading}
+      {first > 0 && <div aria-hidden="true" style={{ height: spacer(first, pitch), flex: "none" }} />}
+      {sec.sessions.slice(first, end).map(row)}
+      {end < rows && <div aria-hidden="true" style={{ height: spacer(rows - end, pitch), flex: "none" }} />}
     </div>
   );
 }

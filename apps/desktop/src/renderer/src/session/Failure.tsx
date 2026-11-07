@@ -8,7 +8,7 @@ import { ModelList } from "../composer/ModelList";
 import { failureAdvice, failureTitle, modelTitle } from "../format";
 import { Icon, type IconName } from "../icons";
 import { Brand } from "../settings/ProviderConnections";
-import { useNow, useStore } from "../store";
+import { useLists, useNow, useStore } from "../store";
 
 // A task's failure, as one row: the provider's mark with a badge in the tone
 // of what the failure asks of the owner, what happened, and one way out; the
@@ -51,7 +51,8 @@ export function useResumeAfterCompact(sessionId: string, view: SessionView) {
  * session list: its page gives the model. */
 function useProvider(sessionId: string, given?: string) {
   const st = useStore();
-  const model = given ?? st.sessions.find((s) => s.session_id === sessionId)?.model ?? undefined;
+  const listed = useLists((l) => l.sessions.find((s) => s.session_id === sessionId)?.model);
+  const model = given ?? listed ?? undefined;
   const id = model?.split("/")[0] ?? "";
   const name = st.models.providers.find((p) => p.id === id)?.name ?? id;
   const ready = st.models.models.find((m) => m.id === model)?.available ?? false;

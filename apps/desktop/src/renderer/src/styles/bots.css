@@ -29,12 +29,15 @@
 .bav.s64{width:64px;height:64px;font-size:28px}
 .bav.s72{width:72px;height:72px;font-size:32px}
 /* Busy, it moves: a character looks around and blinks; the mark and a letter breathe. No status dot besides. */
-.bav .eyes{transform-box:fill-box;transform-origin:center}
-.bav.busy .eyes{animation:glance 3.6s var(--ease-in-out) infinite}
-@keyframes glance{0%,16%{transform:none}24%,42%{transform:translateX(-2px)}50%,68%{transform:translateX(2px)}76%,84%{transform:none}88%{transform:scaleY(.15)}92%,100%{transform:none}}
+/* The eyes move with the svg that holds only them, not a group inside it: a transform on an element of the page
+   runs on the compositor, one inside an svg lays out and paints the whole page every frame. 2 of the 36 grid is
+   5.556% of the width; the blink folds at the eyes' line (17.4 of 36). */
+.bav>svg{transform-origin:50% 48.333%}
+.bav.busy>svg{animation:glance 3.6s var(--ease-in-out) infinite}
+@keyframes glance{0%,16%{transform:none}24%,42%{transform:translateX(-5.556%)}50%,68%{transform:translateX(5.556%)}76%,84%{transform:none}88%{transform:scaleY(.15)}92%,100%{transform:none}}
 .bav .ch{font-weight:inherit}
 .bav.busy.mark>img,.bav.busy .ch{animation:live-breathe 2.4s ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){.bav.busy .eyes,.bav.busy.mark>img,.bav.busy .ch{animation:none}}
+@media (prefers-reduced-motion:reduce){.bav.busy>svg,.bav.busy.mark>img,.bav.busy .ch{animation:none}}
 
 /* The list: a row per bot, as a chat app's. Its two lines are 36 high, the avatar's height; padding, corners, hover
    and selection are a session row's (.srow). */

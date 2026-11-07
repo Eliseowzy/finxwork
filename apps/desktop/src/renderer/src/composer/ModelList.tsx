@@ -44,7 +44,7 @@ export function ModelList({ models, current, search = false, onPick }: {
   const long = search && list.length > LONG;
   const groups = modelGroups(list, models.providers, query);
   const own = list.find((m) => m.id === current)?.provider;
-  const recent = long && !query ? recentModels(st.sessions, Infinity).flatMap((id) => list.find((m) => m.id === id) ?? []).slice(0, 3) : [];
+  const recent = long && !query ? recentModels(st.lists().sessions, Infinity).flatMap((id) => list.find((m) => m.id === id) ?? []).slice(0, 3) : [];
   const providerName = (id: string) => models.providers.find((p) => p.id === id)?.name ?? id;
   const rows = () => [...(box.current?.querySelectorAll<HTMLElement>(".mlist [role^=menuitem]:not(:disabled)") ?? [])];
 

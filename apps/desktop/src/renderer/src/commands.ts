@@ -6,7 +6,7 @@ import { attachEvent } from "./composer/attachments";
 import { layoutOf, setCard, setSidebar } from "./layout";
 import { keptView } from "./session/useSession";
 import { listSections } from "./sidebar/Sidebar";
-import { useStore, type Store } from "./store";
+import { useLists, useStore, type Store } from "./store";
 
 // The app menu's commands (main/menu.ts), and what the menus need to know
 // about the window. A page outside the app (a browser preview) has no menu:
@@ -32,9 +32,10 @@ export function useCommands() {
     return () => document.removeEventListener("keydown", keys);
   }, []);
 
-  const s = selected(st);
   const sel = st.selection;
-  const bot = sel.kind === "bot" ? st.bots.find((b) => b.id === sel.id) : undefined;
+  // The menu follows the selected session's and bot's state as it changes.
+  const s = useLists((l) => (sel.kind === "session" ? l.sessions.find((x) => x.session_id === sel.id) : undefined));
+  const bot = useLists((l) => (sel.kind === "bot" ? l.bots.find((b) => b.id === sel.id) : undefined));
   const state: MenuState = {
     main: true,
     session: s
@@ -57,7 +58,7 @@ export function useCommands() {
 
 function selected(st: Store): ListSession | undefined {
   const sel = st.selection;
-  return sel.kind === "session" ? st.sessions.find((s) => s.session_id === sel.id) : undefined;
+  return sel.kind === "session" ? st.lists().sessions.find((s) => s.session_id === sel.id) : undefined;
 }
 
 export function run(st: Store, c: Command) {

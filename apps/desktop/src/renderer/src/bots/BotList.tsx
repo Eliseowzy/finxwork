@@ -1,13 +1,14 @@
-import { memo, useRef, type RefObject } from "react";
+import { memo, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { botLine, botWorking } from "@finx/client";
 import type { BotSummary } from "@finx/protocol";
 import { RenameField } from "../components";
 import { shortTime } from "../format";
 import { Icon } from "../icons";
-import { useNow, useStore, type Store } from "../store";
+import { useLists, useNow, useStore, type Store } from "../store";
 import { botContextMenu } from "./actions";
 import { BotAvatar } from "./Avatar";
+import { measurePitch, spacer, useRowWindow, type RowPitch } from "../sidebar/rowWindow";
 
 /**
  * Bot mode's list (bot-mode-design §6.2), like a chat app's: each bot's
@@ -20,13 +21,22 @@ export function BotList() {
   // The rows get the store as of a click, so a change elsewhere doesn't render them again.
   const latest = useRef(st);
   latest.current = st;
+  const bots = useLists((l) => l.bots);
+  const loaded = useLists((l) => l.botsLoaded);
   const selected = st.selection.kind === "bot" ? st.selection.id : null;
+  // Only the rows in sight are drawn (rowWindow.ts); the list starts with its first row.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [pitch, setPitch] = useState<RowPitch>({ pitch: 50, gap: 2 });
+  useLayoutEffect(() => setPitch((p) => measurePitch(scroller, ".brow", p)));
+  const [first, end] = useRowWindow(scroller, () => 0, bots.length, pitch);
   return (
-    <div className="side-list bots fadein" role="list" aria-label={t("list.label")}>
-      {st.bots.map((b) => (
+    <div ref={setScroller} className="side-list bots fadein" role="list" aria-label={t("list.label")}>
+      {first > 0 && <div aria-hidden="true" style={{ height: spacer(first, pitch), flex: "none" }} />}
+      {bots.slice(first, end).map((b) => (
         <BotRow key={b.id} b={b} sel={b.id === selected} renaming={st.renaming === b.id} store={latest} />
       ))}
-      {!st.botsLoaded && (
+      {end < bots.length && <div aria-hidden="true" style={{ height: spacer(bots.length - end, pitch), flex: "none" }} />}
+      {!loaded && (
         <div className="loadrow">
           <span className="mini-spin" />
           {t("list.loading")}

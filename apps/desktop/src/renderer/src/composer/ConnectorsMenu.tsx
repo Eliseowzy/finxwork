@@ -6,7 +6,7 @@ import { catalogOf, fromRepo, statusOf } from "../customize/model";
 import { ServerTile } from "../customize/parts";
 import { pageCwd, useCustomize, type Customize } from "../customize/useCustomize";
 import { Icon } from "../icons";
-import { useStore, type CustomizeView } from "../store";
+import { useLists, useStore, type CustomizeView } from "../store";
 import { SubMenuItem } from "./Composer";
 
 // "+" › 连接器 (connectors-entry-design §7): browse and manage, a line, then the person's
@@ -17,10 +17,11 @@ import { SubMenuItem } from "./Composer";
 /** The folder whose connectors these are: the conversation's, or the one the new conversation goes to. */
 function useFolder(): string | null {
   const st = useStore();
-  const recent = useMemo(() => recentProjects(st.sessions.filter((s) => !s.archived)), [st.sessions]);
+  const sessions = useLists((l) => l.sessions);
+  const recent = useMemo(() => recentProjects(sessions.filter((s) => !s.archived)), [sessions]);
   const sel = st.selection;
   if (sel.kind === "session") {
-    const s = st.sessions.find((x) => x.session_id === sel.id);
+    const s = sessions.find((x) => x.session_id === sel.id);
     return s && !s.no_project ? s.cwd : null;
   }
   return pageCwd(st, recent);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { draftModel, projectNames, recentProjects } from "@finx/client";
 import { SidebarToggle } from "../components";
@@ -6,7 +6,7 @@ import { draftThinking, offersThinking } from "../format";
 import { homeBrowserSession } from "../../../shared/bridge";
 import { BrowserPanel, useBrowserTabs } from "../session/Browser";
 import { Icon, MarkMotion } from "../icons";
-import { useStore } from "../store";
+import { useLists, useStore } from "../store";
 import { addAttachments, type Attachment } from "./attachments";
 import { useComposerInbox } from "./inbox";
 import { Composer } from "./Composer";
@@ -40,7 +40,8 @@ export function NewSession() {
     setText(st.prefill);
     st.set({ prefill: null });
   }, [st.prefill, st.set]);
-  const recent = recentProjects(st.sessions.filter((s) => !s.archived));
+  const sessions = useLists((l) => l.sessions);
+  const recent = useMemo(() => recentProjects(sessions.filter((s) => !s.archived)), [sessions]);
   // A project chosen, else the latest one, else none.
   const cwd = st.draft.noProject ? null : (st.draft.cwd ?? recent[0] ?? null);
   // A model chosen here whose connection has gone since: the default, as sending it would fail.
