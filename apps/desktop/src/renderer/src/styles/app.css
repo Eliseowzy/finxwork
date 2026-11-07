@@ -198,6 +198,8 @@ input:disabled,textarea:disabled{cursor:default}
 .stitle .shine.band{-webkit-mask-image:linear-gradient(90deg,transparent 38%,#000 50%,transparent 62%);mask-image:linear-gradient(90deg,transparent 38%,#000 50%,transparent 62%)}
 .stitle .shine::before{content:attr(data-t);position:absolute;top:0;bottom:0;left:calc(100% / 3);width:calc(100% / 3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--l1);animation:stitle-run-back 2.4s linear infinite}
 .stitle .shine.band::before{color:var(--l3)}
+/* Out of sight it stands still (Sidebar.tsx, watchSight). */
+.stitle[data-away] .shine,.stitle[data-away] .shine::before{animation-play-state:paused}
 @keyframes stitle-run{from{transform:translateX(-28.6667%)}to{transform:translateX(28.6667%)}}
 @keyframes stitle-run-back{from{transform:translateX(86%)}to{transform:translateX(-86%)}}
 @media (prefers-reduced-motion:reduce){.stitle.run{color:inherit}.stitle .shine{display:none}}

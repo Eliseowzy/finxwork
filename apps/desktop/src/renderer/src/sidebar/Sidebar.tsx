@@ -279,7 +279,7 @@ const SessionRow = memo(function SessionRow({ s, sel, project, branch, meta, gro
               }}
             />
           ) : (
-            <span className={`stitle ${running ? "run" : ""}`} title={title}>
+            <span className={`stitle ${running ? "run" : ""}`} title={title} ref={running ? watchSight : undefined}>
               {title}
               {running && (
                 <>
@@ -331,6 +331,26 @@ const SessionRow = memo(function SessionRow({ s, sel, project, branch, meta, gro
     </div>
   );
 });
+
+/**
+ * A running title out of sight (in the list's margin, or scrolled away) stands still: an animation,
+ * even one the compositor runs, costs the page a style pass each frame, so with many sessions
+ * running the cost follows the titles that can be seen, not all of them. One observer for all.
+ */
+const sight =
+  typeof IntersectionObserver === "undefined"
+    ? null
+    : new IntersectionObserver((entries) => {
+        for (const e of entries) e.target.toggleAttribute("data-away", !e.isIntersecting);
+      });
+
+function watchSight(el: HTMLElement) {
+  sight?.observe(el);
+  return () => {
+    sight?.unobserve(el);
+    el.removeAttribute("data-away");
+  };
+}
 
 /**
  * A row's ⋯ menu: rename, archive (or unarchive), and delete after a
