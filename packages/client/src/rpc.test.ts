@@ -70,3 +70,21 @@ test("a listener stops when asked", () => {
   p.push(line);
   assert.equal(n, 1);
 });
+
+test("the server's requests are answered by their handler, its errors as error responses", async () => {
+  const p = pipe();
+  const rpc = new RpcClient(p.t);
+  rpc.handle("docx/serialize", async (params) => {
+    if (params.out_path === "/bad") throw new Error("bad state");
+    return { bytes: 42 };
+  });
+  const params = (out: string) => ({ source_path: "/s", state_path: "/t", out_path: out });
+  p.push(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "docx/serialize", params: params("/o") }) + "\n");
+  p.push(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "docx/serialize", params: params("/bad") }) + "\n");
+  p.push(JSON.stringify({ jsonrpc: "2.0", id: 3, method: "nobody/handles" }) + "\n");
+  await new Promise((r) => setImmediate(r));
+  const replies = p.sent.map((s) => JSON.parse(s)).sort((a, b) => a.id - b.id);
+  assert.deepEqual(replies[0], { jsonrpc: "2.0", id: 1, result: { bytes: 42 } });
+  assert.equal(replies[1].error.message, "bad state");
+  assert.equal(replies[2].error.code, -32601);
+});

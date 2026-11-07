@@ -624,6 +624,7 @@ impl Server {
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
         deps.decks = Some(self.0.decks.clone());
+        deps.words = Some(self.0.words.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &[]);
         deps.routines = Some(self.0.routines.clone());
         let options = StartOptions {

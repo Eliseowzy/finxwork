@@ -201,5 +201,6 @@ impl Server {
         self.0.docs.forget_session(session).await;
         // Decks the session's agent opened (deck_edit) close with it; unsaved edits stay.
         self.0.decks.forget_session(session).await;
+        self.0.words.forget_session(session).await;
     }
 }

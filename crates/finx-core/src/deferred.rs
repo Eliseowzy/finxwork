@@ -119,6 +119,13 @@ impl Deferred {
                 tools: crate::deck::tools(),
             });
         }
+        if docs {
+            groups.push(Group {
+                name: crate::word::GROUP,
+                summary: crate::word::GROUP_SUMMARY.into(),
+                tools: crate::word::tools(),
+            });
+        }
         match agents {
             AgentRole::Main => groups.push(Group {
                 name: AGENTS,
@@ -151,6 +158,7 @@ impl Deferred {
         if docs {
             names.push(DOC);
             names.push(crate::deck::GROUP);
+            names.push(crate::word::GROUP);
         }
         if agents != AgentRole::None {
             names.push(AGENTS);

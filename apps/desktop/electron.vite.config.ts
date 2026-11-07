@@ -29,8 +29,9 @@ function pdfjsAssets(): Plugin {
 }
 
 // The metric-compatible stand-ins for Calibri and Cambria (docs/pptx/fonts.ts), served at fonts/ beside the page.
-// They come from @betteroffice/fonts; the packaged renderer carries them as assets (build-app.mjs checks they are there).
-const fontsDir = path.join(path.dirname(createRequire(import.meta.url).resolve("@betteroffice/fonts/package.json")), "assets");
+// The same files the kernel embeds (crates/finx-slide/fonts, with their OFL); the packaged renderer carries them as
+// assets (build-app.mjs checks they are there). @betteroffice/fonts now ships its faces compressed, in font packs.
+const fontsDir = path.join(import.meta.dirname, "../../crates/finx-slide/fonts");
 const standInFonts = ["Carlito", "Caladea"].flatMap((f) => ["Regular", "Bold", "Italic", "BoldItalic"].map((s) => `${f}-${s}.ttf`));
 function standInFontAssets(): Plugin {
   return {
@@ -50,6 +51,22 @@ function standInFontAssets(): Plugin {
   };
 }
 
+// The Word engine's wasm (@betteroffice/docx), which its modules load with `new URL("./generated/…", import.meta.url)`:
+// the main build leaves those URLs as they are, so each file is copied to where the chunk that names it looks.
+const docxDist = path.join(import.meta.dirname, "node_modules/@betteroffice/docx/dist"); // its exports leave out package.json
+function docxWasm(): Plugin {
+  return {
+    name: "finxwork-docx-wasm",
+    generateBundle(_, bundle) {
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type !== "chunk") continue;
+        for (const [, rel] of chunk.code.matchAll(/new URL\("\.\/(generated\/[\w/]+\.wasm)", import\.meta\.url\)/g))
+          this.emitFile({ type: "asset", fileName: path.posix.join(path.posix.dirname(chunk.fileName), rel), source: fs.readFileSync(path.join(docxDist, rel)) });
+      }
+    },
+  };
+}
+
 // FINXWORK_DESKTOP_OUT builds somewhere other than out/ (scripts/build-app.mjs stages the app there).
 const out = process.env.FINXWORK_DESKTOP_OUT || path.join(import.meta.dirname, "out");
 
@@ -61,8 +78,14 @@ const fixed = {
 
 export default defineConfig({
   main: {
+    plugins: [docxWasm()],
     // Everything bundled (the workspace packages included): the packaged app ships no node_modules.
-    build: { externalizeDeps: false, outDir: path.join(out, "main") },
+    // The docx serializer is a utilityProcess of its own (main/docx/host.ts); its engine's wasm is emitted beside it.
+    build: {
+      externalizeDeps: false,
+      outDir: path.join(out, "main"),
+      rollupOptions: { input: { index: path.resolve("src/main/index.ts"), "docx-serializer": path.resolve("src/main/docx/serializer.ts") } },
+    },
     define: fixed,
   },
   preload: {

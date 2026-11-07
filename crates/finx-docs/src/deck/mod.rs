@@ -27,8 +27,9 @@ use serde::{Deserialize, Serialize};
 pub use actor::serve;
 pub use client::{DeckLauncher, QUARANTINED};
 use client::DeckWorker;
-pub use wire::{Edited, Opened, StripEntry, Summary};
-use wire::{Bytes, Changed, Request, Saved, Synced};
+pub use wire::{Edited, Opened, StripEntry, Summary, WordChecked, WordEdited, WordQuery};
+pub(crate) use wire::{Changed, Request, Synced};
+use wire::{Bytes, Saved};
 
 use finx_protocol::deck::DeckDiagnostic;
 
@@ -64,6 +65,9 @@ pub enum DeckError {
     /// A malformed update or state vector; the deck is as it was.
     #[error("{0}")]
     Protocol(String),
+    /// The desktop app's serializer could not write a .docx (or there is none).
+    #[error("{0}")]
+    Host(String),
     #[error("{0}")]
     Worker(String),
     #[error(transparent)]
@@ -111,9 +115,11 @@ pub struct DeckEntry {
     pub path: PathBuf,
     pub dir: PathBuf,
     pub writable: bool,
+    /// `source.pptx`, or `source.docx` for a Word document.
+    source: &'static str,
     sessions: Mutex<HashSet<String>>,
     meta: Mutex<Meta>,
-    revision: Mutex<u64>,
+    pub(crate) revision: Mutex<u64>,
     conflict: Mutex<bool>,
     /// One save at a time.
     saving: tokio::sync::Mutex<()>,
@@ -135,7 +141,7 @@ impl DeckEntry {
     }
 
     pub fn source(&self) -> PathBuf {
-        self.dir.join(journal::SOURCE)
+        self.dir.join(self.source)
     }
 }
 
@@ -163,7 +169,9 @@ pub struct OpenedDeck {
 
 pub struct DeckStore {
     root: PathBuf,
-    worker: DeckWorker,
+    /// The name of an entry's source in its directory: what the worker opens it as.
+    source: &'static str,
+    pub(crate) worker: DeckWorker,
     decks: Mutex<HashMap<String, Arc<DeckEntry>>>,
     opening: tokio::sync::Mutex<()>,
     listeners: Mutex<Vec<Listener>>,
@@ -172,14 +180,24 @@ pub struct DeckStore {
 impl DeckStore {
     /// A store keeping its decks in `root` (`$FINX_HOME/decks`).
     pub fn new(root: PathBuf, launcher: DeckLauncher) -> Self {
-        Self { root, worker: DeckWorker::new(launcher), decks: Mutex::default(), opening: tokio::sync::Mutex::new(()), listeners: Mutex::default() }
+        Self::with_worker(root, journal::SOURCE, DeckWorker::new(launcher))
+    }
+
+    /// A store of another kind of document in `root`, on `decks`' worker: a Word document is an
+    /// entry like a deck, with `source` its source's name (word-design §4).
+    pub(crate) fn sharing(root: PathBuf, source: &'static str, decks: &DeckStore) -> Self {
+        Self::with_worker(root, source, decks.worker.clone())
+    }
+
+    fn with_worker(root: PathBuf, source: &'static str, worker: DeckWorker) -> Self {
+        Self { root, source, worker, decks: Mutex::default(), opening: tokio::sync::Mutex::new(()), listeners: Mutex::default() }
     }
 
     pub fn on_event(&self, f: impl Fn(&DeckEvent) + Send + Sync + 'static) {
         self.listeners.lock().push(Box::new(f));
     }
 
-    fn emit(&self, event: DeckEvent) {
+    pub(crate) fn emit(&self, event: DeckEvent) {
         for f in self.listeners.lock().iter() {
             f(&event);
         }
@@ -210,7 +228,7 @@ impl DeckStore {
         }
         let (disk, bytes) = read_file(&canonical)?;
         let dir = self.root.join(&id);
-        let mut meta = read_meta(&dir).filter(|m| m.path == canonical && dir.join(journal::SOURCE).is_file());
+        let mut meta = read_meta(&dir).filter(|m| m.path == canonical && dir.join(self.source).is_file());
         let mut conflict = false;
         if let Some(m) = &meta {
             let leftover = dir.join(journal::LOG).metadata().is_ok_and(|l| l.len() > 0) || dir.join(journal::SNAPSHOT).exists();
@@ -225,7 +243,7 @@ impl DeckStore {
         if meta.is_none() {
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir)?;
-            atomic::write(&dir.join(journal::SOURCE), &bytes)?;
+            atomic::write(&dir.join(self.source), &bytes)?;
             let fresh = Meta { path: canonical.clone(), ..disk.clone() };
             write_meta(&dir, &fresh)?;
             meta = Some(fresh);
@@ -248,6 +266,7 @@ impl DeckStore {
             path: canonical.clone(),
             dir,
             writable: is_writable(&canonical),
+            source: self.source,
             sessions: Mutex::new(HashSet::from([session.to_owned()])),
             meta: Mutex::new(meta),
             revision: Mutex::new(opened.revision),
@@ -259,7 +278,7 @@ impl DeckStore {
         Ok(OpenedDeck { entry, state, recovered: opened.recovered, set_aside: opened.set_aside })
     }
 
-    async fn state(&self, entry: &DeckEntry) -> Result<Vec<u8>, DeckError> {
+    pub(crate) async fn state(&self, entry: &DeckEntry) -> Result<Vec<u8>, DeckError> {
         let bytes: Bytes = self.worker.request(Request::State { deck: entry.deck_id.clone() }).await?;
         decode(&bytes.data)
     }
@@ -287,11 +306,25 @@ impl DeckStore {
     /// Saves the deck to its file, or to `to`. In place, a file that changed on disk since it
     /// was read is not written over unless `force`; nothing unsaved writes nothing.
     pub async fn save(&self, deck_id: &str, to: Option<&Path>, force: bool) -> Result<DeckInfo, DeckError> {
+        self.save_with(deck_id, to, force, "pptx", |staged| async move {
+            let saved: Saved = self.worker.request(Request::Save { deck: deck_id.to_owned(), to: staged }).await?;
+            Ok((saved.revision, saved.hash))
+        })
+        .await
+    }
+
+    /// The save guard and the write around `stage`, which writes the document to the path it is
+    /// given and returns the revision and hash of what it wrote.
+    pub(crate) async fn save_with<F, Fut>(&self, deck_id: &str, to: Option<&Path>, force: bool, extension: &str, stage: F) -> Result<DeckInfo, DeckError>
+    where
+        F: FnOnce(PathBuf) -> Fut,
+        Fut: std::future::Future<Output = Result<(u64, String), DeckError>>,
+    {
         let entry = self.get(deck_id)?;
         let _one = entry.saving.lock().await;
         let target = to.map(Path::to_path_buf).unwrap_or_else(|| entry.path.clone());
-        if target.extension().and_then(|e| e.to_str()).is_none_or(|e| !e.eq_ignore_ascii_case("pptx")) {
-            return Err(DeckError::Refused("save as .pptx".into()));
+        if target.extension().and_then(|e| e.to_str()).is_none_or(|e| !e.eq_ignore_ascii_case(extension)) {
+            return Err(DeckError::Refused(format!("save as .{extension}")));
         }
         let in_place = target == entry.path;
         if in_place {
@@ -318,13 +351,20 @@ impl DeckStore {
                 return Ok(entry.info());
             }
         }
-        let staged = entry.dir.join("saving.pptx");
-        let saved: Saved = self.worker.request(Request::Save { deck: deck_id.to_owned(), to: staged.clone() }).await?;
+        let staged = entry.dir.join(format!("saving.{extension}"));
+        let staging = stage(staged.clone()).await;
+        let (revision, hash) = match staging {
+            Ok(saved) => saved,
+            Err(e) => {
+                let _ = std::fs::remove_file(&staged);
+                return Err(e);
+            }
+        };
         atomic::copy(&staged, &target)?;
         let _ = std::fs::remove_file(&staged);
         if in_place {
             let m = std::fs::metadata(&target)?;
-            let meta = Meta { path: entry.path.clone(), hash: saved.hash, size: m.len(), modified_ms: modified_ms(&m), saved_revision: saved.revision };
+            let meta = Meta { path: entry.path.clone(), hash, size: m.len(), modified_ms: modified_ms(&m), saved_revision: revision };
             write_meta(&entry.dir, &meta)?;
             *entry.meta.lock() = meta;
             *entry.conflict.lock() = false;
@@ -365,7 +405,7 @@ impl DeckStore {
     }
 
     /// After a change of the worker's own: its update to every replica, the state to all.
-    fn changed(&self, entry: &DeckEntry, changed: &Changed) -> Result<(), DeckError> {
+    pub(crate) fn changed(&self, entry: &DeckEntry, changed: &Changed) -> Result<(), DeckError> {
         if !changed.update.is_empty() {
             *entry.revision.lock() = changed.revision;
             self.emit(DeckEvent::Update { deck_id: entry.deck_id.clone(), session: None, update: decode(&changed.update)?, revision: changed.revision });
@@ -452,7 +492,7 @@ impl DeckStore {
     }
 }
 
-fn decode(data: &str) -> Result<Vec<u8>, DeckError> {
+pub(crate) fn decode(data: &str) -> Result<Vec<u8>, DeckError> {
     B64.decode(data).map_err(|e| DeckError::Worker(format!("bad reply: {e}")))
 }
 

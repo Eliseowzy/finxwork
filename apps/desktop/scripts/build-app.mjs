@@ -47,6 +47,7 @@ import os from "node:os";
 import path from "node:path";
 import { agentDesktopBinaries, agentDesktopRelease } from "./agent-desktop.mjs";
 import { pdfiumLibrary, pdfiumLibraryFor, pdfiumRelease } from "./pdfium.mjs";
+import { smokeWord } from "./docx-smoke.mjs";
 import { catalogProblems, catalogSkillsDir } from "./catalog-hash.mjs";
 import { ensureRustTarget, rustTriples } from "./rust-target.mjs";
 import { catalogSkills } from "../src/shared/catalog.ts";
@@ -246,10 +247,23 @@ for (const f of [embedded, ...desktopTools, pdfium]) sh("codesign", ["--verify",
   for (const family of ["Carlito", "Caladea"]) for (const style of ["Regular", "Bold", "Italic", "BoldItalic"]) {
     const name = `${family}-${style}.ttf`;
     const entry = header.files?.renderer?.files?.fonts?.files?.[name];
-    const source = path.join(desktop, "node_modules/@betteroffice/fonts/assets", name);
+    const source = path.join(root, "crates/finx-slide/fonts", name);
     if (!entry || entry.size !== fs.statSync(source).size) throw new Error(`the signed app.asar lacks renderer/fonts/${name} (the deck editor's ${family} stand-in)`);
   }
 }
+// The Word serializer is in the signed bundle: main/docx-serializer.js and the engine's wasm beside it (electron.vite.config.ts
+// copies main/generated/{opc,parse} and main/chunks/generated/edit), inside app.asar.
+{
+  const asar = fs.readFileSync(path.join(contents, "Resources/app.asar"));
+  const header = JSON.parse(asar.subarray(16, 16 + asar.readUInt32LE(12)).toString("utf8"));
+  const wasm = (dir) => Object.keys(dir?.files ?? {}).filter((n) => n.endsWith(".wasm"));
+  const main = header.files?.main?.files;
+  if (!main?.["docx-serializer.js"]) throw new Error("the signed app.asar lacks main/docx-serializer.js (the Word serializer process)");
+  const found = [...wasm(main.generated?.files?.opc), ...wasm(main.generated?.files?.parse), ...wasm(main.chunks?.files?.generated?.files?.edit)];
+  if (found.length < 3) throw new Error(`the signed app.asar lacks the Word engine's wasm beside the serializer (found ${JSON.stringify(found)})`);
+}
+// On the signed app, in an empty HOME: its kernel opens a .docx and saves a copy through the serializer process.
+if (arch === nativeArch) await smokeWord(app);
 /** Runs `finx serve` (stdio JSON-RPC) for one body of calls, then stops it. */
 async function withKernel(bin, env, cwd, body) {
   const child = spawn(bin, ["serve"], { env, cwd, stdio: ["pipe", "pipe", "pipe"] });

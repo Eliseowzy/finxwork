@@ -113,6 +113,7 @@ pub(crate) struct ChildDeps {
     pub(crate) browser_pool: Option<Arc<finx_browser::BrowserPool>>,
     pub(crate) docs: Option<Arc<finx_docs::DocStore>>,
     pub(crate) decks: Option<Arc<finx_docs::deck::DeckStore>>,
+    pub(crate) words: Option<Arc<finx_docs::word::WordStore>>,
 }
 
 /// How a sub-agent's tools find the tree and who is calling. Weak: the tree owns its agents.
@@ -601,6 +602,7 @@ impl AgentTree {
                 browser_pool: self.deps.browser_pool.clone(),
                 docs: self.deps.docs.clone(),
                 decks: self.deps.decks.clone(),
+                words: self.deps.words.clone(),
                 routines: None,
             },
             home: self.deps.home.clone(),

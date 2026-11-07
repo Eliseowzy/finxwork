@@ -335,6 +335,48 @@
       "$ref": "#/definitions/DocViewParams"
     },
     {
+      "$ref": "#/definitions/DocxChangedParams"
+    },
+    {
+      "$ref": "#/definitions/DocxIdParams"
+    },
+    {
+      "$ref": "#/definitions/DocxOpenParams"
+    },
+    {
+      "$ref": "#/definitions/DocxOpenResult"
+    },
+    {
+      "$ref": "#/definitions/DocxReviewParams"
+    },
+    {
+      "$ref": "#/definitions/DocxRevisionResult"
+    },
+    {
+      "$ref": "#/definitions/DocxSaveParams"
+    },
+    {
+      "$ref": "#/definitions/DocxSaveResult"
+    },
+    {
+      "$ref": "#/definitions/DocxSerializeParams"
+    },
+    {
+      "$ref": "#/definitions/DocxSerializeResult"
+    },
+    {
+      "$ref": "#/definitions/DocxSyncNotice"
+    },
+    {
+      "$ref": "#/definitions/DocxSyncParams"
+    },
+    {
+      "$ref": "#/definitions/DocxSyncResult"
+    },
+    {
+      "$ref": "#/definitions/DocxUndoParams"
+    },
+    {
       "$ref": "#/definitions/Empty"
     },
     {
@@ -9119,6 +9161,414 @@
       "required": [
         "doc_id",
         "page",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxChangedParams": {
+      "description": "Server notification to connections that opened the document.",
+      "properties": {
+        "author": {
+          "default": null,
+          "description": "Who made the change: the agent's name for its own edits, else null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "conflict": {
+          "description": "The file changed on disk under unsaved edits.",
+          "type": "boolean"
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "docx_id": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dirty",
+        "docx_id",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "DocxIdParams": {
+      "additionalProperties": false,
+      "properties": {
+        "docx_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxOpenParams": {
+      "additionalProperties": false,
+      "properties": {
+        "discard": {
+          "description": "Drop the kernel's unsaved edits of this file and read it anew.",
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "replica": {
+          "default": false,
+          "description": "The caller joins as a Yrs replica (the editor): the result carries the source and state.",
+          "type": "boolean"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxOpenResult": {
+      "properties": {
+        "dirty": {
+          "description": "Unsaved edits, maybe brought back from an earlier run.",
+          "type": "boolean"
+        },
+        "docx_id": {
+          "description": "From the file's canonical path: the same in every session.",
+          "type": "string"
+        },
+        "font_families": {
+          "description": "Font families the document names, with the host's fallbacks: what the editor loads.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hash": {
+          "description": "Of the file as last read or written.",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "source": {
+          "description": "The file as the kernel opened it (base64), for a replica: the editor's engine needs the source parts the state does not carry.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "The whole Yrs state (base64), for a replica.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "writable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "dirty",
+        "docx_id",
+        "font_families",
+        "hash",
+        "path",
+        "revision",
+        "writable"
+      ],
+      "type": "object"
+    },
+    "DocxReviewAction": {
+      "enum": [
+        "accept",
+        "reject"
+      ],
+      "type": "string"
+    },
+    "DocxReviewParams": {
+      "additionalProperties": false,
+      "description": "Accepts or rejects tracked changes, the person's choice in the document (word-design §5.2).",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/DocxReviewAction"
+        },
+        "docx_id": {
+          "type": "string"
+        },
+        "ids": {
+          "description": "The revisions, by the numbers the editor knows them by (`scrollToChange`) and `docx_edit` gives; all pending ones when absent.",
+          "items": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "docx_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxRevisionResult": {
+      "properties": {
+        "revision": {
+          "description": "The document's revision after it.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "type": "object"
+    },
+    "DocxSaveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "docx_id": {
+          "type": "string"
+        },
+        "force": {
+          "description": "Write over the file although it changed on disk.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Save as another .docx instead.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxSaveResult": {
+      "properties": {
+        "hash": {
+          "default": null,
+          "description": "Saved: of the file written. Conflict: `changed`, or null when the file is gone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/definitions/DocxSaveStatus"
+        }
+      },
+      "required": [
+        "revision",
+        "status"
+      ],
+      "type": "object"
+    },
+    "DocxSaveStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "saved"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The file changed on disk (or is gone, then `hash` is null): nothing was written.",
+          "enum": [
+            "conflict"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Read only, or not a .docx, or the written document did not check: nothing was written.",
+          "enum": [
+            "refused"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DocxSerializeParams": {
+      "description": "Parameters of `docx/serialize`, a request from the kernel to the `docx/host` connection. The bytes travel in files: the host reads the first three and writes only `out_path`.",
+      "properties": {
+        "metadata_path": {
+          "description": "The engine's peer metadata (`encode_peer_metadata`): media, header and footer aliases and note separators that the state alone does not carry. Without it the host opens the source and loads the state over it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "out_path": {
+          "description": "Where to write the .docx.",
+          "type": "string"
+        },
+        "source_path": {
+          "description": "The .docx the document was opened from: the baseline that unchanged parts are kept from.",
+          "type": "string"
+        },
+        "state_path": {
+          "description": "The document's Yrs state (`encode_state`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "out_path",
+        "source_path",
+        "state_path"
+      ],
+      "type": "object"
+    },
+    "DocxSerializeResult": {
+      "description": "The result of `docx/serialize`.",
+      "properties": {
+        "bytes": {
+          "description": "How many bytes were written to `out_path`.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bytes"
+      ],
+      "type": "object"
+    },
+    "DocxSyncNotice": {
+      "description": "Server notification to the other replicas: the kernel's update or another replica's.",
+      "properties": {
+        "docx_id": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "update": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx_id",
+        "revision",
+        "update"
+      ],
+      "type": "object"
+    },
+    "DocxSyncParams": {
+      "additionalProperties": false,
+      "description": "A replica's update (merged and sent to the other replicas), and/or its state vector (the result then carries what it lacks).",
+      "properties": {
+        "docx_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "state_vector": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "update": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "docx_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxSyncResult": {
+      "properties": {
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "update": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "type": "object"
+    },
+    "DocxUndoParams": {
+      "additionalProperties": false,
+      "description": "Takes back the agent's edit `edit` (the revision it made), when it is the agent's latest step still in the document.",
+      "properties": {
+        "docx_id": {
+          "type": "string"
+        },
+        "edit": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx_id",
+        "edit",
         "session_id"
       ],
       "type": "object"
@@ -19427,7 +19877,7 @@
       "type": "string"
     }
   },
-  "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
+  "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, `x-server-requests` maps the requests the server sends to their params and result types, and `x-error-codes` maps error codes to the `kind` in the error data.",
   "title": "finx native protocol",
   "x-client-notifications": {
     "$/cancel_request": "CancelRequestParams",
@@ -19797,6 +20247,33 @@
       "params": "DocViewParams",
       "result": "Empty"
     },
+    "docx/close": {
+      "params": "DocxIdParams",
+      "result": "Empty"
+    },
+    "docx/host": {
+      "result": "Empty"
+    },
+    "docx/open": {
+      "params": "DocxOpenParams",
+      "result": "DocxOpenResult"
+    },
+    "docx/review": {
+      "params": "DocxReviewParams",
+      "result": "DocxRevisionResult"
+    },
+    "docx/save": {
+      "params": "DocxSaveParams",
+      "result": "DocxSaveResult"
+    },
+    "docx/sync": {
+      "params": "DocxSyncParams",
+      "result": "DocxSyncResult"
+    },
+    "docx/undo": {
+      "params": "DocxUndoParams",
+      "result": "DocxRevisionResult"
+    },
     "files/list": {
       "params": "FilesListParams",
       "result": "FilesListResult"
@@ -19991,6 +20468,8 @@
     "deck/proposal": "DeckProposalEvent",
     "deck/sync": "DeckSyncNotice",
     "doc/changed": "DocChangedParams",
+    "docx/changed": "DocxChangedParams",
+    "docx/sync": "DocxSyncNotice",
     "files/changed": "FilesChangedParams",
     "mcp/changed": "McpChangedParams",
     "mcp/probe_progress": "McpProbeProgressParams",
@@ -20000,6 +20479,12 @@
     "session/event": "SessionEventParams",
     "sessions/changed": "SessionsChangedParams",
     "skills/changed": "SkillsChangedParams"
+  },
+  "x-server-requests": {
+    "docx/serialize": {
+      "params": "DocxSerializeParams",
+      "result": "DocxSerializeResult"
+    }
   },
   "x-stability": {
     "methods": {
@@ -20084,6 +20569,13 @@
       "doc/trace": "experimental",
       "doc/undo": "experimental",
       "doc/view": "experimental",
+      "docx/close": "experimental",
+      "docx/host": "internal",
+      "docx/open": "experimental",
+      "docx/review": "experimental",
+      "docx/save": "experimental",
+      "docx/sync": "experimental",
+      "docx/undo": "experimental",
       "files/list": "stable",
       "files/read": "stable",
       "files/watch": "stable",
@@ -20145,6 +20637,8 @@
       "deck/proposal": "stable",
       "deck/sync": "stable",
       "doc/changed": "experimental",
+      "docx/changed": "experimental",
+      "docx/sync": "experimental",
       "files/changed": "stable",
       "mcp/changed": "stable",
       "mcp/probe_progress": "stable",
@@ -20154,6 +20648,9 @@
       "session/event": "stable",
       "sessions/changed": "stable",
       "skills/changed": "stable"
+    },
+    "server_requests": {
+      "docx/serialize": "internal"
     }
   }
 }
