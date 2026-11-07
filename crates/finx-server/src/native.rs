@@ -887,6 +887,20 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::DOC_STRUCTURE => match finx_rpc::params::<finx_protocol::doc::DocStructureParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_structure(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_SORT => match finx_rpc::params::<finx_protocol::doc::DocSortParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_sort(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::DOC_AUTOFILL => match finx_rpc::params::<finx_protocol::doc::DocAutofillParams>(params) {
                 Ok(p) => {
                     let reply_id = id.clone();

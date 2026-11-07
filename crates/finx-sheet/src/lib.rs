@@ -14,6 +14,7 @@ pub mod formula;
 pub mod package;
 pub mod patch;
 pub mod scan;
+pub mod structure;
 pub mod styles;
 pub mod tables;
 pub mod verify;

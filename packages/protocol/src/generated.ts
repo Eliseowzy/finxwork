@@ -1993,6 +1993,31 @@ export type DocSaveParams = {
   session_id: string;
 };
 
+/** `doc/sort`: the rows of `range` sorted by the values of one of its columns, as one edit; as Excel sorts, numbers come before text before TRUE/FALSE before errors, blanks last either way, ties keep their order, and a formula moves with its row (relative references shift). Formats stay where they are. */
+export type DocSortParams = {
+  base_revision?: number | null;
+  /** The column sorted by, its letters (`C`); within the range. */
+  by: string;
+  descending?: boolean;
+  doc_id: string;
+  /** The range's first row is a header and stays where it is. */
+  header?: boolean;
+  range: string;
+  session_id: string;
+  sheet: string;
+};
+
+/** `doc/structure`: inserts or deletes whole rows or columns as one edit. Every reference to the cells that move moves with them, in every sheet, as Excel moves it; one into deleted cells becomes `#REF!`; comments move with their cells. Refused where it cannot be done faithfully here (Excel tables, pivot tables, form controls…): the reason says so. */
+export type DocStructureParams = {
+  at: number;
+  base_revision?: number | null;
+  count: number;
+  doc_id: string;
+  kind: StructureKind;
+  session_id: string;
+  sheet: string;
+};
+
 /** `doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10). */
 export type DocTraceParams = {
   cell: string;
@@ -4175,6 +4200,9 @@ export type StoryRead = {
 
 export type StrikeStyle = "none" | "single" | "double";
 
+/** What `doc/structure` does: Excel's 插入 / 删除 of whole rows or columns. */
+export type StructureKind = "insert_rows" | "delete_rows" | "insert_columns" | "delete_columns";
+
 /** One change to a table's structure or look. Cell text is edited as text: every cell is a story (`deck/read` lists their `story_id`s), or `set_cells`. */
 export type TableEdit = {
   at: number;
@@ -4646,6 +4674,8 @@ export interface Methods {
   "doc/redo": [DocIdParams, DocApplyResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
   "doc/save": [DocSaveParams, DocInfo];
+  "doc/sort": [DocSortParams, DocApplyResult];
+  "doc/structure": [DocStructureParams, DocApplyResult];
   "doc/trace": [DocTraceParams, DocFoundResult];
   "doc/undo": [DocIdParams, DocApplyResult];
   "doc/view": [DocViewParams, Empty];
