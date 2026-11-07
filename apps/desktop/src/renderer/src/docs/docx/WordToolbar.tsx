@@ -1,15 +1,22 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useTranslation as useAppTranslation } from "react-i18next";
 import { EditorToolbar, ToolbarButton, ToolbarCommand, ToolbarGroup, ToolbarSeparator, useDocxCommandState, useTranslation } from "@betteroffice/docx-react";
+import { resolveHighlightColor } from "@betteroffice/docx/utils";
+
+/** The pen's colour (a Word highlight name or RGB hex) as CSS. */
+function penSwatch(color: string): string {
+  const hex = resolveHighlightColor(color);
+  return hex ? (hex.startsWith("#") ? hex : `#${hex}`) : "#f5d000";
+}
 
 /**
  * Fit-to-width zoom: on until the person picks a zoom of their own. `set` is the last zoom this set,
  * so a different zoom in the editor means the person chose it.
  */
-export interface WordFit { auto: boolean; set: number | null; refit: () => void; zoomed: (zoom: number) => void; sidebar: boolean; listeners: Set<() => void> }
+export interface WordFit { auto: boolean; set: number | null; refit: () => void; zoomed: (zoom: number) => void; sidebar: boolean; pen: boolean; penColor: string; listeners: Set<() => void> }
 
 export function createFit(): WordFit {
-  return { auto: true, set: null, refit: () => {}, zoomed: () => {}, sidebar: false, listeners: new Set() };
+  return { auto: true, set: null, refit: () => {}, zoomed: () => {}, sidebar: false, pen: false, penColor: "yellow", listeners: new Set() };
 }
 
 /**
@@ -26,6 +33,8 @@ export function WordToolbar({ fit }: { fit: WordFit }) {
   const wrap = useDocxCommandState("imageWrap").value != null;
   const image = useDocxCommandState("imageProperties").enabled || wrap;
   const auto = useSyncExternalStore((l) => { fit.listeners.add(l); return () => fit.listeners.delete(l); }, () => fit.auto);
+  const pen = useSyncExternalStore((l) => { fit.listeners.add(l); return () => fit.listeners.delete(l); }, () => fit.pen);
+  const penColor = useSyncExternalStore((l) => { fit.listeners.add(l); return () => fit.listeners.delete(l); }, () => fit.penColor);
   // A zoom this did not set is the person's: stop fitting.
   useEffect(() => {
     if (typeof zoom === "number") fit.zoomed(zoom);
@@ -49,6 +58,11 @@ export function WordToolbar({ fit }: { fit: WordFit }) {
         <ToolbarCommand id="underline" />
         <ToolbarCommand id="textColor" />
         <ToolbarCommand id="highlightColor" />
+        <ToolbarButton
+          active={pen}
+          title={app("word.highlighterPen")}
+          onClick={() => { fit.pen = !fit.pen; fit.listeners.forEach((l) => l()); }}
+        ><svg className="word-pen-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5l4 4-6 6H4.5l-1-1v-3z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /><rect x="2" y="13.5" width="12" height="1.5" rx=".5" fill={penSwatch(penColor)} /></svg></ToolbarButton>
       </ToolbarGroup>
       <ToolbarGroup label={t("formattingBar.groups.alignment")}>
         <ToolbarCommand id="alignment" />

@@ -1,12 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider, useTranslation } from "react-i18next";
-import { DocxEditor, type DocxEditorRef, type TrackedChangesOptions } from "@betteroffice/docx-react";
+import { DocxEditor, type DocxCommandExecution, type DocxEditorRef, type TrackedChangesOptions } from "@betteroffice/docx-react";
 import type { CollaborationReplica } from "@betteroffice/docx/collaboration";
 import type { BundledFontProvider } from "@betteroffice/docx/layout";
 import "@betteroffice/docx-react/styles.css";
 import { i18n } from "../../../../shared/i18n";
 import { fromBase64 } from "../pptx/document";
+import { listFonts } from "../pptx/fonts";
 import type { WordDoc } from "./document";
 import { wordFontProvider } from "./fonts";
 import { registerWordHandle } from "./handle";
@@ -51,6 +52,24 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
   const fit = useMemo(createFit, [doc]);
   const [zoom, setZoom] = useState(1);
   const [wide, setWide] = useState(false);
+  // The font menu: the document's families, then every family installed on the machine (as the PPT
+  // editor's), which the font provider draws face by face as they are picked.
+  const [fontFamilies, setFontFamilies] = useState<string[] | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void listFonts().then((installed) => {
+      if (!live) return;
+      const seen = new Set<string>();
+      const names = [...doc.file.font_families, ...installed.map((f) => f.family)].filter((name) => {
+        const key = name.toLowerCase();
+        if (!name || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setFontFamilies(names);
+    }, (e: unknown) => console.warn("font list unavailable", e));
+    return () => { live = false; };
+  }, [doc]);
   const bytes = useMemo(() => fromBase64(doc.file.data), [doc, doc.generation]);
   const kernel = doc.kernel;
   const where = useMemo(() => ({ session: kernel.session, docxId: kernel.docxId, path }), [kernel, path]);
@@ -98,7 +117,7 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
           // The editor centres the page between two allowances for its outline button, and shifts it for the comments.
           const room = box.clientWidth - 2 * (roomy ? 64 : 20) - FIT_GUTTER;
           const beside = (room - SIDEBAR) / width;
-          const next = Math.round(Math.min(FIT_MAX, Math.max(FIT_MIN, fit.sidebar && beside >= 0.6 ? beside : room / width)) * 100) / 100;
+          const next = Math.round(Math.min(FIT_MAX, Math.max(FIT_MIN, fit.sidebar && beside >= FIT_MIN ? beside : room / width)) * 100) / 100;
           fit.set = next;
           if (Math.abs(next - now) > 0.001) ref.setZoom(next);
         }
@@ -113,6 +132,45 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
     return () => { seen.disconnect(); cancelAnimationFrame(frame); fit.refit = () => {}; fit.zoomed = () => {}; };
   }, [ready, fit]);
 
+  // The pen takes the colour last picked from the toolbar's highlight menu.
+  const onCommandExecuted = useCallback(({ id, args }: DocxCommandExecution) => {
+    const color = id === "highlightColor" ? (args as { color?: unknown } | null)?.color : undefined;
+    if (typeof color === "string" && color !== "none" && color !== fit.penColor) {
+      fit.penColor = color;
+      fit.listeners.forEach((l) => l());
+    }
+  }, [fit]);
+
+  // The highlighter pen: while on, each stretch of text the mouse selects is highlighted, as Word's pen does. Esc stops it.
+  useEffect(() => {
+    const box = canvas.current;
+    const ref = editor.current;
+    if (!ready || !box || !ref) return;
+    const sync = () => box.classList.toggle("word-pen", fit.pen);
+    fit.listeners.add(sync);
+    sync();
+    const up = (e: PointerEvent) => {
+      if (!fit.pen || e.button !== 0 || !(e.target as HTMLElement).closest?.("canvas")) return;
+      // After the editor settles the selection the drag made.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        // A click without a drag selects nothing: leave it, so typing after it is not highlighted.
+        void ref.readSelectionInfo().then((info) => {
+          const state = ref.commands.getState("highlightColor");
+          if (!info?.selectedText || !state.enabled) return;
+          // As Word's pen: over text already in the pen's colour, it takes the highlight off.
+          const color = fit.penColor;
+          void ref.commands.execute("highlightColor", { color: state.value === color ? "none" : color });
+        }, () => {});
+      }));
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && fit.pen) { fit.pen = false; fit.listeners.forEach((l) => l()); }
+    };
+    box.addEventListener("pointerup", up);
+    window.addEventListener("keydown", key);
+    return () => { fit.listeners.delete(sync); box.removeEventListener("pointerup", up); window.removeEventListener("keydown", key); box.classList.remove("word-pen"); };
+  }, [ready, fit]);
+
   if (error && !ready) return <div className="word-message" role="alert">{t("word.loadFailed", { message: error })}</div>;
   const loading = <WordLoading name={name} stage={fonts ? "rendering" : "fonts"} />;
   if (!fonts) return loading;
@@ -124,6 +182,9 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
       file={bytes}
       fileName={name}
       measurementFontProvider={fonts.provider}
+      fontFamilies={fontFamilies}
+      commentSidebarOverflow="inset"
+      onCommandExecuted={onCommandExecuted}
       collaboration={collaboration}
       readOnly={!doc.file.writable}
       colorMode="system"

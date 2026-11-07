@@ -842,6 +842,7 @@
       "rendering": "Almost there…"
     },
     "readOnly": "This file is read-only. Save a copy to edit it.",
+    "highlighterPen": "Highlighter (drag over text to highlight, Esc to stop)",
     "fitWidth": "Fit to width",
     "saveAs": "Save As…",
     "savedAs": "Saved a copy to {{path}}",
