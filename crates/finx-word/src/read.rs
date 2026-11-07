@@ -198,6 +198,13 @@ fn walk(
                 }
                 local += 1;
             }
+            // A block content control (a template's "click here to type" placeholder, say): its
+            // paragraphs are in a story of their own, read in place, in the same cell as it.
+            Some("embed") if segment["embedKind"] == "blockSdt" => {
+                if let Some(child) = segment["payload"]["story"].as_str() {
+                    walk(session, child, cell, read, tables, out)?;
+                }
+            }
             _ => {}
         }
     }

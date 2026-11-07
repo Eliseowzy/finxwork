@@ -535,3 +535,17 @@ fn revision_numbers_are_the_editors() {
         Err(WordError::NoRevision(_))
     ));
 }
+
+/// A paragraph in a block content control (a template's placeholder) is read, found and edited
+/// like any other: the editor's selection there names it by its id.
+#[test]
+fn a_paragraph_in_a_content_control_is_one_of_the_documents() {
+    let word = Word::open(include_bytes!("fixtures/content-control.docx").to_vec()).unwrap();
+    assert!(word.outline().unwrap().iter().any(|p| p.id == "10000002"));
+    assert_eq!(text(&word, "10000002"), "这是第一段，介绍公司的经营情况。收入增长了百分之十。");
+    assert_eq!(word.find("收入增长", 5).unwrap().len(), 1);
+    let applied = word
+        .apply(&batch(EditMode::Suggest, vec![replace("10000002", "百分之十", "百分之二十")]))
+        .unwrap();
+    assert_eq!(applied.revision_ids_created.len(), 1);
+}

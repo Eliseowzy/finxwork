@@ -87,7 +87,11 @@ fn failed(path: &Path, e: DeckError) -> ToolError {
 /// The kernel's entry of the document at `raw`, held by the session.
 async fn open(raw: &str, ctx: &ToolCtx) -> Result<(Arc<WordsHandle>, PathBuf, Arc<DeckEntry>), ToolError> {
     let words = ctx.session_state.get::<WordsHandle>().ok_or_else(|| ToolError::Failed("Word documents cannot be opened in this session".into()))?;
-    let path = docx_path(raw, ctx.env.as_ref())?;
+    // A docx_id (as the editor's requests give one) names the document already open.
+    let path = match words.store.get(raw) {
+        Ok(entry) if Path::new(raw).extension().is_none() => entry.path.clone(),
+        _ => docx_path(raw, ctx.env.as_ref())?,
+    };
     let entry = words.store.open(&path, &words.session, false).await.map_err(|e| failed(&path, e))?.entry;
     Ok((words, path, entry))
 }
@@ -119,7 +123,7 @@ fn outline_line(e: &OutlineEntry) -> String {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct ReadArgs {
-    /// Path of the document (.docx).
+    /// Path of the document (.docx), or the docx_id of one already open.
     docx: String,
     /// Read paragraphs in full from this paragraph id (from the outline or docx_find). Without it: the outline.
     #[serde(default)]
@@ -207,7 +211,7 @@ impl TypedTool for DocxRead {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct FindArgs {
-    /// Path of the document (.docx).
+    /// Path of the document (.docx), or the docx_id of one already open.
     docx: String,
     /// Exact, case-sensitive text; a match lies within one paragraph.
     query: String,
@@ -251,7 +255,7 @@ impl TypedTool for DocxFind {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct ViewArgs {
-    /// Path of the document (.docx).
+    /// Path of the document (.docx), or the docx_id of one already open.
     docx: String,
     /// The page, from 1.
     #[schemars(range(min = 1))]
@@ -309,7 +313,7 @@ impl TypedTool for DocxView {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct EditArgs {
-    /// Path of the document (.docx).
+    /// Path of the document (.docx), or the docx_id of one already open.
     docx: String,
     /// The changes, made together as one step or not at all. At most 256.
     edits: Vec<WordOp>,
@@ -417,7 +421,7 @@ pub(crate) enum Action {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct ReviewArgs {
-    /// Path of the document (.docx).
+    /// Path of the document (.docx), or the docx_id of one already open.
     docx: String,
     action: Action,
     /// Tracked changes by their numbers (docx_read, docx_edit); every pending one when absent.
@@ -488,7 +492,7 @@ impl TypedTool for DocxReview {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct SaveArgs {
-    /// Path of the document (.docx).
+    /// Path of the document (.docx), or the docx_id of one already open.
     docx: String,
     /// Save as another .docx instead (absolute, or relative to the working directory).
     #[serde(default)]
@@ -597,6 +601,17 @@ mod tests {
 
     async fn run<T: TypedTool>(tool: T, s: &Setup, args: Value) -> Result<ToolOutput, ToolError> {
         tool.run(serde_json::from_value(args).unwrap(), ctx(s)).await
+    }
+
+    /// The editor's requests give the model a docx_id beside the path: either names the document.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_open_documents_docx_id_names_it() {
+        let s = setup(false);
+        let opened = run(DocxRead, &s, json!({ "docx": "report.docx" })).await.unwrap();
+        let id = opened.details.unwrap()["docx_id"].as_str().unwrap().to_owned();
+        let read = text_of(&run(DocxRead, &s, json!({ "docx": id, "from": "10000002", "count": 1 })).await.unwrap());
+        assert!(read.contains("百分之十"), "{read}");
+        assert!(matches!(run(DocxRead, &s, json!({ "docx": "0123456789abcdef" })).await, Err(ToolError::InvalidArgs(_))));
     }
 
     #[tokio::test(flavor = "multi_thread")]
