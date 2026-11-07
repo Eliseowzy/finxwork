@@ -28,6 +28,10 @@ import { thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { BotPanel } from "./BotPanel";
 import { Question, SentFiles } from "./Messages";
+import { DeckEditActions } from "../session/DeckEditActions";
+import { deckEditDetails } from "../docs/pptx/deckEdit";
+import { DocxEditActions } from "../session/DocxEditActions";
+import { docxEditDetails } from "../docs/docx/aiPrompt";
 import { ModelBlocked, ModelRows } from "./ModelRows";
 import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
@@ -361,6 +365,8 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                       />,
                       item.text,
                     );
+                  case "deck_edit":
+                    return <DeckEditItem key={item.key} item={item} session={session} line={line} />;
                   case "failure":
                     return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
                 }
@@ -409,6 +415,20 @@ function UserBubble({ item, fresh, line }: { item: Extract<BotItem, { kind: "use
           <CopyButton text={item.text} />
         </div>
       </div>
+    </>
+  );
+}
+
+/** A change the bot made to a deck, where the owner is looking: its page, and 撤销 (presentation-deck-edit §6). */
+function DeckEditItem({ item, session, line }: { item: Extract<BotItem, { kind: "deck_edit" }>; session: string; line: React.ReactNode }) {
+  const st = useStore();
+  const docx = docxEditDetails(item.details);
+  const details = docx ? null : deckEditDetails(item.details);
+  if ((!docx && !details) || !st.rpc) return null;
+  return (
+    <>
+      {line}
+      <div className="bm"><div className="bm-b">{docx ? <DocxEditActions details={docx} rpc={st.rpc} session={session} /> : <DeckEditActions details={details!} rpc={st.rpc} session={session} />}</div></div>
     </>
   );
 }

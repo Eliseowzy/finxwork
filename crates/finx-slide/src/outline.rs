@@ -23,6 +23,9 @@ pub struct SlideOutline {
     pub layout: Option<String>,
     pub hidden: bool,
     pub notes: String,
+    /// The slide's own background (`#RRGGBB`, `theme <slot>`, or a fill kind such as `gradient`);
+    /// `None` when it takes the layout's.
+    pub background: Option<String>,
     pub objects: Vec<ObjectOutline>,
 }
 
@@ -41,8 +44,30 @@ pub struct ObjectOutline {
     pub table: Option<Vec<Vec<String>>>,
     /// Alternative text of pictures and charts.
     pub alt: Option<String>,
+    /// The shape's fill and outline colours, `#RRGGBB`, theme colours resolved.
+    pub fill: Option<String>,
+    pub line: Option<String>,
+    /// How its text looks: neighbouring runs of one look together, in reading order.
+    pub looks: Vec<TextLook>,
     pub depth: usize,
 }
+
+/// A stretch of text in one look. Unset values come from the placeholder, layout or theme.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextLook {
+    /// The stretch's first words.
+    pub sample: String,
+    pub size_pt: Option<f64>,
+    pub color: Option<String>,
+    pub bold: bool,
+    pub italic: bool,
+    pub font: Option<String>,
+}
+
+/// Looks an object lists at most.
+const MAX_LOOKS: usize = 8;
+/// Characters of a look's sample.
+const SAMPLE_CHARS: usize = 16;
 
 impl SlideOutline {
     pub fn has(&self, kind: &str) -> bool {
@@ -75,6 +100,7 @@ fn slide(index: usize, s: &SlideSnapshot) -> SlideOutline {
         layout: s.layout.as_ref().and_then(|l| l.name.clone().or_else(|| l.r#type.clone())),
         hidden: s.hidden == Some(true),
         notes: s.notes.trim().to_owned(),
+        background: s.background.as_ref().and_then(fill_name),
         objects,
     }
 }
@@ -105,6 +131,9 @@ fn object(shape: &ShapeSnapshot, depth: usize, out: &mut Vec<ObjectOutline>) {
         text,
         table,
         alt,
+        fill: shape.resolved_fill_color.as_deref().map(hex),
+        line: shape.resolved_outline_color.as_deref().map(hex),
+        looks: looks(shape),
         depth,
     });
     for child in &shape.children {
@@ -138,4 +167,42 @@ fn cells(shape: &ShapeSnapshot) -> Option<Vec<Vec<String>>> {
     };
     let texts: Vec<String> = shape.text_stories.iter().map(|s| s.plain_text().replace('\n', " ")).collect();
     texts.len().is_multiple_of(cols).then(|| texts.chunks(cols).map(<[String]>::to_vec).collect())
+}
+
+/// `#RRGGBB` of a colour the engine gives with or without `#`, alpha dropped.
+fn hex(c: &str) -> String {
+    let c = c.trim_start_matches('#');
+    format!("#{}", c.get(..6).unwrap_or(c).to_ascii_uppercase())
+}
+
+fn fill_name(fill: &betteroffice_pptx::ShapeFill) -> Option<String> {
+    match fill.fill_type.as_str() {
+        "none" => None,
+        "solid" => fill.color.as_ref().and_then(|c| c.rgb.as_deref().map(hex).or_else(|| c.theme_color.as_ref().map(|t| format!("theme {t}")))),
+        other => Some(other.to_owned()),
+    }
+}
+
+fn looks(shape: &ShapeSnapshot) -> Vec<TextLook> {
+    let mut out: Vec<TextLook> = Vec::new();
+    let runs = shape.text_stories.iter().flat_map(|s| &s.paragraphs).flat_map(|p| &p.runs);
+    for run in runs.filter(|r| !r.text.trim().is_empty()) {
+        let st = &run.style;
+        let look = TextLook {
+            sample: String::new(),
+            size_pt: st.font_size_pt,
+            color: st.color.as_deref().map(hex),
+            bold: st.bold == Some(true),
+            italic: st.italic == Some(true),
+            font: st.font_family.clone().filter(|f| !f.starts_with('+')),
+        };
+        if out.last().is_some_and(|last| TextLook { sample: String::new(), ..last.clone() } == look) {
+            continue;
+        }
+        if out.len() == MAX_LOOKS {
+            break;
+        }
+        out.push(TextLook { sample: run.text.trim().chars().take(SAMPLE_CHARS).collect(), ..look });
+    }
+    out
 }

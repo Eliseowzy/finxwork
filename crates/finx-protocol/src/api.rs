@@ -76,6 +76,8 @@ pub mod method {
     pub const DOC_TRACE: &str = "doc/trace";
     pub const DOC_FIND: &str = "doc/find";
     pub const DOC_FILL: &str = "doc/fill";
+    pub const DOC_STRUCTURE: &str = "doc/structure";
+    pub const DOC_SORT: &str = "doc/sort";
     pub const DOC_AUTOFILL: &str = "doc/autofill";
     pub const DOC_SAVE: &str = "doc/save";
     /// Notification: a document changed (an edit, undo, redo or save, from any session); to
@@ -132,6 +134,7 @@ pub mod method {
     pub const DECK_EDIT: &str = "deck/edit";
     pub const DECK_COPY: &str = "deck/copy";
     pub const DECK_PROPOSAL_LIST: &str = "deck/proposal/list";
+    pub const DECK_UNDO: &str = "deck/undo";
     pub const DECK_PROPOSAL_ACCEPT: &str = "deck/proposal/accept";
     pub const DECK_PROPOSAL_REJECT: &str = "deck/proposal/reject";
     pub const DECK_PROPOSAL_REVERT: &str = "deck/proposal/revert";
@@ -183,6 +186,21 @@ pub mod method {
     pub const BROWSER_CHANGED: &str = "browser/changed";
     /// A site's icon, for the lists of sites the browsers may open (browser-design §10.1).
     pub const BROWSER_SITE_ICON: &str = "browser/site_icon";
+    /// This connection writes .docx files from the kernel's Word documents (word-design §2): a
+    /// later host replaces the one before it, and the host leaves with its connection.
+    pub const DOCX_HOST: &str = "docx/host";
+    /// Server request to the `docx/host` connection: write one document's bytes.
+    pub const DOCX_SERIALIZE: &str = "docx/serialize";
+    // Word documents held by the kernel (docs/desktop/word-design.md §4).
+    pub const DOCX_OPEN: &str = "docx/open";
+    /// A request from a replica (its Yrs update), and a server notification with the kernel's.
+    pub const DOCX_SYNC: &str = "docx/sync";
+    pub const DOCX_SAVE: &str = "docx/save";
+    pub const DOCX_CLOSE: &str = "docx/close";
+    pub const DOCX_UNDO: &str = "docx/undo";
+    pub const DOCX_REVIEW: &str = "docx/review";
+    /// Server notification to connections that opened the document.
+    pub const DOCX_CHANGED: &str = "docx/changed";
     // Bots (docs/kernel/bot-design.md §4).
     /// Every bot now, and `bots/changed` on this connection from then on.
     pub const BOTS_SUBSCRIBE: &str = "bots/subscribe";
@@ -350,6 +368,30 @@ pub mod error_code {
         (ROUTINES_UNAVAILABLE, "routines_unavailable"),
         (NO_MODEL, "no_model"),
     ];
+}
+
+/// Parameters of `docx/serialize`, a request from the kernel to the `docx/host` connection. The
+/// bytes travel in files: the host reads the first three and writes only `out_path`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DocxSerializeParams {
+    /// The .docx the document was opened from: the baseline that unchanged parts are kept from.
+    pub source_path: PathBuf,
+    /// The document's Yrs state (`encode_state`).
+    pub state_path: PathBuf,
+    /// Where to write the .docx.
+    pub out_path: PathBuf,
+    /// The engine's peer metadata (`encode_peer_metadata`): media, header and footer aliases and
+    /// note separators that the state alone does not carry. Without it the host opens the source
+    /// and loads the state over it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata_path: Option<PathBuf>,
+}
+
+/// The result of `docx/serialize`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DocxSerializeResult {
+    /// How many bytes were written to `out_path`.
+    pub bytes: u64,
 }
 
 /// The result of methods that return nothing: `{}`.

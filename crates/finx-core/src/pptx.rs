@@ -37,7 +37,18 @@ fn package(bytes: &[u8]) -> io::Result<ZipArchive<Cursor<&[u8]>>> {
     Ok(zip)
 }
 
-fn font_families(zip: &mut ZipArchive<Cursor<&[u8]>>, progress: &mut impl FnMut(PptxReadStage, u64, u64)) -> io::Result<Vec<String>> {
+/// The font families a package names, plus the host's fallbacks: what an editor loads.
+pub fn font_families_of(bytes: &[u8]) -> io::Result<Vec<String>> {
+    font_families(&mut package(bytes)?, "ppt/", &mut |_, _, _| {})
+}
+
+/// The same for a Word document (word-design §6): its runs' fonts (`w:rFonts`) and its theme's.
+pub fn docx_font_families_of(bytes: &[u8]) -> io::Result<Vec<String>> {
+    let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(|_| invalid("not a DOCX package (encrypted documents are not supported)"))?;
+    font_families(&mut zip, "word/", &mut |_, _, _| {})
+}
+
+fn font_families(zip: &mut ZipArchive<Cursor<&[u8]>>, parts: &str, progress: &mut impl FnMut(PptxReadStage, u64, u64)) -> io::Result<Vec<String>> {
     let mut names = BTreeSet::from(["Arial".to_owned(), "PingFang SC".to_owned()]);
     let mut budget = 32 * 1024 * 1024;
     let total = zip.len() as u64;
@@ -45,7 +56,7 @@ fn font_families(zip: &mut ZipArchive<Cursor<&[u8]>>, progress: &mut impl FnMut(
         if i % 16 == 0 { progress(PptxReadStage::Inspecting, i as u64, total); }
         let mut entry = zip.by_index(i).map_err(invalid)?;
         let name = entry.name().map_err(invalid)?;
-        if !name.starts_with("ppt/") || !name.ends_with(".xml") { continue; }
+        if !name.starts_with(parts) || !name.ends_with(".xml") { continue; }
         if entry.size() > MAX_XML || entry.size() > budget { return Err(invalid("presentation XML exceeds the read limit")); }
         budget -= entry.size();
         let mut bytes = Vec::new();
@@ -59,10 +70,12 @@ fn font_families(zip: &mut ZipArchive<Cursor<&[u8]>>, progress: &mut impl FnMut(
                     let local = e.local_name();
                     let hans = local.as_ref() == "font" && e.attributes().flatten()
                         .any(|a| a.key.as_ref() == "script" && a.value.as_ref() == "Hans");
-                    if !matches!(local.as_ref(), "latin" | "ea" | "cs") && !hans { continue; }
+                    let run_fonts = local.as_ref() == "rFonts";
+                    if !matches!(local.as_ref(), "latin" | "ea" | "cs") && !hans && !run_fonts { continue; }
                     for a in e.attributes() {
                         let a = a.map_err(invalid)?;
-                        if a.key.as_ref() != "typeface" { continue; }
+                        let named = if run_fonts { matches!(a.key.local_name().as_ref(), "ascii" | "hAnsi" | "eastAsia" | "cs") } else { a.key.as_ref() == "typeface" };
+                        if !named { continue; }
                         let family = a.normalized_value(quick_xml::XmlVersion::Implicit1_0).map_err(invalid)?;
                         let family = family.trim();
                         if !family.is_empty() && !family.starts_with('+') && family.len() <= 200 && names.len() < 64 {
@@ -99,7 +112,7 @@ pub fn read_with_progress(home: &FinxHome, path: &Path, mut progress: impl FnMut
     }
     if bytes.len() as u64 > MAX_BYTES { return Err(invalid("PPTX files must be at most 20 MiB")); }
     progress(PptxReadStage::Inspecting, 0, 0);
-    let fonts = font_families(&mut package(&bytes)?, &mut progress)?;
+    let fonts = font_families(&mut package(&bytes)?, "ppt/", &mut progress)?;
     progress(PptxReadStage::Encoding, 0, 0);
     Ok(PptxReadResult { path: path.to_path_buf(), hash: files::hash(&bytes), data: STANDARD.encode(bytes),
         writable: !meta.permissions().readonly() && !files::refused(home, path), font_families: fonts })
@@ -192,6 +205,8 @@ mod tests {
         std::fs::write(&path, DECK).unwrap();
         let opened = read(&home, &path).unwrap();
         assert!(opened.font_families.contains(&"Arial".to_owned()));
+        let docx = docx_font_families_of(include_bytes!("../../finx-word/tests/fixtures/report.docx")).unwrap();
+        assert!(docx.contains(&"PingFang SC".to_owned()) && docx.len() > 2, "{docx:?}");
         assert!(opened.writable);
         let deck = finx_slide::Deck::open(STANDARD.decode(&opened.data).unwrap()).unwrap();
         assert_eq!(deck.slide_count(), 2);

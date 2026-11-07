@@ -243,6 +243,8 @@ pub fn kernel_deps(
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
+        words: None,
         routines: None,
     })
 }

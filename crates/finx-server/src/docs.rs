@@ -178,6 +178,21 @@ impl Server {
         Ok(DocApplyResult { revision, impact, dirty })
     }
 
+    /// The grid's 插入 / 删除 of rows and columns: one edit, undone by putting the copy back.
+    pub(crate) async fn doc_structure(&self, p: finx_protocol::doc::DocStructureParams) -> Result<DocApplyResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let (revision, impact, dirty) = self.0.docs.structure(&doc, &p.session_id, p.change, p.base_revision).await.map_err(rpc_error)?;
+        Ok(DocApplyResult { revision, impact, dirty })
+    }
+
+    /// The grid's 排序: worked out by the worker, applied as one edit.
+    pub(crate) async fn doc_sort(&self, p: finx_protocol::doc::DocSortParams) -> Result<DocApplyResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let ops = self.0.docs.sort_ops(&doc, &p.sheet, &p.range, &p.by, p.descending, p.header).await.map_err(rpc_error)?;
+        let (revision, impact, dirty) = self.0.docs.apply(&doc, &p.session_id, ops, p.base_revision, false).await.map_err(rpc_error)?;
+        Ok(DocApplyResult { revision, impact, dirty })
+    }
+
     /// The grid's fill handle: the series worked out by the worker, applied as one edit.
     pub(crate) async fn doc_autofill(&self, p: finx_protocol::doc::DocAutofillParams) -> Result<DocApplyResult, RpcError> {
         let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
@@ -199,5 +214,8 @@ impl Server {
     /// A closed session's columns show nothing any more.
     pub(crate) async fn docs_forget(&self, session: &str) {
         self.0.docs.forget_session(session).await;
+        // Decks the session's agent opened (deck_edit) close with it; unsaved edits stay.
+        self.0.decks.forget_session(session).await;
+        self.0.words.forget_session(session).await;
     }
 }

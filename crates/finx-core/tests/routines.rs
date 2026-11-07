@@ -72,6 +72,8 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, host: Option<Arc<d
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
+        words: None,
         routines: host,
     }
 }

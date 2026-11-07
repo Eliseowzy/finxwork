@@ -79,6 +79,8 @@ fn deps(api: &Arc<ScriptedApi>, env: &Env, tools: &[&str]) -> KernelDeps {
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
+        words: None,
         routines: None,
     }
 }

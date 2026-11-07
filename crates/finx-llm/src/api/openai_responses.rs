@@ -24,9 +24,25 @@ fn content(parts: &[UserContent]) -> Vec<Value> {
 
 pub fn build_body(model: &crate::Model, context: &Context, options: &RequestOptions) -> Value {
     let mut input = Vec::new();
+    // A call recorded without a name can never be sent (`name` must be non-empty): leave it out,
+    // with its result, rather than fail every later turn of the conversation.
+    let nameless: HashSet<&str> = context
+        .messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::Assistant(m) => Some(&m.content),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|p| match p {
+            AssistantContent::ToolCall(t) if t.name.is_empty() => Some(t.id.as_str()),
+            _ => None,
+        })
+        .collect();
     for message in &context.messages {
         match message {
             Message::User(m) => input.push(json!({"role":"user","content":content(&m.content)})),
+            Message::ToolResult(m) if nameless.contains(m.call_id.as_str()) => {}
             Message::ToolResult(m) => {
                 input.push(json!({"type":"function_call_output","call_id":m.call_id,"output":content(&m.content)}))
             }
@@ -36,6 +52,7 @@ pub fn build_body(model: &crate::Model, context: &Context, options: &RequestOpti
                         AssistantContent::Text { text } => input.push(json!({
                             "role": "assistant", "content": [{"type": "output_text", "text": text}]
                         })),
+                        AssistantContent::ToolCall(t) if t.name.is_empty() => {}
                         AssistantContent::ToolCall(t) => input.push(json!({
                             "type": "function_call", "call_id": t.id, "namespace": "finx",
                             "name": t.name, "arguments": t.arguments.as_str()
@@ -235,6 +252,10 @@ impl WireApi for OpenAiResponsesApi {
                     "response.output_item.done" => {
                         if v["item"]["type"] == "reasoning" { acc.append_thinking_signature(index, &v["item"].to_string()); }
                         else if !streamed.contains(&index) { item(&mut acc,index,&v["item"]); }
+                        else if v["item"]["type"] == "function_call" {
+                            // `output_item.added` may name the call blank; the finished item is whole.
+                            acc.apply(&StreamEvent::ToolCallStart { index, id:text(&v["item"],"call_id"), name:text(&v["item"],"name") });
+                        }
                         // The subscription route's `response.completed` lists no items: this is its
                         // only word on what the reply held.
                         passed_over.extend(unreadable(std::slice::from_ref(&v["item"])));

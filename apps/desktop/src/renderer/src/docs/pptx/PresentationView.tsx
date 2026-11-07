@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PptxEditor, definePptxPlugin, type PptxAsyncEditorApi } from "@betteroffice/pptx-react";
-import type { PptxFontFace } from "@betteroffice/pptx";
+import type { AsyncCollaborationReplica, PptxFontFace } from "@betteroffice/pptx";
 import { presentationZhCN } from "./zh-CN";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import type { RpcClient } from "@finx/client";
@@ -13,9 +13,14 @@ import { presentationImageDecoder } from "./metafile";
 import { PresentationLoading, type FontLoadProgress } from "./PresentationLoading";
 import { SlideOutline } from "./SlideOutline";
 import { installSlideReorder } from "./slideReorder";
+import { installSlideKeys } from "./slideKeys";
+import { installCommandKeys } from "./commandKeys";
+import { COMMANDS } from "./commands/registry";
+import { onSlideRequest, takeSlide } from "./deckEdit";
 import { Ribbon, type RibbonFonts } from "./Ribbon";
 import { RibbonController } from "./commands/controller";
 import { ControllerContext } from "./ribbon/controls";
+import "./theme.css";
 import "./ribbon.css";
 import "./presentation.css";
 
@@ -64,6 +69,12 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
   }), [doc, rpc, session]);
   // Chinese text in a Latin font draws in the deck's CJK faces rather than a substitute.
   const fallbackFonts = useMemo(() => fonts?.filter((face) => isCjk(face.family)), [fonts]);
+  // A replica of the kernel's deck: it joins with the kernel's state and syncs through it.
+  const collaboration = useMemo(() => doc.kernel ? {
+    clientId: doc.kernel.clientId,
+    initialUpdate: doc.kernel.initialState,
+    onReplica: (replica: AsyncCollaborationReplica | null) => doc.kernel?.attach(replica),
+  } : undefined, [doc, doc.kernel]);
   const shell = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!shell.current) return;
@@ -79,6 +90,32 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     });
   }, [doc, fonts]);
   useLayoutEffect(() => {
+    if (!shell.current) return;
+    return installSlideKeys(shell.current, {
+      position: () => ({ index: controller.current.slideIndex, count: controller.current.slides.length }),
+      objectSelected: () => { const kind = controller.current.selection?.target.kind; return kind === "shape" || kind === "text"; },
+      go: async (index) => { await api.current?.goToSlide(index + 1); },
+    });
+  }, [controller, fonts]);
+  useLayoutEffect(() => {
+    if (!shell.current) return;
+    return installCommandKeys(shell.current, {
+      commands: () => COMMANDS,
+      editingText: () => controller.current.selection?.target.kind === "text",
+      enabled: (id) => controller.status(id).enabled,
+      run: (id) => { void controller.run(id); },
+      save: () => { void doc.flush(); },
+      selectAllText: () => {
+        const { selection, slides, slideIndex } = controller.current;
+        if (selection?.target.kind !== "text") return;
+        const { shapeId, storyId } = selection.target;
+        const story = slides[slideIndex]?.shapes.find((shape) => shape.id === shapeId)?.textStories.find((s) => s.id === storyId);
+        // The story ends in a paragraph mark, which is not selectable text.
+        if (story) api.current?.selectText({ slide: slideIndex + 1, shapeId, storyId, start: 0, end: Math.max(0, story.length - 1) });
+      },
+    });
+  }, [controller, doc, fonts]);
+  useLayoutEffect(() => {
     let live = true;
     void loadFonts(doc.file.font_families, (value) => { if (live) setFontProgress(value); }).then((faces) => { if (live) setFonts(faces); }, (e: unknown) => {
       if (live) setError(e instanceof Error ? e.message : String(e));
@@ -93,7 +130,13 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     setReady(true);
     doc.serialize = () => editor.save();
     doc.prepare = () => editor.flushPendingInput();
-    return () => { detach(); if (api.current === editor) { api.current = null; doc.serialize = null; doc.prepare = null; } };
+    // A page the conversation asked for: the agent's change it is showing (presentation-deck-edit §6).
+    const go = (index: number) => void editor.goToSlide(index + 1);
+    const deckId = doc.kernel?.deckId;
+    const asked = deckId ? takeSlide(deckId) : null;
+    if (asked !== null) go(asked);
+    const stopAsking = deckId ? onSlideRequest(deckId, go) : () => {};
+    return () => { detach(); stopAsking(); if (api.current === editor) { api.current = null; doc.serialize = null; doc.prepare = null; } };
   };
   if (error && !api.current) return <div className="pptx-message" role="alert">{i18n.t("pptx.loadFailed", { ns: "session", message: error })}</div>;
   const loading = <PresentationLoading name={name} stage={fonts ? "rendering" : "fonts"}
@@ -111,11 +154,18 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     readOnly={!doc.file.writable}
     toolbar={<ControllerContext.Provider value={controller}><Ribbon fonts={ribbonFonts} /></ControllerContext.Provider>}
     plugins={plugins}
+    // Agent edits go through deck_edit and its approval card; the engine's proposal review is not wired yet (presentation-deck-edit §4).
     proposals={false}
     i18n={language.startsWith("zh") ? presentationZhCN : undefined}
     style={{ height: "100%", width: "100%", minHeight: 0 }}
     onReady={ready}
-    onDocumentChange={() => { if (api.current) { doc.edit(); setRevision(value => value + 1); } }}
+    collaboration={collaboration}
+    onDocumentChange={() => {
+      if (!api.current) return;
+      // A change the kernel sent (an accepted proposal) is not an edit of this editor's to save.
+      if (!doc.kernel || doc.kernel.local()) doc.edit();
+      setRevision(value => value + 1);
+    }}
     onSaveRequest={async () => { await doc.flush(); return false; }}
     downloadOnSave={false}
     onError={(e) => setError(e.message)}

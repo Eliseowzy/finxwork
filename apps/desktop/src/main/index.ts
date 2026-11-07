@@ -22,7 +22,7 @@ import { refreshSystemBrowser } from "./browser/system";
 const rendererDir = path.join(import.meta.dirname, "../renderer");
 // finxdoc: the documents beside a conversation (main/docs.ts); pdf.js decodes some images with
 // WebAssembly and draws pages through blob: URLs.
-const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' finxdoc:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' finxdoc: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 // The name people see is FinxWork; the profile stays in the folder it always had (Application Support/finxwork).
 app.setName("FinxWork");

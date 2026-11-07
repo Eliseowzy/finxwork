@@ -1,11 +1,11 @@
 .pptx-view, .pptx-surface { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 .pptx-view { flex: 1; }
 .pptx-message { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; height: 100%; color: var(--l3); font-size: 13px; }
-.pptx-surface { position: relative; color-scheme: light; background: #fff; color: #202124; }
-.pptx-error { padding: 8px 12px; background: #fff4e5; color: #7a4600; font-size: 12px; }
+.pptx-surface { position: relative; background: var(--pptx-bg); color: var(--pptx-ink); }
+.pptx-error { padding: 8px 12px; background: var(--pptx-warn-bg); color: var(--pptx-warn-fg); font-size: 12px; }
 .pptx-editor-shell { position: relative; width: 100%; height: 100%; min-height: 0; }
-.pptx-drop-indicator { position: absolute; z-index: 20; height: 2px; border-radius: 2px; background: #2563eb; pointer-events: none; transform: translateY(-1px); }
-.pptx-drop-indicator::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #2563eb; }
+.pptx-drop-indicator { position: absolute; z-index: 20; height: 2px; border-radius: 2px; background: var(--pptx-drop); pointer-events: none; transform: translateY(-1px); }
+.pptx-drop-indicator::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--pptx-drop); }
 .pptx-slide-dragging { opacity: .45; }
 
 /* The slide strip shares its width with page numbers, padding and its scrollbar.
@@ -19,7 +19,7 @@
   height: auto !important;
 }
 
-.pptx-opening-overlay { position: absolute; inset: 0; z-index: 5; background: #fff; }
+.pptx-opening-overlay { position: absolute; inset: 0; z-index: 5; background: var(--pptx-bg); }
 
 /* Library controls inside the ribbon size themselves with inline styles, hence !important. */
 /* Zoom: wide enough for the longest label ("适应窗口" / "Fit window") plus the caret. */
@@ -31,13 +31,15 @@
 .pptx-surface [role="listbox"] [role="option"], .pptx-surface [role="menu"] [role="menuitem"] { white-space: nowrap; }
 
 .pptx-editor-shell { display: flex; flex-direction: column; }
-.pptx-outline-bar { display: flex; padding: 3px 8px; border-bottom: 1px solid #ddd; }
-.pptx-outline-bar button { border: 0; background: transparent; padding: 4px 8px; cursor: pointer; }
+.pptx-outline-bar { display: flex; padding: 3px 8px; border-bottom: 1px solid var(--pptx-line-soft); }
+.pptx-outline-bar button { border: 0; background: transparent; color: var(--pptx-ink-2); padding: 4px 8px; cursor: pointer; }
 .pptx-outline-bar button:disabled { opacity: .5; cursor: default; }
 .pptx-editor-body { display: flex; flex: 1; min-height: 0; }
 .pptx-editor-canvas { flex: 1; min-width: 0; min-height: 0; }
-.pptx-outline { width: 220px; flex: 0 0 220px; overflow: auto; border-right: 1px solid #ddd; }
-.pptx-outline-slide { display: block; width: 100%; padding: 9px; border: 0; border-bottom: 1px solid #eee; background: white; text-align: left; cursor: pointer; }
-.pptx-outline-slide:hover { background: #f3f6fa; }
+.pptx-outline { width: 220px; flex: 0 0 220px; overflow: auto; border-right: 1px solid var(--pptx-line-soft); }
+.pptx-outline-slide { display: block; width: 100%; padding: 9px; border: 0; border-bottom: 1px solid var(--pptx-line-soft); background: var(--pptx-bg); color: var(--pptx-ink); text-align: left; cursor: pointer; }
+.pptx-outline-slide:hover { background: var(--pptx-item-hover); }
 .pptx-outline-slide strong, .pptx-outline-slide span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pptx-outline-slide span { margin-top: 3px; color: #555; font-size: 12px; }
+.pptx-outline-slide span { margin-top: 3px; color: var(--pptx-ink-3); font-size: 12px; }
+/* The stage takes focus to receive keys; PowerPoint shows no ring around the slide area. */
+.pptx-editor-canvas [role="application"]:focus, .pptx-editor-canvas [role="application"]:focus-visible { outline: none; }

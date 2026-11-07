@@ -18,8 +18,15 @@ use finx_protocol::doc::CellValue;
 use finx_protocol::doc::ColumnWidth;
 use finx_protocol::doc::RowHeight;
 use finx_protocol::doc::Impact;
+use finx_protocol::doc::SheetChart;
+use finx_protocol::doc::SheetChartCorner;
+use finx_protocol::doc::SheetChartGrouping;
+use finx_protocol::doc::SheetChartKind;
+use finx_protocol::doc::SheetChartSeries;
 use finx_protocol::doc::SheetInfo;
 use finx_protocol::doc::SheetOp;
+use finx_protocol::doc::SheetStructure;
+use finx_protocol::doc::StructureKind;
 use crate::kind::DocKind;
 use finx_sheet::CellEdit;
 use finx_sheet::NewValue;
@@ -119,6 +126,7 @@ fn flat_sheet(name: &str, rows: u32, cols: u32) -> SheetInfo {
         columns: Vec::new(),
         default_width: CSV_WIDTH,
         default_height: 20.0,
+        charts: Vec::new(),
     }
 }
 
@@ -168,6 +176,40 @@ fn refusal(e: finx_sheet::Error) -> String {
     match e {
         finx_sheet::Error::Unsupported(m) | finx_sheet::Error::Formula(m) => format!("{REFUSED}{m}"),
         other => other.to_string(),
+    }
+}
+
+fn protocol_chart(c: &finx_sheet::chart::Chart) -> SheetChart {
+    use finx_sheet::chart::Grouping;
+    use finx_sheet::chart::Kind;
+    let corner = |k: finx_sheet::chart::Corner| SheetChartCorner { col: k.col, row: k.row, dx: k.dx, dy: k.dy };
+    SheetChart {
+        kind: match c.kind {
+            Kind::Bar => SheetChartKind::Bar,
+            Kind::Line => SheetChartKind::Line,
+            Kind::Area => SheetChartKind::Area,
+            Kind::Pie => SheetChartKind::Pie,
+            Kind::Doughnut => SheetChartKind::Doughnut,
+            Kind::Scatter => SheetChartKind::Scatter,
+            Kind::Radar => SheetChartKind::Radar,
+        },
+        horizontal: c.horizontal,
+        grouping: match c.grouping {
+            Grouping::Clustered => SheetChartGrouping::Clustered,
+            Grouping::Stacked => SheetChartGrouping::Stacked,
+            Grouping::Percent => SheetChartGrouping::Percent,
+        },
+        title: c.title.clone(),
+        legend: c.legend.clone(),
+        labels: c.labels,
+        categories: c.categories.clone(),
+        series: c.series.iter().map(|s| SheetChartSeries { name: s.name.clone(), color: s.color.clone(), values: s.values.clone(), x: s.x.clone() }).collect(),
+        min: c.min,
+        max: c.max,
+        from: corner(c.from),
+        to: c.to.map(corner),
+        width: c.width,
+        height: c.height,
     }
 }
 
@@ -230,6 +272,7 @@ impl Sheets {
                         .unwrap_or_default(),
                     default_width: width_px(ix.and_then(|ix| ix.default_width).unwrap_or(8.43)),
                     default_height: height_px(ix.and_then(|ix| ix.default_height).unwrap_or(15.0)),
+                    charts: s.charts.iter().map(protocol_chart).collect(),
                 }
             })
             .collect();
@@ -579,19 +622,96 @@ impl Sheets {
         };
         for (from, to) in pairs {
             let (value, formula) = source(from);
-            let (sheet, cell) = (sheet.to_string(), to.to_string());
-            ops.push(match (formula, value) {
-                (Some(f), _) => {
-                    let moved = finx_sheet::formula::translate(&f, to.row as i64 - from.row as i64, to.col as i64 - from.col as i64)
-                        .map_err(|e| format!("{REFUSED}the formula in {from} cannot move to {to}: {e}"))?;
-                    SheetOp::SetFormula { sheet, cell, formula: formula_text(&display(&moved)) }
+            ops.push(copy_op(sheet, from, to, value, formula, "fill")?);
+        }
+        Ok(ops)
+    }
+
+    /// Inserts or deletes rows or columns (Excel's 插入 / 删除): the working copy written, and
+    /// the sheets as they are now (their extents and column widths moved).
+    pub fn structure(&mut self, handle: u64, change: &SheetStructure) -> Result<SheetOpened, String> {
+        if change.count == 0 || change.count > MAX_STRUCTURE {
+            return Err(format!("{REFUSED}insert or delete between 1 and {MAX_STRUCTURE} rows or columns at a time"));
+        }
+        let shift = shift_of(change);
+        match self.docs.get(&handle) {
+            Some(Open::Xlsx(doc)) => {
+                let out = finx_sheet::structure::shift(&doc.bytes, &change.sheet, shift).map_err(refusal)?;
+                crate::atomic::write(&doc.path, &out).map_err(|e| e.to_string())?;
+            }
+            Some(Open::Flat(Flat::Csv { path, csv, name })) => {
+                if *name != change.sheet {
+                    return Err(format!("no sheet named {}", change.sheet));
                 }
-                (None, Value::Number(n)) => SheetOp::SetValue { sheet, cell, value: CellInput::Number(n) },
-                (None, Value::Bool(b)) => SheetOp::SetValue { sheet, cell, value: CellInput::Bool(b) },
-                (None, Value::Text(t)) => SheetOp::SetValue { sheet, cell, value: CellInput::Text(t) },
-                (None, Value::Error(e)) => return Err(format!("{REFUSED}{from} holds the error {e}; fill it in Excel")),
-                (None, Value::Empty) => SheetOp::Clear { sheet, range: cell },
-            });
+                let out = csv.reshape(shift).map_err(refusal)?;
+                crate::atomic::write(path, &out).map_err(|e| e.to_string())?;
+            }
+            Some(Open::Flat(Flat::Xls(_))) => return Err(format!("{REFUSED}a legacy .xls is read only here: open it in your spreadsheet app and save it as .xlsx to edit it")),
+            None => return Err("the document is not open".into()),
+        }
+        self.reload(handle)
+    }
+
+    /// The working copy read again, as it is on disk now.
+    pub fn reload(&mut self, handle: u64) -> Result<SheetOpened, String> {
+        let (path, name) = match self.docs.get(&handle) {
+            Some(Open::Xlsx(doc)) => (doc.path.clone(), None),
+            Some(Open::Flat(Flat::Csv { path, name, .. })) => (path.clone(), Some(name.clone())),
+            Some(Open::Flat(Flat::Xls(_))) => return Err(format!("{REFUSED}a legacy .xls is read only here")),
+            None => return Err("the document is not open".into()),
+        };
+        self.open(handle, &path, name.as_deref())
+    }
+
+    /// Excel's 排序 as plain edits: the rows of `range` (its first left in place with
+    /// `header`) put in order of the values in column `by`. As Excel orders them: numbers,
+    /// then text (case folded), then TRUE/FALSE, then errors; blanks last either way; ties
+    /// keep their order. A formula moves with its row, its relative references shifted.
+    pub fn sort(&mut self, handle: u64, sheet: &str, range: &str, by: &str, descending: bool, header: bool) -> Result<Vec<SheetOp>, String> {
+        let rect = Rect::parse(range).ok_or_else(|| format!("not a range: {range}"))?;
+        let col = finx_sheet::cellref::parse_col(by.trim()).ok_or_else(|| format!("not a column: {by}"))?;
+        if col < rect.first.col || col > rect.last.col {
+            return Err(format!("{REFUSED}column {by} is not in {range}"));
+        }
+        let size = (rect.last.row - rect.first.row + 1) as u64 * (rect.last.col - rect.first.col + 1) as u64;
+        if size > MAX_CELLS {
+            return Err(format!("{range} has {size} cells; sort at most {MAX_CELLS} at a time"));
+        }
+        let first = rect.first.row + u32::from(header);
+        if first >= rect.last.row {
+            return Err(format!("{REFUSED}select at least two rows to sort"));
+        }
+        let cells: HashMap<CellRef, (Value, Option<String>)> = if let Some(flat) = self.flat(handle) {
+            flat.cells(sheet, Some(rect)).ok_or_else(|| format!("no sheet named {sheet}"))?.into_iter().map(|(at, v, _, f)| (at, (v, f))).collect()
+        } else {
+            let doc = self.doc(handle)?;
+            let book = &doc.book;
+            let s = book.sheet_index(sheet).ok_or_else(|| format!("no sheet named {sheet}"))?;
+            let Some(ix) = &book.sheets[s].index else { return Err(format!("{REFUSED}{sheet} is empty")) };
+            if let Some(m) = ix.merges.iter().find(|m| m.intersects(&rect)) {
+                return Err(format!("{REFUSED}{range} holds merged cells ({m}); Excel cannot sort them either"));
+            }
+            ix.cells().filter(|c| rect.contains(c.at)).map(|c| (c.at, (book.value(s, c.at), book.formula(s, c.at).map(str::to_string)))).collect()
+        };
+        let at = |r: u32, c: u32| cells.get(&CellRef::new(r, c)).cloned().unwrap_or((Value::Empty, None));
+        let mut rows: Vec<u32> = (first..=rect.last.row).collect();
+        rows.sort_by(|a, b| sort_order(&at(*a, col).0, &at(*b, col).0, descending));
+        let mut ops = Vec::new();
+        for (i, from) in rows.iter().enumerate() {
+            let to = first + i as u32;
+            if *from == to {
+                continue;
+            }
+            for c in rect.first.col..=rect.last.col {
+                let (value, formula) = at(*from, c);
+                if formula.is_none() && at(to, c) == (value.clone(), None) {
+                    continue;
+                }
+                ops.push(copy_op(sheet, CellRef::new(*from, c), CellRef::new(to, c), value, formula, "sort")?);
+            }
+        }
+        if ops.is_empty() {
+            return Err(format!("{REFUSED}the rows are already in that order"));
         }
         Ok(ops)
     }
@@ -782,6 +902,61 @@ impl Sheets {
         }
         Ok(out)
     }
+}
+
+/// Rows or columns inserted or deleted at a time.
+const MAX_STRUCTURE: u32 = 10_000;
+
+fn shift_of(c: &SheetStructure) -> finx_sheet::structure::Shift {
+    use finx_sheet::structure::Axis;
+    let (axis, delete) = match c.kind {
+        StructureKind::InsertRows => (Axis::Rows, false),
+        StructureKind::DeleteRows => (Axis::Rows, true),
+        StructureKind::InsertColumns => (Axis::Cols, false),
+        StructureKind::DeleteColumns => (Axis::Cols, true),
+    };
+    finx_sheet::structure::Shift { axis, at: c.at, count: c.count, delete }
+}
+
+/// Excel's sort order of values; blanks after everything, whichever way.
+fn sort_order(a: &Value, b: &Value, descending: bool) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let rank = |v: &Value| match v {
+        Value::Number(_) => 0,
+        Value::Text(_) => 1,
+        Value::Bool(_) => 2,
+        Value::Error(_) => 3,
+        Value::Empty => 4,
+    };
+    let (ra, rb) = (rank(a), rank(b));
+    if ra == 4 || rb == 4 {
+        return ra.cmp(&rb);
+    }
+    let o = match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
+        (Value::Text(x), Value::Text(y)) => x.to_lowercase().cmp(&y.to_lowercase()),
+        (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+        _ => ra.cmp(&rb),
+    };
+    if descending { o.reverse() } else { o }
+}
+
+/// The edit that puts what `from` holds into `to`: a formula moved as Excel moves it, a value
+/// as it is, an empty cell emptied. An error value is refused, as a typed one would be text.
+fn copy_op(sheet: &str, from: CellRef, to: CellRef, value: Value, formula: Option<String>, what: &str) -> Result<SheetOp, String> {
+    let (sheet, cell) = (sheet.to_string(), to.to_string());
+    Ok(match (formula, value) {
+        (Some(f), _) => {
+            let moved = finx_sheet::formula::translate(&f, to.row as i64 - from.row as i64, to.col as i64 - from.col as i64)
+                .map_err(|e| format!("{REFUSED}the formula in {from} cannot move to {to}: {e}"))?;
+            SheetOp::SetFormula { sheet, cell, formula: formula_text(&display(&moved)) }
+        }
+        (None, Value::Number(n)) => SheetOp::SetValue { sheet, cell, value: CellInput::Number(n) },
+        (None, Value::Bool(b)) => SheetOp::SetValue { sheet, cell, value: CellInput::Bool(b) },
+        (None, Value::Text(t)) => SheetOp::SetValue { sheet, cell, value: CellInput::Text(t) },
+        (None, Value::Error(e)) => return Err(format!("{REFUSED}{from} holds the error {e}; {what} it in Excel")),
+        (None, Value::Empty) => SheetOp::Clear { sheet, range: cell },
+    })
 }
 
 /// How a formula is shown and sent: with its `=`.

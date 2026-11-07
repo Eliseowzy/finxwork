@@ -4,11 +4,13 @@
 
 mod atomic;
 pub mod autofill;
+pub mod deck;
 pub mod engine;
 pub mod kind;
 pub mod layout;
 pub mod sheet;
 pub mod store;
+pub mod word;
 pub mod worker;
 
 pub use engine::Rendered;

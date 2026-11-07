@@ -1494,6 +1494,8 @@ export type DeckOp = {
 
 /** `deck/open`. Progress goes out as `pptx/readProgress`. */
 export type DeckOpenParams = {
+  /** Drop the kernel's unsaved edits of this file and read it anew ("load the disk's version"). */
+  discard?: boolean;
   path: string;
   progress_id?: string | null;
   /** The caller joins as a Yrs replica (the editor): the result carries the state. */
@@ -1514,6 +1516,8 @@ export type DeckOpenResult = {
   /** SHA-256 of the file as read. */
   hash: string;
   path: string;
+  /** Replicas: the file as first opened, base64, which the state builds on (replicas open from these bytes). Transitional until it streams over `finxdoc://` (kernel-authority §4). */
+  source?: string | null;
   /** Replicas: the whole Yrs document as one v1 update, base64. */
   state?: string | null;
   summary: DeckSummary;
@@ -1728,6 +1732,18 @@ export type DeckTextTarget = {
   /** UTF-16 offsets in the story; both or neither. */
   start?: number | null;
   story_id?: string | null;
+};
+
+/** `deck/undo`: takes back the agent's edit `edit` (the revision its `deck_edit` made), when it is the agent's latest one still in the deck (presentation-deck-edit §5). */
+export type DeckUndoParams = {
+  deck_id: string;
+  edit: number;
+  session_id: string;
+};
+
+export type DeckUndoResult = {
+  /** The deck's revision after it. */
+  revision: number;
 };
 
 /** `deck/view`: a slide rasterized on this machine (§6.5). */
@@ -1977,6 +1993,31 @@ export type DocSaveParams = {
   session_id: string;
 };
 
+/** `doc/sort`: the rows of `range` sorted by the values of one of its columns, as one edit; as Excel sorts, numbers come before text before TRUE/FALSE before errors, blanks last either way, ties keep their order, and a formula moves with its row (relative references shift). Formats stay where they are. */
+export type DocSortParams = {
+  base_revision?: number | null;
+  /** The column sorted by, its letters (`C`); within the range. */
+  by: string;
+  descending?: boolean;
+  doc_id: string;
+  /** The range's first row is a header and stays where it is. */
+  header?: boolean;
+  range: string;
+  session_id: string;
+  sheet: string;
+};
+
+/** `doc/structure`: inserts or deletes whole rows or columns as one edit. Every reference to the cells that move moves with them, in every sheet, as Excel moves it; one into deleted cells becomes `#REF!`; comments move with their cells. Refused where it cannot be done faithfully here (Excel tables, pivot tables, form controls…): the reason says so. */
+export type DocStructureParams = {
+  at: number;
+  base_revision?: number | null;
+  count: number;
+  doc_id: string;
+  kind: StructureKind;
+  session_id: string;
+  sheet: string;
+};
+
 /** `doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10). */
 export type DocTraceParams = {
   cell: string;
@@ -1992,6 +2033,129 @@ export type DocViewParams = {
   doc_id: string;
   page: number;
   selection?: Anchor | null;
+  session_id: string;
+};
+
+/** Server notification to connections that opened the document. */
+export type DocxChangedParams = {
+  /** Who made the change: the agent's name for its own edits, else null. */
+  author: string | null;
+  /** The file changed on disk under unsaved edits. */
+  conflict?: boolean;
+  dirty: boolean;
+  docx_id: string;
+  revision: number;
+};
+
+export type DocxIdParams = {
+  docx_id: string;
+  session_id: string;
+};
+
+export type DocxOpenParams = {
+  /** Drop the kernel's unsaved edits of this file and read it anew. */
+  discard?: boolean;
+  path: string;
+  /** The caller joins as a Yrs replica (the editor): the result carries the source and state. */
+  replica?: boolean;
+  session_id: string;
+};
+
+export type DocxOpenResult = {
+  /** Unsaved edits, maybe brought back from an earlier run. */
+  dirty: boolean;
+  /** From the file's canonical path: the same in every session. */
+  docx_id: string;
+  /** Font families the document names, with the host's fallbacks: what the editor loads. */
+  font_families: string[];
+  /** Of the file as last read or written. */
+  hash: string;
+  path: string;
+  revision: number;
+  /** The file as the kernel opened it (base64), for a replica: the editor's engine needs the source parts the state does not carry. */
+  source?: string | null;
+  /** The whole Yrs state (base64), for a replica. */
+  state?: string | null;
+  writable: boolean;
+};
+
+export type DocxReviewAction = "accept" | "reject";
+
+/** Accepts or rejects tracked changes, the person's choice in the document (word-design §5.2). */
+export type DocxReviewParams = {
+  action: DocxReviewAction;
+  docx_id: string;
+  /** The revisions, by the numbers the editor knows them by (`scrollToChange`) and `docx_edit` gives; all pending ones when absent. */
+  ids?: number[] | null;
+  session_id: string;
+};
+
+export type DocxRevisionResult = {
+  /** The document's revision after it. */
+  revision: number;
+};
+
+export type DocxSaveParams = {
+  docx_id: string;
+  /** Write over the file although it changed on disk. */
+  force?: boolean;
+  /** Save as another .docx instead. */
+  path?: string | null;
+  session_id: string;
+};
+
+export type DocxSaveResult = {
+  /** Saved: of the file written. Conflict: `changed`, or null when the file is gone. */
+  hash: string | null;
+  message: string | null;
+  revision: number;
+  status: DocxSaveStatus;
+};
+
+export type DocxSaveStatus = "saved" | "conflict" | "refused";
+
+/** Parameters of `docx/serialize`, a request from the kernel to the `docx/host` connection. The bytes travel in files: the host reads the first three and writes only `out_path`. */
+export type DocxSerializeParams = {
+  /** The engine's peer metadata (`encode_peer_metadata`): media, header and footer aliases and note separators that the state alone does not carry. Without it the host opens the source and loads the state over it. */
+  metadata_path?: string | null;
+  /** Where to write the .docx. */
+  out_path: string;
+  /** The .docx the document was opened from: the baseline that unchanged parts are kept from. */
+  source_path: string;
+  /** The document's Yrs state (`encode_state`). */
+  state_path: string;
+};
+
+/** The result of `docx/serialize`. */
+export type DocxSerializeResult = {
+  /** How many bytes were written to `out_path`. */
+  bytes: number;
+};
+
+/** Server notification to the other replicas: the kernel's update or another replica's. */
+export type DocxSyncNotice = {
+  docx_id: string;
+  revision: number;
+  update: string;
+};
+
+/** A replica's update (merged and sent to the other replicas), and/or its state vector (the result then carries what it lacks). */
+export type DocxSyncParams = {
+  docx_id: string;
+  session_id: string;
+  state_vector?: string | null;
+  update?: string | null;
+};
+
+export type DocxSyncResult = {
+  revision: number;
+  update?: string | null;
+};
+
+/** Takes back the agent's edit `edit` (the revision it made), when it is the agent's latest step still in the document. */
+export type DocxUndoParams = {
+  docx_id: string;
+  edit: number;
   session_id: string;
 };
 
@@ -3688,9 +3852,57 @@ export type ShapeRef = {
   slide_id: string;
 };
 
+export type SheetChart = {
+  categories: string[];
+  from: SheetChartCorner;
+  grouping: SheetChartGrouping;
+  height: number;
+  /** Bars run sideways. */
+  horizontal?: boolean;
+  kind: SheetChartKind;
+  /** Values written on the marks. */
+  labels?: boolean;
+  /** `b`, `t`, `l`, `r`; none when there is no legend. */
+  legend?: string | null;
+  max?: number | null;
+  min?: number | null;
+  series: SheetChartSeries[];
+  title?: string | null;
+  /** The far corner of a two-cell anchor; else the size below applies. */
+  to?: SheetChartCorner | null;
+  /** Pixels. */
+  width: number;
+};
+
+/** A place on the grid: a cell (1-based) and the offset into it, in pixels. */
+export type SheetChartCorner = {
+  col: number;
+  dx: number;
+  dy: number;
+  row: number;
+};
+
+/** How a bar or area chart's series sit together. */
+export type SheetChartGrouping = "clustered" | "stacked" | "percent";
+
+/** What a chart drawn on a worksheet is (spreadsheet-design §4.1: shown, not edited). */
+export type SheetChartKind = "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "radar";
+
+export type SheetChartSeries = {
+  /** `RRGGBB`, when the file names one. */
+  color?: string | null;
+  name?: string | null;
+  /** One per category; none for a gap. */
+  values: (number | null)[];
+  /** A scatter's x values. */
+  x?: (number | null)[];
+};
+
 export type SheetInfo = {
   /** A chart sheet has no cells: the grid shows a placeholder. */
   chart?: boolean;
+  /** Charts drawn on the sheet, as the file anchors them. */
+  charts?: SheetChart[];
   /** Column widths in pixels where they are not the default. */
   columns?: ColumnWidth[];
   default_height: number;
@@ -3987,6 +4199,9 @@ export type StoryRead = {
 };
 
 export type StrikeStyle = "none" | "single" | "double";
+
+/** What `doc/structure` does: Excel's 插入 / 删除 of whole rows or columns. */
+export type StructureKind = "insert_rows" | "delete_rows" | "insert_columns" | "delete_columns";
 
 /** One change to a table's structure or look. Cell text is edited as text: every cell is a story (`deck/read` lists their `story_id`s), or `set_cells`. */
 export type TableEdit = {
@@ -4445,6 +4660,7 @@ export interface Methods {
   "deck/summary": [DeckIdParams, DeckSummary];
   "deck/sync": [DeckSyncParams, DeckSyncResult];
   "deck/template_profile": [DeckTemplateProfileParams, TemplateProfile];
+  "deck/undo": [DeckUndoParams, DeckUndoResult];
   "deck/view": [DeckViewParams, DeckViewResult];
   "doc/apply": [DocApplyParams, DocApplyResult];
   "doc/autofill": [DocAutofillParams, DocApplyResult];
@@ -4458,9 +4674,18 @@ export interface Methods {
   "doc/redo": [DocIdParams, DocApplyResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
   "doc/save": [DocSaveParams, DocInfo];
+  "doc/sort": [DocSortParams, DocApplyResult];
+  "doc/structure": [DocStructureParams, DocApplyResult];
   "doc/trace": [DocTraceParams, DocFoundResult];
   "doc/undo": [DocIdParams, DocApplyResult];
   "doc/view": [DocViewParams, Empty];
+  "docx/close": [DocxIdParams, Empty];
+  "docx/host": [Record<string, never>, Empty];
+  "docx/open": [DocxOpenParams, DocxOpenResult];
+  "docx/review": [DocxReviewParams, DocxRevisionResult];
+  "docx/save": [DocxSaveParams, DocxSaveResult];
+  "docx/sync": [DocxSyncParams, DocxSyncResult];
+  "docx/undo": [DocxUndoParams, DocxRevisionResult];
   "files/list": [FilesListParams, FilesListResult];
   "files/read": [FilesReadParams, FilesReadResult];
   "files/watch": [FilesWatchParams, Empty];
@@ -4509,6 +4734,11 @@ export interface Methods {
   "web_search/test": [WebSearchTestParams, WebSearchTestResult];
 }
 
+/** Requests the server sends, which the client answers: [params, result]. */
+export interface ServerRequests {
+  "docx/serialize": [DocxSerializeParams, DocxSerializeResult];
+}
+
 /** Notifications: their params. */
 export interface ServerNotifications {
   "ai/action_progress": AiActionProgress;
@@ -4522,6 +4752,8 @@ export interface ServerNotifications {
   "deck/proposal": DeckProposalEvent;
   "deck/sync": DeckSyncNotice;
   "doc/changed": DocChangedParams;
+  "docx/changed": DocxChangedParams;
+  "docx/sync": DocxSyncNotice;
   "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;

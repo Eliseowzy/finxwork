@@ -1,6 +1,6 @@
 # 演示文稿：内核持有（Kernel Authority）设计
 
-状态：草案 · 2026-11-06 · 展开 [presentation-ai-design.md](presentation-ai-design.md) §6.2 方案 B（PD-01）
+状态：阶段 1–4 与阶段 5 的内核部分已实现；新链路默认关闭，内部用 `localStorage["finx.deck.kernelAuthority"] = "1"` 打开 · 2026-11-06 · 展开 [presentation-ai-design.md](presentation-ai-design.md) §6.2 方案 B（PD-01）
 
 ## 0. 结论先行
 
@@ -246,7 +246,8 @@ DeckStore：路径锁 → 读盘取哈希，和 meta.base_hash 比较
 
 - 每次合并后立即追加日志，之后才回 ack（§5.2-4）。fsync 策略：每条都 fsync，或者每 50 ms 合并一次 fsync，两者取先到的。阶段 4 实测后定。
 - 日志超过 8 MiB 或 2,000 条时，在 actor 空闲时写 `snapshot.yupd`（`encode_state`），然后截断日志。快照和日志的切换用原子 rename 完成。
-- 保存成功后，`base.pptx` 换成新文件，日志清空（CRDT 历史从新的基线重新开始，墓碑同时清掉，§10 的长期膨胀问题也一并解决）。
+- ~~保存成功后，`base.pptx` 换成新文件，日志清空~~。**实现时改为**：工作目录里的 `source.pptx` 始终是首次打开时的文件，保存后不换基线，日志也不因保存清空，只按大小或条数压缩成快照；`meta.json` 记录磁盘文件的哈希和"磁盘上对应的版本号"（`saved_revision`），`dirty = revision ≠ saved_revision`。原因：换基线等于 CRDT 从头开始，副本每次自动保存（1.2 s）后都得重新加入，前端撤销历史会丢，违反 I6。墓碑长期膨胀（§10）改为在所有会话关闭、且没有未保存编辑时清理目录来解决。
+- 内核侧 Deck 用引擎固定的 client id 打开；实测从同一份源文件打开得到逐字节相同的 Yrs 状态，因此重启后"源文件 + 快照 + 日志"能直接重放（K5 的内核一侧不需要改 fork）。副本的 client id 仍须各不相同。
 
 ### 7.2 版本与兼容
 

@@ -95,3 +95,41 @@ async fn a_legacy_xls_is_read_only_and_other_files_are_refused() {
     std::fs::write(&fake, "not a workbook").unwrap();
     assert!(matches!(docs.open(&fake, None, "s1").await, Err(DocError::Unsupported(_))));
 }
+
+/// Rows and columns inserted and deleted, undone back to the copy before, redone; a range sorted.
+#[tokio::test]
+async fn structure_and_sort_go_through_the_history() {
+    use finx_protocol::doc::SheetStructure;
+    use finx_protocol::doc::StructureKind;
+    let dir = tempfile::tempdir().unwrap();
+    let csv = dir.path().join("people.csv");
+    std::fs::write(&csv, "name,n\nb,2\na,3\nc,1\n").unwrap();
+    let wb = dir.path().join("model.xlsx");
+    std::fs::copy(format!("{}/../finx-sheet/tests/fixtures/structure_model.xlsx", env!("CARGO_MANIFEST_DIR")), &wb).unwrap();
+    let docs = store(dir.path());
+    let texts = |c: finx_docs::sheet::Cells| c.cells.iter().map(|c| c.text.clone()).collect::<Vec<_>>();
+
+    let (doc, _) = docs.open(&csv, None, "s1").await.unwrap();
+    let ops = docs.sort_ops(&doc, "people", "A1:B4", "B", false, true).await.unwrap();
+    docs.apply(&doc, "s1", ops, None, false).await.unwrap();
+    assert_eq!(texts(docs.cells(&doc, "people", "A1:A4").await.unwrap()), ["name", "c", "b", "a"]);
+    let change = SheetStructure { sheet: "people".into(), kind: StructureKind::DeleteRows, at: 2, count: 1 };
+    docs.structure(&doc, "s1", change, None).await.unwrap();
+    assert_eq!(texts(docs.cells(&doc, "people", "A1:A4").await.unwrap()), ["name", "b", "a"]);
+    assert_eq!(doc.info().sheets[0].used.as_deref(), Some("A1:B3"));
+    docs.undo(&doc).await.unwrap();
+    assert_eq!(texts(docs.cells(&doc, "people", "A1:A4").await.unwrap()), ["name", "c", "b", "a"]);
+    docs.redo(&doc).await.unwrap();
+    assert_eq!(texts(docs.cells(&doc, "people", "A1:A4").await.unwrap()), ["name", "b", "a"]);
+
+    let (doc, _) = docs.open(&wb, None, "s1").await.unwrap();
+    let change = SheetStructure { sheet: "Model".into(), kind: StructureKind::InsertRows, at: 1, count: 2 };
+    docs.structure(&doc, "s1", change, None).await.unwrap();
+    let out = docs.cells(&doc, "Out", "A1").await.unwrap();
+    assert_eq!(out.cells[0].formula.as_deref(), Some("=Model!B8+SUM(Model!B3:B12)"));
+    docs.undo(&doc).await.unwrap();
+    let out = docs.cells(&doc, "Out", "A1").await.unwrap();
+    assert_eq!(out.cells[0].formula.as_deref(), Some("=Model!B6+SUM(Model!B1:B10)"));
+    let (_, written) = { docs.redo(&doc).await.unwrap(); docs.save(&doc, None, false).await.unwrap() };
+    assert_eq!(written.reshaped, 1);
+}

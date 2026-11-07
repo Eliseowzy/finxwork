@@ -463,7 +463,8 @@
     "lockedTitle": "需要密码",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
-    "citeLocked": "「{{name}}」有密码保护，点开后输入密码"
+    "citeLocked": "「{{name}}」有密码保护，点开后输入密码",
+    "paragraphs_other": "{{count}} 段"
   },
   "content": {
     "open": "打开",
@@ -626,7 +627,42 @@
     "calcUnavailable": "无法计算其余影响：{{reason}}",
     "zoomIn": "放大",
     "zoomOut": "缩小",
-    "zoomReset": "恢复 100%"
+    "zoomReset": "恢复 100%",
+    "cut": "剪切",
+    "paste": "粘贴",
+    "pasteKey": "无法读取剪贴板，请按 ⌘V 粘贴",
+    "copyAs": "复制为",
+    "copyMarkdown": "Markdown 表格",
+    "copyAddress": "单元格地址",
+    "copiedAddress": "已复制地址",
+    "insert": "插入",
+    "insertRows": "在上方插入 {{count}} 行",
+    "insertCols": "在左侧插入 {{count}} 列",
+    "delete": "删除",
+    "deleteRows": "删除 {{count}} 行",
+    "deleteCols": "删除 {{count}} 列",
+    "clear": "清除内容",
+    "rowsN": "{{count}} 行",
+    "colsN": "{{count}} 列",
+    "did_insert_rows": "插入了 {{what}}",
+    "did_insert_columns": "插入了 {{what}}",
+    "did_delete_rows": "删除了 {{what}}",
+    "did_delete_columns": "删除了 {{what}}",
+    "filter": "筛选",
+    "filterByValue": "按所选单元格的值筛选",
+    "filterClear": "清除筛选",
+    "filtered": "{{col}} 列筛选后显示 {{count}} 行",
+    "filterOn": "仅在此处筛选（不写入文件）：{{col}} 列 = {{value}}",
+    "blank": "（空白）",
+    "sort": "排序",
+    "sortUp": "升序",
+    "sortDown": "降序",
+    "sortedUp": "按 {{col}} 列升序排序",
+    "sortedDown": "按 {{col}} 列降序排序",
+    "fill": "填充",
+    "fillDown": "向下填充",
+    "fillRight": "向右填充",
+    "trace": "追踪"
   },
   "yours": {
     "tabs_other": "{{count}} 个标签页",
@@ -807,5 +843,66 @@
       "standardColors": "标准色",
       "moreColors": "其他颜色…"
     }
+  },
+  "word": {
+    "editor": "Word 文档编辑器",
+    "loadFailed": "无法打开 Word 文档：{{message}}",
+    "loadingTitle": "正在打开 Word 文档",
+    "progress": {
+      "reading": "正在读取文件…",
+      "fonts": "正在准备文字显示…",
+      "rendering": "马上就好…"
+    },
+    "readOnly": "此文件为只读，可以另存一份再编辑。",
+    "highlighterPen": "荧光笔（拖动鼠标涂抹高亮，Esc 退出）",
+    "fitWidth": "适应宽度",
+    "saveAs": "另存为…",
+    "savedAs": "已另存到 {{path}}",
+    "conflict": "文件在外部被修改",
+    "overwrite": "覆盖",
+    "reload": "重新载入",
+    "legacy": "这是旧版 Word 格式，FinxWork 只支持 .docx。"
+  },
+  "deckEdit": {
+    "show": "查看第 {{n}} 页",
+    "open": "打开演示文稿",
+    "undo": "撤销",
+    "undone": "已撤销",
+    "failed": "没有撤销：{{message}}"
+  },
+  "wordAi": {
+    "open": "对选中内容使用 AI",
+    "placeholder": "让 AI 改写或写点什么…",
+    "quote": "引用到对话",
+    "message": "在《{{file}}》：{{what}}",
+    "commentMessage": "在《{{file}}》的批注：{{question}}",
+    "working": "AI 正在处理…",
+    "stop": "停止",
+    "failed": "AI 未完成：{{message}}",
+    "unknown": "未知错误",
+    "acceptAll": "接受全部",
+    "rejectAll": "拒绝全部",
+    "close": "关闭",
+    "result_other": "AI 的 {{count}} 处修改",
+    "action": {
+      "polish": "润色",
+      "concise": "更简洁",
+      "formal": "更正式",
+      "expand": "扩写",
+      "continue": "续写",
+      "toChinese": "翻译为中文",
+      "toEnglish": "翻译为英文",
+      "proofread": "纠正错别字与语法",
+      "summarize": "总结到批注",
+      "custom": "自定义…"
+    }
+  },
+  "docxEdit": {
+    "show": "查看修改",
+    "acceptAll": "接受全部",
+    "rejectAll": "拒绝全部",
+    "accepted": "已接受",
+    "rejected": "已拒绝",
+    "failed": "未成功：{{message}}"
   }
 }

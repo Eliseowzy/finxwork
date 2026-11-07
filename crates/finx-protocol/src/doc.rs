@@ -167,6 +167,9 @@ pub struct SheetInfo {
     /// Pixels.
     pub default_width: f32,
     pub default_height: f32,
+    /// Charts drawn on the sheet, as the file anchors them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub charts: Vec<SheetChart>,
 }
 
 /// Columns `first..=last` (1-based) are `width` pixels wide, or hidden.
@@ -539,6 +542,60 @@ pub struct DocFillParams {
     pub base_revision: Option<u64>,
 }
 
+/// What `doc/structure` does: Excel's 插入 / 删除 of whole rows or columns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StructureKind {
+    InsertRows,
+    DeleteRows,
+    InsertColumns,
+    DeleteColumns,
+}
+
+/// Rows (or columns) inserted before `at`, or deleted from `at` on; 1-based (column B is 2).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SheetStructure {
+    pub sheet: String,
+    pub kind: StructureKind,
+    pub at: u32,
+    pub count: u32,
+}
+
+/// `doc/structure`: inserts or deletes whole rows or columns as one edit. Every reference to
+/// the cells that move moves with them, in every sheet, as Excel moves it; one into deleted
+/// cells becomes `#REF!`; comments move with their cells. Refused where it cannot be done
+/// faithfully here (Excel tables, pivot tables, form controls…): the reason says so.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocStructureParams {
+    pub session_id: String,
+    pub doc_id: String,
+    #[serde(flatten)]
+    pub change: SheetStructure,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<u64>,
+}
+
+/// `doc/sort`: the rows of `range` sorted by the values of one of its columns, as one edit;
+/// as Excel sorts, numbers come before text before TRUE/FALSE before errors, blanks last
+/// either way, ties keep their order, and a formula moves with its row (relative references
+/// shift). Formats stay where they are.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocSortParams {
+    pub session_id: String,
+    pub doc_id: String,
+    pub sheet: String,
+    pub range: String,
+    /// The column sorted by, its letters (`C`); within the range.
+    pub by: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub descending: bool,
+    /// The range's first row is a header and stays where it is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub header: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<u64>,
+}
+
 /// `doc/autofill`: Excel's fill handle dragged from `source` to `target` (the source with the
 /// rows or columns the drag added on one side), as one edit. Numbers, dates, text ending in a
 /// number and the built-in lists (周一, 一月, Jan…) carry on as a series; anything else, and
@@ -595,4 +652,81 @@ pub struct DocViewing {
     pub doc_id: String,
     pub path: String,
     pub page: u32,
+}
+
+/// What a chart drawn on a worksheet is (spreadsheet-design §4.1: shown, not edited).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetChartKind {
+    Bar,
+    Line,
+    Area,
+    Pie,
+    Doughnut,
+    Scatter,
+    Radar,
+}
+
+/// How a bar or area chart's series sit together.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetChartGrouping {
+    #[default]
+    Clustered,
+    Stacked,
+    Percent,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SheetChartSeries {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// `RRGGBB`, when the file names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// One per category; none for a gap.
+    pub values: Vec<Option<f64>>,
+    /// A scatter's x values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub x: Vec<Option<f64>>,
+}
+
+/// A place on the grid: a cell (1-based) and the offset into it, in pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SheetChartCorner {
+    pub col: u32,
+    pub row: u32,
+    pub dx: f32,
+    pub dy: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SheetChart {
+    pub kind: SheetChartKind,
+    /// Bars run sideways.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub horizontal: bool,
+    #[serde(default)]
+    pub grouping: SheetChartGrouping,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// `b`, `t`, `l`, `r`; none when there is no legend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legend: Option<String>,
+    /// Values written on the marks.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub labels: bool,
+    pub categories: Vec<String>,
+    pub series: Vec<SheetChartSeries>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+    pub from: SheetChartCorner,
+    /// The far corner of a two-cell anchor; else the size below applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<SheetChartCorner>,
+    /// Pixels.
+    pub width: f32,
+    pub height: f32,
 }

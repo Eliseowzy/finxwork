@@ -17,6 +17,7 @@ use crate::api::method;
 use crate::bot;
 use crate::customize;
 use crate::deck;
+use crate::docx;
 use crate::event::Event;
 use crate::files;
 use crate::op::Op;
@@ -101,6 +102,16 @@ pub fn document() -> Value {
         (
             method::DOC_FILL,
             Some(name::<crate::doc::DocFillParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_STRUCTURE,
+            Some(name::<crate::doc::DocStructureParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_SORT,
+            Some(name::<crate::doc::DocSortParams>(g)),
             name::<crate::doc::DocApplyResult>(g),
         ),
         (
@@ -246,6 +257,7 @@ pub fn document() -> Value {
         (method::WEB_SEARCH_TEST, Some(name::<web_search::WebSearchTestParams>(g)), name::<web_search::WebSearchTestResult>(g)),
         (method::WEB_SEARCH_SET_KEY, Some(name::<web_search::WebSearchSetKeyParams>(g)), name::<web_search::WebSearchSetKeyResult>(g)),
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::BrowserHostResult>(g)),
+        (method::DOCX_HOST, None, name::<api::Empty>(g)),
         (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),
         (method::BROWSER_SITE_ICON, Some(name::<api::BrowserSiteIconParams>(g)), name::<api::BrowserSiteIconResult>(g)),
         (method::BROWSER_REVEAL, Some(name::<api::BrowserRevealParams>(g)), name::<api::Empty>(g)),
@@ -270,6 +282,7 @@ pub fn document() -> Value {
         (method::DECK_FOCUS, Some(name::<deck::DeckFocusParams>(g)), name::<api::Empty>(g)),
         (method::DECK_EDIT, Some(name::<deck::DeckEditParams>(g)), name::<deck::DeckEditResult>(g)),
         (method::DECK_COPY, Some(name::<deck::DeckCopyParams>(g)), name::<deck::DeckCopyResult>(g)),
+        (method::DECK_UNDO, Some(name::<deck::DeckUndoParams>(g)), name::<deck::DeckUndoResult>(g)),
         (method::DECK_PROPOSAL_LIST, Some(name::<deck::DeckProposalListParams>(g)), name::<deck::DeckProposalListResult>(g)),
         (method::DECK_PROPOSAL_ACCEPT, Some(name::<deck::DeckProposalDecideParams>(g)), name::<deck::DeckProposalResult>(g)),
         (method::DECK_PROPOSAL_REJECT, Some(name::<deck::DeckProposalDecideParams>(g)), name::<deck::DeckProposalResult>(g)),
@@ -280,6 +293,12 @@ pub fn document() -> Value {
         (method::DECK_LINKS, Some(name::<deck::DeckLinksParams>(g)), name::<deck::DeckLinksResult>(g)),
         (method::DECK_DIFF, Some(name::<deck::DeckDiffParams>(g)), name::<deck::DeckDiff>(g)),
         (method::AI_ACTION, Some(name::<deck::AiActionParams>(g)), name::<deck::AiActionResult>(g)),
+        (method::DOCX_OPEN, Some(name::<docx::DocxOpenParams>(g)), name::<docx::DocxOpenResult>(g)),
+        (method::DOCX_SYNC, Some(name::<docx::DocxSyncParams>(g)), name::<docx::DocxSyncResult>(g)),
+        (method::DOCX_SAVE, Some(name::<docx::DocxSaveParams>(g)), name::<docx::DocxSaveResult>(g)),
+        (method::DOCX_CLOSE, Some(name::<docx::DocxIdParams>(g)), name::<api::Empty>(g)),
+        (method::DOCX_UNDO, Some(name::<docx::DocxUndoParams>(g)), name::<docx::DocxRevisionResult>(g)),
+        (method::DOCX_REVIEW, Some(name::<docx::DocxReviewParams>(g)), name::<docx::DocxRevisionResult>(g)),
         (method::FILES_WRITE, Some(name::<files::FilesWriteParams>(g)), name::<files::FilesWriteResult>(g)),
         (method::FILES_WATCH, Some(name::<files::FilesWatchParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_SUBSCRIBE, None, name::<bot::BotsResult>(g)),
@@ -320,6 +339,8 @@ pub fn document() -> Value {
         (method::DECK_CHANGED, name::<deck::DeckChangedParams>(g)),
         (method::DECK_PROPOSAL, name::<deck::DeckProposalEvent>(g)),
         (method::AI_ACTION_PROGRESS, name::<deck::AiActionProgress>(g)),
+        (method::DOCX_SYNC, name::<docx::DocxSyncNotice>(g)),
+        (method::DOCX_CHANGED, name::<docx::DocxChangedParams>(g)),
         (method::DOC_CHANGED, name::<crate::doc::DocChangedParams>(g)),
         (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
@@ -333,6 +354,8 @@ pub fn document() -> Value {
             name::<api::SessionsChangedParams>(g),
         ),
     ];
+    // Requests the server sends to a client, which answers them.
+    let server_requests = [(method::DOCX_SERIALIZE, name::<api::DocxSerializeParams>(g), name::<api::DocxSerializeResult>(g))];
     // Also used on their own: `finx exec --output stream-json` lines and `--ops-stdin` lines.
     // The deck's rule ids, for clients to name checks (`DeckDiagnostic.rule` is a string).
     let standalone = [name::<Event>(g), name::<Op>(g), name::<deck::DiagnosticRule>(g)];
@@ -357,6 +380,7 @@ pub fn document() -> Value {
                 .collect(),
         )
     };
+    roots.extend(server_requests.iter().flat_map(|(_, p, r)| [p.clone(), r.clone()]));
     roots.extend(client_notifications.iter().map(|(_, n)| n.clone()));
     roots.extend(server_notifications.iter().map(|(_, n)| n.clone()));
     roots.extend(standalone.iter().cloned());
@@ -370,15 +394,17 @@ pub fn document() -> Value {
     sorted(json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "finx native protocol",
-        "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
+        "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, `x-server-requests` maps the requests the server sends to their params and result types, and `x-error-codes` maps error codes to the `kind` in the error data.",
         "x-protocol-version": PROTOCOL_VERSION,
         "x-methods": methods_doc,
         "x-client-notifications": notifications(&client_notifications),
         "x-server-notifications": notifications(&server_notifications),
+        "x-server-requests": server_requests.iter().map(|(m, p, r)| (m.to_string(), json!({"params": p, "result": r}))).collect::<Map<String, Value>>(),
         "x-error-codes": errors,
         "x-stability": {
             "methods": methods.iter().map(|(m, ..)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
             "notifications": client_notifications.iter().chain(&server_notifications).map(|(m, _)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
+            "server_requests": server_requests.iter().map(|(m, ..)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
         },
         "anyOf": roots.iter().map(|n| reference(n)).collect::<Vec<_>>(),
         "definitions": definitions,
@@ -389,8 +415,8 @@ pub fn document() -> Value {
 /// follows the compatibility rules; `experimental` may change with any version; `internal` is for
 /// the desktop app and the extension host.
 pub fn stability(name: &str) -> &'static str {
-    const INTERNAL: &[&str] = &["browser/host", "browser/cdp", "browser/extension", "browser/control", "browser/request"];
-    const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "pptx/", "bots/", "browser/", "routines/", "bot/", "connector/"];
+    const INTERNAL: &[&str] = &["browser/host", "browser/cdp", "browser/extension", "browser/control", "browser/request", "docx/host", "docx/serialize"];
+    const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "docx/", "pptx/", "bots/", "browser/", "routines/", "bot/", "connector/"];
     if INTERNAL.contains(&name) {
         "internal"
     } else if EXPERIMENTAL.iter().any(|prefix| name.starts_with(prefix)) {

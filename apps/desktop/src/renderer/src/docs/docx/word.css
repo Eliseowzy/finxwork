@@ -1,0 +1,80 @@
+/* The Word editor in the file panel. Light keeps the editor's own palette, tuned to the app's
+   type and accent; dark (colorMode="system" follows the window, as the app's tokens do) takes the
+   window's tokens for the chrome around the pages. The pages draw in the document's own colours. */
+.word-view, .word-surface { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.word-view { flex: 1; }
+.word-surface { position: relative; background: var(--pptx-bg); color: var(--pptx-ink); }
+.word-message { display: flex; align-items: center; justify-content: center; padding: 24px; height: 100%; color: var(--l3); font-size: 13px; }
+.word-error { padding: 8px 12px; background: var(--pptx-warn-bg); color: var(--pptx-warn-fg); font-size: 12px; }
+.word-readonly { display: flex; align-items: center; gap: 10px; padding: 5px 12px; border-bottom: 1px solid var(--pptx-line-soft); color: var(--pptx-ink-3); font-size: 12px; }
+.word-readonly span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.word-editor-shell { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.word-editor-canvas { position: relative; flex: 1; min-width: 0; min-height: 0; }
+.word-opening-overlay { position: absolute; inset: 0; z-index: 5; background: var(--pptx-bg); }
+.word-ai-mark { color: var(--accent); font-size: 12px; line-height: 1; }
+
+/* The in-document AI (word-design §5.1): an overlay on the pages, never part of the document. */
+.word-ai-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
+.word-ai-layer > * { position: absolute; pointer-events: auto; }
+.word-ai-spark { width: 24px; height: 24px; border-radius: 12px; border: 1px solid var(--pptx-line); background: var(--pptx-bg); color: var(--pptx-accent); font-size: 13px; line-height: 1; cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / .12); }
+.word-ai-spark:hover, .word-ai-spark[aria-expanded="true"] { background: var(--pptx-item-hover); }
+.word-ai-spark:focus-visible, .word-ai-menu button:focus-visible, .word-ai-bar button:focus-visible { outline: 2px solid var(--pptx-accent); outline-offset: 1px; }
+.word-ai-menu { display: flex; flex-direction: column; min-width: 168px; padding: 4px; border: 1px solid var(--pptx-line); border-radius: 8px; background: var(--pptx-bg); color: var(--pptx-ink); box-shadow: 0 6px 24px rgb(0 0 0 / .16); font-size: 13px; }
+.word-ai-menu button { padding: 5px 10px; border: 0; border-radius: 5px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.word-ai-menu button:hover, .word-ai-menu button:focus { background: var(--pptx-item-hover); }
+.word-ai-sep { height: 1px; margin: 4px 6px; background: var(--pptx-line-soft); }
+.word-ai-prompt { display: flex; align-items: center; gap: 8px; width: 320px; padding: 6px 10px; border: 1px solid var(--pptx-accent); border-radius: 8px; background: var(--pptx-bg); box-shadow: 0 6px 24px rgb(0 0 0 / .16); }
+.word-ai-prompt input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--pptx-ink); font: inherit; font-size: 13px; }
+.word-ai-prompt input::placeholder { color: var(--pptx-ink-4); }
+.word-ai-shimmer { pointer-events: none !important; border-radius: 4px; background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--pptx-accent) 16%, transparent) 50%, transparent 80%); background-size: 200% 100%; animation: word-ai-shimmer 1.6s linear infinite; }
+@keyframes word-ai-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@media (prefers-reduced-motion: reduce) { .word-ai-shimmer { animation: none; background: color-mix(in srgb, var(--pptx-accent) 10%, transparent); } }
+.word-ai-bar { display: flex; align-items: center; gap: 8px; max-width: 420px; padding: 4px 10px; border: 1px solid var(--pptx-line); border-radius: 14px; background: var(--pptx-bg); color: var(--pptx-ink-2); box-shadow: 0 2px 10px rgb(0 0 0 / .12); font-size: 12px; white-space: nowrap; }
+.word-ai-bar > span:not(.word-ai-mark) { overflow: hidden; text-overflow: ellipsis; }
+.word-ai-bar button { padding: 0; border: 0; background: none; color: var(--pptx-accent); font: inherit; cursor: pointer; }
+.word-ai-bar button:hover { text-decoration: underline; }
+.word-ai-bar button:disabled { opacity: .5; cursor: default; text-decoration: none; }
+.word-ai-bar.bad { color: var(--pptx-warn-fg); background: var(--pptx-warn-bg); }
+.word-ai-bar .word-ai-x { color: var(--pptx-ink-3); font-size: 14px; }
+.word-ai-err { color: var(--red); }
+
+.word-surface .oox-root {
+  --doc-primary: var(--accent);
+  --doc-font-ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  font-family: var(--doc-font-ui);
+}
+/* The toolbar (WordToolbar): one row in the presentation ribbon's card (pptx/ribbon.css), flat
+   buttons that show a fill on hover and when on, a hairline between groups. */
+.word-surface .word-toolbar { background: var(--pptx-bg); box-shadow: none; padding-top: 6px; }
+.word-surface .word-toolbar .oox-toolbar-rail { margin: 0 8px 6px; padding: 3px 6px; border-radius: 12px; background: var(--pptx-ribbon); gap: 2px; min-height: 36px; }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button { border: 0; color: var(--pptx-ink); }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:not([aria-pressed="true"]):not([aria-expanded="true"]):not(:hover) { background-color: transparent; }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:hover:not(:disabled) { background-color: var(--pptx-hover); }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button[aria-pressed="true"] { background-color: color-mix(in srgb, var(--pptx-accent) 16%, transparent); color: var(--pptx-accent); }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:disabled { opacity: .4; }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:focus-visible { outline: 2px solid var(--pptx-accent); outline-offset: -2px; }
+.word-surface .word-toolbar [role="separator"] { background: var(--pptx-line); }
+.word-fit-icon { font-size: 15px; line-height: 1; }
+
+@media (prefers-color-scheme: dark) {
+  .word-surface .oox-root {
+    --doc-bg: var(--win2);
+    --doc-surface: var(--win);
+    --doc-bg-hover: var(--fill2);
+    --doc-text: var(--l1);
+    --doc-text-muted: var(--l3);
+    --doc-border: var(--l4);
+    --doc-primary: var(--accent-fg);
+    --doc-toolbar-rail: var(--win2);
+    --doc-toolbar-surface: var(--menu-solid);
+    --doc-toolbar-ink: var(--l1);
+    --doc-toolbar-ink-muted: var(--l2);
+    --doc-toolbar-hover: var(--fill2);
+    --doc-toolbar-line: var(--l4);
+  }
+}
+.word-pen-icon { display: block; }
+/* The editor's floating "Add comment" button is hidden: comments are added from the right-click menu. */
+[data-docx-comment-button] { display: none !important; }
+/* The highlighter pen's pointer over the page. */
+.word-editor-canvas.word-pen canvas { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M12 3l5 5-7.5 7.5H5.5l-1.5-1.5v-4z' fill='%23f5d000' stroke='%23333' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E") 3 17, text !important; }

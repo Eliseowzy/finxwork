@@ -94,6 +94,8 @@ async fn harness(mode: PermissionMode) -> Harness {
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
+        words: None,
         routines: None,
     };
     let options = StartOptions {

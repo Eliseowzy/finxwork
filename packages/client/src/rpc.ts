@@ -1,4 +1,4 @@
-import type { Methods, Notifications, RpcErrorObject } from "@finx/protocol";
+import type { Methods, Notifications, RpcErrorObject, ServerRequests } from "@finx/protocol";
 
 // A JSON-RPC 2.0 connection to finx (protocol-design §6.1–§6.2): NDJSON text
 // in and out, requests matched to their responses by id, notifications
@@ -41,6 +41,7 @@ export class RpcClient {
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private readonly listeners = new Map<string, Set<(params: never) => void>>();
+  private readonly handlers = new Map<string, (params: never) => Promise<unknown>>();
   /** An incomplete last line, until the rest of it arrives. */
   private partial = "";
   private closed = false;
@@ -74,6 +75,23 @@ export class RpcClient {
     return () => void set.delete(f);
   }
 
+  /** Answers the server's requests of a method; an error thrown is the error response. */
+  handle<M extends keyof ServerRequests & string>(method: M, cb: (params: ServerRequests[M][0]) => Promise<ServerRequests[M][1]>) {
+    this.handlers.set(method, cb as (params: never) => Promise<unknown>);
+  }
+
+  private answer(id: number | string, method: string, params: unknown) {
+    const handler = this.handlers.get(method);
+    const reply = (body: object) => {
+      if (!this.closed) this.transport.send(JSON.stringify({ jsonrpc: "2.0", id, ...body }) + "\n");
+    };
+    if (!handler) return reply({ error: { code: -32601, message: `method not found: ${method}` } });
+    handler(params as never).then(
+      (result) => reply({ result }),
+      (e: unknown) => reply({ error: { code: -32603, message: e instanceof Error ? e.message : String(e) } }),
+    );
+  }
+
   private receive(text: string) {
     const lines = (this.partial + text).split("\n");
     this.partial = lines.pop() ?? "";
@@ -90,6 +108,7 @@ export class RpcClient {
   }
 
   private dispatch(msg: Incoming) {
+    if (msg.method !== undefined && msg.id != null) return this.answer(msg.id, msg.method, msg.params);
     if (msg.method !== undefined) {
       this.listeners.get(msg.method)?.forEach((f) => f(msg.params as never));
       return;

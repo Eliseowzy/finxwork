@@ -198,7 +198,7 @@ export const COMMANDS: readonly AnySpec[] = [
   pending("pasteSpecial", ["access.pasteShapes"]),
 
   // ——— Slides ———
-  { id: "newSlide", needs: ["builtin"], check: (s, a?: { layoutPartPath?: string | null }) => {
+  { id: "newSlide", needs: ["builtin"], shortcut: "Mod+M", check: (s, a?: { layoutPartPath?: string | null }) => {
       if (!a?.layoutPartPath) return s.builtin("insertSlide").enabled ? null : "builtin";
       return s.builtin("insertSlide", { layoutPartPath: a.layoutPartPath }).enabled || s.caps.has("access.layouts") ? null : "needs-layout";
     },
@@ -289,7 +289,7 @@ export const COMMANDS: readonly AnySpec[] = [
   { id: "find", mutates: false, check: slide, shortcut: "Mod+F", run: (e) => e.host.open("find") },
   { id: "replace", check: slide, shortcut: "Mod+Alt+F", run: (e) => e.host.open("find") },
   { id: "selectionPane", mutates: false, check: slide, active: () => undefined, run: (e) => e.host.toggle("selection") },
-  { id: "selectAll", mutates: false, check: slide, shortcut: "Mod+Shift+A", run: (e, s) => e.host.setSelected(currentSlide(s)!.shapes.filter((x) => !x.hidden).map((x) => x.id)) },
+  { id: "selectAll", mutates: false, check: slide, shortcut: "Mod+A", run: (e, s) => e.host.setSelected(currentSlide(s)!.shapes.filter((x) => !x.hidden).map((x) => x.id)) },
 
   // ——— Insert ———
   pending("table", ["access.insertTable"]),

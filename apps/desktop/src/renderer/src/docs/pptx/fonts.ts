@@ -169,3 +169,47 @@ export async function loadFonts(families_: string[], progress: (value: FontLoadP
   }
   return fonts;
 }
+
+/** Reads one face's bytes, sharing a read already in flight. */
+function readShared(key: string, read: () => Promise<Uint8Array>): Promise<Uint8Array> {
+  let promise = faceCache.get(key);
+  if (!promise) {
+    promise = read();
+    faceCache.set(key, promise);
+    void promise.finally(() => faceCache.delete(key)).catch(() => {});
+  }
+  return promise;
+}
+
+/** A face the machine (or the bundled stand-ins) can supply, read only when called. */
+export type FaceReader = (() => Promise<Uint8Array>) & { family: string; bold: boolean; italic: boolean; standIn: boolean };
+
+/**
+ * The machine's faces looked up without reading them, for editors that load faces as they need them
+ * (the Word editor's font provider). `face` answers synchronously once the catalog is read: the
+ * installed family first, else the bundled Calibri/Cambria stand-in; `exact` refuses another style.
+ */
+export async function faceCatalog(): Promise<{ face(family: string, bold: boolean, italic: boolean, exact?: boolean): FaceReader | undefined }> {
+  let index: Map<string, Family>;
+  try { index = await families(); } catch (error) {
+    console.warn("system fonts unavailable", error);
+    index = new Map();
+  }
+  return {
+    face(family, bold, italic, exact = false) {
+      const entry = index.get(fold(family));
+      if (entry) {
+        const face = pick(entry.faces, bold, italic) ?? (exact ? undefined : pick(entry.faces, bold, false) ?? pick(entry.faces, false, false) ?? entry.faces[0]);
+        if (!face) return undefined;
+        const read = () => readShared(face.postscriptName || `${face.family}/${face.style}`, () => face.blob().then(async (blob) => {
+          if (blob.size > MAX_FACE_BYTES) throw new Error(`font face exceeds 64 MiB (${blob.size} bytes)`);
+          return new Uint8Array(await blob.arrayBuffer());
+        }));
+        return Object.assign(read, { family: entry.family, bold: BOLD.test(face.style), italic: ITALIC.test(face.style), standIn: false });
+      }
+      const file = bundledFile(family, bold, italic);
+      if (!file) return undefined;
+      return Object.assign(() => readShared(file, () => bundledLoader(file)), { family: BUNDLED[fold(family)]!.family, bold, italic, standIn: true });
+    },
+  };
+}

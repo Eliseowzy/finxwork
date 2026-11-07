@@ -11,6 +11,8 @@ pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfi
 base64.workspace = true
 finx-protocol.workspace = true
 finx-sheet.workspace = true
+finx-slide.workspace = true
+finx-word.workspace = true
 parking_lot.workspace = true
 png.workspace = true
 schemars.workspace = true
@@ -19,9 +21,12 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+betteroffice-pptx.workspace = true
+docx-edit.workspace = true
 md-5.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -237,9 +237,13 @@ try {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("FinxBot's page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`);
-  await page.until("the first-time note", `!!document.querySelector(".knote .btn.primary")`);
-  await page.run(`document.querySelector(".knote .btn.primary").click()`);
-  await page.until("the note closed", `!document.querySelector(".knote")`);
+  // The default bot first asks for its model (bot-setup.mjs): what it starts with will do here.
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
+  // Then, with full access, a note says so once.
+  await page.run(`document.querySelector(".knote .btn.primary")?.click()`);
+  await page.until("the notes closed", `!document.querySelector(".knote")`);
   for (const text of ["看看这个", "还有这个", "就它了"]) await ask(page, text);
   await page.until("the files", `document.querySelectorAll(".tr.bots .bfiles .tile").length >= 6`);
   await page.shot("01-conversation");
@@ -247,11 +251,18 @@ try {
   step("the panel opens beside the conversation, though its width was kept from a wider window");
   // The state the bug was reported from: a width remembered from a wider window.
   await page.run(`localStorage.setItem("finxwork.filePanelWidth", "1400")`);
+  // FINXWORK_E2E_KERNEL=1: the kernel holds the deck and the panel's editor joins as its replica
+  // (the default); otherwise the editor reads the file by itself.
+  await page.run(`localStorage.setItem("finx.deck.kernelAuthority", ${JSON.stringify(process.env.FINXWORK_E2E_KERNEL === "1" ? "1" : "0")})`);
   // The owner scrolled up the conversation to find the presentation.
   await page.run(`(() => { const s = document.querySelector(".cscroll"); s.scrollTop = 0; })()`);
   await page.clickTile("sample-presentation.pptx");
   await page.until("the panel", `!!document.querySelector(".bgp.fpn")`, 20000);
   const first = await opened(page);
+  if (process.env.FINXWORK_E2E_KERNEL === "1") {
+    const decks = path.join(home, "decks");
+    await check(fs.existsSync(decks) && fs.readdirSync(decks).some((d) => fs.existsSync(path.join(decks, d, "source.pptx"))), "the kernel holds the opened deck");
+  }
   await beside(page, first, 360, "the remembered width");
   await page.shot("02-opened");
 
@@ -292,6 +303,9 @@ try {
   await page.until("the panel closed", `!document.querySelector(".bgp")`);
   await page.run(`localStorage.removeItem("finxwork.filePanelWidth")`);
   await page.clickTile("notes.md");
+  // A bot's file opens in a preview over the window (DD-159); from there it goes to the panel.
+  await page.until("the note's preview", `!!document.querySelector(".fpv .fpv-panel")`, 20000);
+  await page.run(`document.querySelector(".fpv .fpv-panel").click()`);
   await page.until("the panel with the note", `[...document.querySelectorAll(".bgp.fpn .brp-tab-t")].some((t) => t.textContent.includes("notes.md"))`, 20000);
   const plain = await page.run(layout);
   await near(plain.panel.right, plain.win, 0.5, "the plain file's panel ends at the window's edge");
