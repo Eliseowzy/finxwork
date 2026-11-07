@@ -85,8 +85,8 @@ insert_table_row { row_of: paragraph, position, cells }   delete_table_row { row
 
 | 方法 | 参数 | 结果 |
 |---|---|---|
-| `docx/open` | `{ session_id, path, replica, discard? }` | `{ docx_id, state(base64), hash, writable, dirty, revision }` |
-| `docx/sync` | `{ session_id, docx_id, update(base64) }` | `{ revision }`；其他副本收到 `docx/sync` 通知 |
+| `docx/open` | `{ session_id, path, replica, discard? }` | `{ docx_id, source(base64 原文件), state(base64), hash, writable, dirty, revision, font_families }`（编辑器的 worker 引擎必须有源字节，`state` 叠在上面） |
+| `docx/sync` | `{ session_id, docx_id, update?(base64), state_vector?(base64) }` | `{ revision, update? }`：带 state_vector 时回内核比副本多的部分；其他副本收到 `docx/sync` 通知 |
 | `docx/save` | `{ session_id, docx_id, path?, force? }` | `{ status: saved\|conflict\|refused, hash, message }` |
 | `docx/close` | `{ session_id, docx_id }` | `{}` |
 | `docx/undo` | `{ session_id, docx_id, edit }` | `{ revision }`，撤不了报 `doc_refused` 附原因 |
