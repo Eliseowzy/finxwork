@@ -69,6 +69,8 @@ pub struct NativeProtocol {
     running: Arc<Mutex<HashMap<Id, AbortHandle>>>,
     /// Set once the connection called `browser/host`, with what it hosts.
     browser_host: Mutex<Option<(Arc<crate::browser_host::HostLink>, finx_protocol::api::BrowserHostKind)>>,
+    /// Set once the connection called `docx/host`.
+    docx_host: Mutex<Option<Arc<crate::docx_host::HostLink>>>,
 }
 
 #[derive(Serialize)]
@@ -101,6 +103,7 @@ impl NativeProtocol {
             initialized: AtomicBool::new(false),
             running: Arc::new(Mutex::new(HashMap::new())),
             browser_host: Mutex::new(None),
+            docx_host: Mutex::new(None),
         })
     }
 
@@ -590,6 +593,15 @@ impl NativeProtocol {
                 server.browser_changed();
                 server.tell_extensions();
             }
+            method::DOCX_HOST => {
+                let link = Arc::new(crate::docx_host::HostLink::new(conn.clone()));
+                if let Some(before) = self.docx_host.lock().replace(link.clone()) {
+                    before.close();
+                    server.0.docx_host.remove(&before);
+                }
+                server.0.docx_host.set(link);
+                conn.send(reply(id, Ok::<_, RpcError>(json!({}))));
+            }
             method::BROWSER_REVEAL => match finx_rpc::params::<finx_protocol::api::BrowserRevealParams>(params) {
                 Ok(p) => conn.send(reply(id, server.reveal_tab(p).map(|()| json!({})))),
                 Err(err) => conn.send_error(Some(id), &err),
@@ -985,7 +997,11 @@ impl Protocol for NativeProtocol {
                     self.server.extension_message(host.id(), p);
                 }
             }
-            Kind::Response { .. } => {}
+            Kind::Response { id, result } => {
+                if let Some(host) = self.docx_host.lock().clone() {
+                    host.answer(id, result);
+                }
+            }
             Kind::Invalid => conn.send_error(
                 message.id.as_ref(),
                 &RpcError::invalid_request("not a request, notification or response"),
@@ -1000,6 +1016,10 @@ impl Protocol for NativeProtocol {
     fn on_closed(&self, _conn: &ConnHandle) {
         for (_, task) in self.running.lock().drain() {
             task.abort();
+        }
+        if let Some(host) = self.docx_host.lock().take() {
+            host.close();
+            self.server.0.docx_host.remove(&host);
         }
         if let Some((host, kind)) = self.browser_host.lock().take() {
             use finx_browser::EmbeddedHost;

@@ -2011,6 +2011,24 @@ export type DocViewParams = {
   session_id: string;
 };
 
+/** Parameters of `docx/serialize`, a request from the kernel to the `docx/host` connection. The bytes travel in files: the host reads the first three and writes only `out_path`. */
+export type DocxSerializeParams = {
+  /** The engine's peer metadata (`encode_peer_metadata`): media, header and footer aliases and note separators that the state alone does not carry. Without it the host opens the source and loads the state over it. */
+  metadata_path?: string | null;
+  /** Where to write the .docx. */
+  out_path: string;
+  /** The .docx the document was opened from: the baseline that unchanged parts are kept from. */
+  source_path: string;
+  /** The document's Yrs state (`encode_state`). */
+  state_path: string;
+};
+
+/** The result of `docx/serialize`. */
+export type DocxSerializeResult = {
+  /** How many bytes were written to `out_path`. */
+  bytes: number;
+};
+
 /** The result of methods that return nothing: `{}`. */
 export type Empty = { [key: string]: unknown };
 
@@ -4526,6 +4544,7 @@ export interface Methods {
   "doc/trace": [DocTraceParams, DocFoundResult];
   "doc/undo": [DocIdParams, DocApplyResult];
   "doc/view": [DocViewParams, Empty];
+  "docx/host": [Record<string, never>, Empty];
   "files/list": [FilesListParams, FilesListResult];
   "files/read": [FilesReadParams, FilesReadResult];
   "files/watch": [FilesWatchParams, Empty];
@@ -4572,6 +4591,11 @@ export interface Methods {
   "web_search/set_key": [WebSearchSetKeyParams, WebSearchSetKeyResult];
   "web_search/status": [Record<string, never>, WebSearchStatus];
   "web_search/test": [WebSearchTestParams, WebSearchTestResult];
+}
+
+/** Requests the server sends, which the client answers: [params, result]. */
+export interface ServerRequests {
+  "docx/serialize": [DocxSerializeParams, DocxSerializeResult];
 }
 
 /** Notifications: their params. */

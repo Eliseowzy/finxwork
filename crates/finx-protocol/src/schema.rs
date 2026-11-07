@@ -246,6 +246,7 @@ pub fn document() -> Value {
         (method::WEB_SEARCH_TEST, Some(name::<web_search::WebSearchTestParams>(g)), name::<web_search::WebSearchTestResult>(g)),
         (method::WEB_SEARCH_SET_KEY, Some(name::<web_search::WebSearchSetKeyParams>(g)), name::<web_search::WebSearchSetKeyResult>(g)),
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::BrowserHostResult>(g)),
+        (method::DOCX_HOST, None, name::<api::Empty>(g)),
         (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),
         (method::BROWSER_SITE_ICON, Some(name::<api::BrowserSiteIconParams>(g)), name::<api::BrowserSiteIconResult>(g)),
         (method::BROWSER_REVEAL, Some(name::<api::BrowserRevealParams>(g)), name::<api::Empty>(g)),
@@ -334,6 +335,8 @@ pub fn document() -> Value {
             name::<api::SessionsChangedParams>(g),
         ),
     ];
+    // Requests the server sends to a client, which answers them.
+    let server_requests = [(method::DOCX_SERIALIZE, name::<api::DocxSerializeParams>(g), name::<api::DocxSerializeResult>(g))];
     // Also used on their own: `finx exec --output stream-json` lines and `--ops-stdin` lines.
     // The deck's rule ids, for clients to name checks (`DeckDiagnostic.rule` is a string).
     let standalone = [name::<Event>(g), name::<Op>(g), name::<deck::DiagnosticRule>(g)];
@@ -358,6 +361,7 @@ pub fn document() -> Value {
                 .collect(),
         )
     };
+    roots.extend(server_requests.iter().flat_map(|(_, p, r)| [p.clone(), r.clone()]));
     roots.extend(client_notifications.iter().map(|(_, n)| n.clone()));
     roots.extend(server_notifications.iter().map(|(_, n)| n.clone()));
     roots.extend(standalone.iter().cloned());
@@ -371,15 +375,17 @@ pub fn document() -> Value {
     sorted(json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "finx native protocol",
-        "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
+        "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, `x-server-requests` maps the requests the server sends to their params and result types, and `x-error-codes` maps error codes to the `kind` in the error data.",
         "x-protocol-version": PROTOCOL_VERSION,
         "x-methods": methods_doc,
         "x-client-notifications": notifications(&client_notifications),
         "x-server-notifications": notifications(&server_notifications),
+        "x-server-requests": server_requests.iter().map(|(m, p, r)| (m.to_string(), json!({"params": p, "result": r}))).collect::<Map<String, Value>>(),
         "x-error-codes": errors,
         "x-stability": {
             "methods": methods.iter().map(|(m, ..)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
             "notifications": client_notifications.iter().chain(&server_notifications).map(|(m, _)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
+            "server_requests": server_requests.iter().map(|(m, ..)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
         },
         "anyOf": roots.iter().map(|n| reference(n)).collect::<Vec<_>>(),
         "definitions": definitions,
@@ -390,7 +396,7 @@ pub fn document() -> Value {
 /// follows the compatibility rules; `experimental` may change with any version; `internal` is for
 /// the desktop app and the extension host.
 pub fn stability(name: &str) -> &'static str {
-    const INTERNAL: &[&str] = &["browser/host", "browser/cdp", "browser/extension", "browser/control", "browser/request"];
+    const INTERNAL: &[&str] = &["browser/host", "browser/cdp", "browser/extension", "browser/control", "browser/request", "docx/host", "docx/serialize"];
     const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "pptx/", "bots/", "browser/", "routines/", "bot/", "connector/"];
     if INTERNAL.contains(&name) {
         "internal"

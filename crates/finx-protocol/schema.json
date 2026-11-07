@@ -335,6 +335,12 @@
       "$ref": "#/definitions/DocViewParams"
     },
     {
+      "$ref": "#/definitions/DocxSerializeParams"
+    },
+    {
+      "$ref": "#/definitions/DocxSerializeResult"
+    },
+    {
       "$ref": "#/definitions/Empty"
     },
     {
@@ -9120,6 +9126,51 @@
         "doc_id",
         "page",
         "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxSerializeParams": {
+      "description": "Parameters of `docx/serialize`, a request from the kernel to the `docx/host` connection. The bytes travel in files: the host reads the first three and writes only `out_path`.",
+      "properties": {
+        "metadata_path": {
+          "description": "The engine's peer metadata (`encode_peer_metadata`): media, header and footer aliases and note separators that the state alone does not carry. Without it the host opens the source and loads the state over it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "out_path": {
+          "description": "Where to write the .docx.",
+          "type": "string"
+        },
+        "source_path": {
+          "description": "The .docx the document was opened from: the baseline that unchanged parts are kept from.",
+          "type": "string"
+        },
+        "state_path": {
+          "description": "The document's Yrs state (`encode_state`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "out_path",
+        "source_path",
+        "state_path"
+      ],
+      "type": "object"
+    },
+    "DocxSerializeResult": {
+      "description": "The result of `docx/serialize`.",
+      "properties": {
+        "bytes": {
+          "description": "How many bytes were written to `out_path`.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bytes"
       ],
       "type": "object"
     },
@@ -19427,7 +19478,7 @@
       "type": "string"
     }
   },
-  "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
+  "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, `x-server-requests` maps the requests the server sends to their params and result types, and `x-error-codes` maps error codes to the `kind` in the error data.",
   "title": "finx native protocol",
   "x-client-notifications": {
     "$/cancel_request": "CancelRequestParams",
@@ -19797,6 +19848,9 @@
       "params": "DocViewParams",
       "result": "Empty"
     },
+    "docx/host": {
+      "result": "Empty"
+    },
     "files/list": {
       "params": "FilesListParams",
       "result": "FilesListResult"
@@ -20001,6 +20055,12 @@
     "sessions/changed": "SessionsChangedParams",
     "skills/changed": "SkillsChangedParams"
   },
+  "x-server-requests": {
+    "docx/serialize": {
+      "params": "DocxSerializeParams",
+      "result": "DocxSerializeResult"
+    }
+  },
   "x-stability": {
     "methods": {
       "ai/action": "stable",
@@ -20084,6 +20144,7 @@
       "doc/trace": "experimental",
       "doc/undo": "experimental",
       "doc/view": "experimental",
+      "docx/host": "internal",
       "files/list": "stable",
       "files/read": "stable",
       "files/watch": "stable",
@@ -20154,6 +20215,9 @@
       "session/event": "stable",
       "sessions/changed": "stable",
       "skills/changed": "stable"
+    },
+    "server_requests": {
+      "docx/serialize": "internal"
     }
   }
 }

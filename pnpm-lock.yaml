@@ -17,6 +17,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@betteroffice/docx':
+        specifier: 0.5.1
+        version: 0.5.1(@betteroffice/fonts@0.4.2)
       '@betteroffice/fonts':
         specifier: 0.4.2
         version: 0.4.2
@@ -276,6 +279,14 @@ packages:
   '@babel/types@7.29.11':
     resolution: {integrity: sha512-WCsemW40Cpc6gouC1SrY6PBaZ+oLRlEVY9XBvZBI7il/HyUrb2nJ505wE1MHEFyDZNnrWDEuy4jL50WVHfTTSQ==}
     engines: {node: '>=6.9.0'}
+
+  '@betteroffice/docx@0.5.1':
+    resolution: {integrity: sha512-90OVOjArTdk7KmHNSGBPMLDPg1sU+k/LI0HooZDdALwidGpjNjFAazkKSTg29K6fpmv6qmygCdJiXCCoxL2GRw==}
+    peerDependencies:
+      '@betteroffice/fonts': ^0
+    peerDependenciesMeta:
+      '@betteroffice/fonts':
+        optional: true
 
   '@betteroffice/fonts@0.4.2':
     resolution: {integrity: sha512-OBumyWSLgyJjbElgHrE+lIcAoqNnXJ08ycOvH0vIs9JVzCDY5L0AirbpSUHn2A1NMTrHt0j8E0PmMFA3vhJkFw==}
@@ -2385,6 +2396,10 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.11
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@betteroffice/docx@0.5.1(@betteroffice/fonts@0.4.2)':
+    optionalDependencies:
+      '@betteroffice/fonts': 0.4.2
 
   '@betteroffice/fonts@0.4.2': {}
 

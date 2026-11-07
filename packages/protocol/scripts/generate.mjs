@@ -48,6 +48,7 @@ function reachable(roots) {
 const inputs = reachable([
   ...Object.values(schema["x-methods"]).flatMap((m) => (m.params ? [m.params] : [])),
   ...Object.values(schema["x-client-notifications"]),
+  ...Object.values(schema["x-server-requests"] ?? {}).map((r) => r.result),
   "Op",
 ]);
 let sentByServer = false;
@@ -143,6 +144,11 @@ const noParams = "Record<string, never>";
 out += `\n/** Requests: [params, result]. */\nexport interface Methods {\n`;
 for (const [method, entry] of Object.entries(schema["x-methods"]).sort(([a], [b]) => a.localeCompare(b))) {
   out += `  ${JSON.stringify(method)}: [${entry.params ?? noParams}, ${entry.result}];\n`;
+}
+out += `}\n`;
+out += `\n/** Requests the server sends, which the client answers: [params, result]. */\nexport interface ServerRequests {\n`;
+for (const [method, entry] of Object.entries(schema["x-server-requests"] ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+  out += `  ${JSON.stringify(method)}: [${entry.params}, ${entry.result}];\n`;
 }
 out += `}\n`;
 for (const [title, key] of [
