@@ -1,0 +1,291 @@
+# 2026-11-08 内存探测的原始输出
+
+本文件配合 1108-frontend-performance-report.md 的 §8。机器、构建和运行方式同报告 §3；负载都是 bots=0,sessions=10000,projects=100,messages=5000，对话是同一段 6004 条的会话。
+除 A 段的 memory-infra 分项外，数字都是 macOS vmmap -summary 的物理占用（footprint），每次测之前先做一次垃圾回收、再等 2.5 秒。
+"read back" 指从最后一页一页往回读到第一条；"left" 指读完后点侧栏回到新会话页。
+原始输出只删掉了本机路径和空行。
+
+## A. 各阶段按进程、按分配器拆分（提交 90887960：虚拟化之后、释放之前）
+
+每个阶段先做一次垃圾回收，再做一次 memory-infra 转储（单位 MB，进程之间的共享部分可能重复计入），最后用 vmmap 读物理占用。前几行的 "footprint 0.0 MB" 是转储里没有填的字段，以最后的 vmmap 一行为准。
+
+=== S0 new session page, 10000 sessions listed
+GPU Process pid 91190: footprint 139.8 MB · resident 0.0 MB
+Browser pid 91189: footprint 103.7 MB · resident 0.0 MB
+Renderer pid 91193: footprint 74.5 MB · resident 0.0 MB
+Service: network.mojom.NetworkService pid 91191: footprint 7.4 MB · resident 0.0 MB
+Service: tracing.mojom.TracingService pid 91208: footprint 6.2 MB · resident 0.0 MB
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   malloc 29.9 · v8 19.0 · gpu 1.1
+     malloc: allocated_objects 22.9 · partitions 7.0
+     v8: utility 16.7 · shared 2.2
+GPU Process pid 91190: footprint 0.0 MB · resident 0.0 MB
+   gpu 129.1 · iosurface 92.0 · ioaccelerator 62.1 · malloc 19.1 · skia 8.7 · cc 5.6
+     malloc: allocated_objects 14.5 · partitions 4.6
+     skia: gpu_resources 8.4
+     gpu: angle 63.1 · shared_images 51.7 · dawn 13.9
+     cc: resource_memory 5.6
+Service: network.mojom.NetworkService pid 91191: footprint 0.0 MB · resident 0.0 MB
+   malloc 2.9
+Renderer pid 91193: footprint 0.0 MB · resident 0.0 MB
+   malloc 54.8 · cc 41.4 · v8 13.0 · partition_alloc 12.4 · gpu 11.1 · web_cache 3.7 · blink_objects 2.7 · blink_gc 1.8 · shared_memory 0.5
+     malloc: allocated_objects 41.2 · partitions 13.6
+     partition_alloc: allocated_objects 9.8 · partitions 2.6
+     v8: main 11.1 · shared 2.0
+     gpu: transfer_buffer_memory 8.1 · mapped_memory 2.0 · command_buffer_memory 1.1
+     cc: tile_memory 41.4
+Service: tracing.mojom.TracingService pid 91208: footprint 0.0 MB · resident 0.0 MB
+   malloc 2.0
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   vmmap footprints: [{"pid":91189,"type":"browser","footprint":"104.3M"},{"pid":91190,"type":"gpu-process","footprint":"147.3M"},{"pid":91191,"type":"utility","footprint":"8913K"},{"pid":91193,"type":"renderer","footprint":"97.2M"},{"pid":91208,"type":"utility","footprint":"29.5M"}]
+=== S1 a long conversation open, its last page
+GPU Process pid 91190: footprint 257.4 MB · resident 0.0 MB
+Renderer pid 91193: footprint 119.8 MB · resident 0.0 MB
+Browser pid 91189: footprint 115.5 MB · resident 0.0 MB
+Service: tracing.mojom.TracingService pid 91208: footprint 13.4 MB · resident 0.0 MB
+Service: network.mojom.NetworkService pid 91191: footprint 8.6 MB · resident 0.0 MB
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   malloc 34.3 · v8 26.7 · discardable 8.0 · shared_memory 2.3 · gpu 1.1
+     malloc: allocated_objects 23.4 · partitions 10.9
+     v8: utility 24.5 · shared 2.2
+     discardable: process_3 8.0
+GPU Process pid 91190: footprint 0.0 MB · resident 0.0 MB
+   gpu 285.6 · iosurface 237.4 · cc 63.5 · ioaccelerator 59.9 · malloc 22.8 · shared_memory 2.3 · skia 0.7
+     malloc: allocated_objects 17.4 · partitions 5.4
+     gpu: angle 239.0 · shared_images 45.7 · shader_cache 0.6
+     cc: resource_memory 63.5
+Service: network.mojom.NetworkService pid 91191: footprint 0.0 MB · resident 0.0 MB
+   malloc 4.1 · shared_memory 2.1
+     malloc: partitions 2.3 · allocated_objects 1.8
+Renderer pid 91193: footprint 0.0 MB · resident 0.0 MB
+   cc 191.6 · malloc 91.1 · v8 25.6 · gpu 19.1 · partition_alloc 14.3 · skia 8.4 · blink_objects 7.3 · blink_gc 4.3 · web_cache 3.9 · shared_memory 2.5
+     malloc: allocated_objects 70.2 · partitions 20.9
+     partition_alloc: allocated_objects 11.0 · partitions 3.3
+     v8: main 13.9 · workers 9.7 · shared 2.0
+     blink_gc: main 4.2
+     skia: sk_resource_cache 8.0
+     gpu: transfer_buffer_memory 16.1 · mapped_memory 2.0 · command_buffer_memory 1.1
+     cc: tile_memory 191.6
+Service: tracing.mojom.TracingService pid 91208: footprint 0.0 MB · resident 0.0 MB
+   shared_memory 12.3 · malloc 4.5
+     malloc: partitions 3.3 · allocated_objects 1.3
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   vmmap footprints: [{"pid":91189,"type":"browser","footprint":"122.4M"},{"pid":91190,"type":"gpu-process","footprint":"191.1M"},{"pid":91191,"type":"utility","footprint":"13.0M"},{"pid":91193,"type":"renderer","footprint":"150.8M"},{"pid":91208,"type":"utility","footprint":"34.3M"}]
+=== S2 the conversation read back to its start
+GPU Process pid 91190: footprint 222.8 MB · resident 0.0 MB
+Renderer pid 91193: footprint 170.1 MB · resident 0.0 MB
+Browser pid 91189: footprint 116.5 MB · resident 0.0 MB
+Service: tracing.mojom.TracingService pid 91208: footprint 14.3 MB · resident 0.0 MB
+Service: network.mojom.NetworkService pid 91191: footprint 8.8 MB · resident 0.0 MB
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   discardable 64.8 · malloc 35.9 · v8 27.0 · shared_memory 2.3 · gpu 1.1
+     malloc: allocated_objects 23.1 · partitions 12.8
+     v8: utility 24.7 · shared 2.2
+     discardable: process_3 64.8
+GPU Process pid 91190: footprint 0.0 MB · resident 0.0 MB
+   gpu 248.8 · iosurface 198.6 · ioaccelerator 76.2 · cc 60.3 · malloc 23.5 · shared_memory 2.3 · skia 0.9
+     malloc: allocated_objects 17.5 · partitions 5.9
+     gpu: angle 200.0 · shared_images 48.1 · shader_cache 0.7
+     cc: resource_memory 60.3
+Service: network.mojom.NetworkService pid 91191: footprint 0.0 MB · resident 0.0 MB
+   malloc 4.4 · shared_memory 2.1
+     malloc: partitions 2.6 · allocated_objects 1.8
+Renderer pid 91193: footprint 0.0 MB · resident 0.0 MB
+   cc 150.3 · malloc 112.5 · skia 65.1 · v8 36.8 · blink_gc 21.0 · gpu 19.1 · partition_alloc 17.2 · blink_objects 7.1 · web_cache 3.9 · shared_memory 2.5
+     malloc: allocated_objects 73.0 · partitions 39.5
+     partition_alloc: allocated_objects 11.1 · partitions 6.1
+     v8: main 24.9 · workers 9.9 · shared 2.0
+     blink_gc: main 20.9
+     skia: sk_resource_cache 64.5 · sk_glyph_cache 0.6
+     gpu: transfer_buffer_memory 16.1 · mapped_memory 2.0 · command_buffer_memory 1.1
+     cc: tile_memory 150.3
+Service: tracing.mojom.TracingService pid 91208: footprint 0.0 MB · resident 0.0 MB
+   shared_memory 12.3 · malloc 5.2
+     malloc: partitions 3.8 · allocated_objects 1.3
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   vmmap footprints: [{"pid":91189,"type":"browser","footprint":"180.5M"},{"pid":91190,"type":"gpu-process","footprint":"178.5M"},{"pid":91191,"type":"utility","footprint":"13.0M"},{"pid":91193,"type":"renderer","footprint":"259.2M"},{"pid":91208,"type":"utility","footprint":"34.9M"}]
+=== S3 back on the new session page
+GPU Process pid 91190: footprint 167.2 MB · resident 0.0 MB
+Renderer pid 91193: footprint 143.8 MB · resident 0.0 MB
+Browser pid 91189: footprint 115.2 MB · resident 0.0 MB
+Service: tracing.mojom.TracingService pid 91208: footprint 14.8 MB · resident 0.0 MB
+Service: network.mojom.NetworkService pid 91191: footprint 8.8 MB · resident 0.0 MB
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   discardable 65.6 · malloc 34.9 · v8 27.0 · shared_memory 2.3 · gpu 1.1
+     malloc: allocated_objects 22.8 · partitions 12.0
+     v8: utility 24.8 · shared 2.2
+     discardable: process_3 65.6
+GPU Process pid 91190: footprint 0.0 MB · resident 0.0 MB
+   gpu 259.1 · iosurface 151.4 · ioaccelerator 91.2 · skia 25.8 · malloc 21.6 · cc 12.6 · shared_memory 2.3
+     malloc: allocated_objects 15.1 · partitions 6.5
+     skia: gpu_resources 24.9 · sk_glyph_cache 0.9
+     gpu: angle 183.7 · shared_images 45.8 · dawn 28.9 · shader_cache 0.7
+     cc: resource_memory 12.6
+Service: network.mojom.NetworkService pid 91191: footprint 0.0 MB · resident 0.0 MB
+   malloc 4.3 · shared_memory 2.1
+     malloc: partitions 2.5 · allocated_objects 1.8
+Renderer pid 91193: footprint 0.0 MB · resident 0.0 MB
+   cc 105.2 · malloc 104.0 · discardable 64.0 · v8 25.7 · gpu 19.1 · blink_gc 17.5 · partition_alloc 15.4 · web_cache 3.9 · blink_objects 2.5 · shared_memory 2.5 · skia 2.2
+     malloc: allocated_objects 70.4 · partitions 33.6
+     partition_alloc: allocated_objects 10.8 · partitions 4.6
+     v8: main 13.8 · workers 9.9 · shared 2.0
+     blink_gc: main 17.4
+     gpu: transfer_buffer_memory 16.1 · mapped_memory 2.0 · command_buffer_memory 1.1
+     cc: tile_memory 105.2
+     discardable: segment_0 4.0 · segment_1 4.0 · segment_10 4.0 · segment_11 4.0 · segment_12 4.0 · segment_13 4.0 · segment_14 4.0 · segment_15 4.0
+Service: tracing.mojom.TracingService pid 91208: footprint 0.0 MB · resident 0.0 MB
+   shared_memory 12.3 · malloc 5.8
+     malloc: partitions 4.4 · allocated_objects 1.3
+Browser pid 91189: footprint 0.0 MB · resident 0.0 MB
+   vmmap footprints: [{"pid":91189,"type":"browser","footprint":"182.0M"},{"pid":91190,"type":"gpu-process","footprint":"102.7M"},{"pid":91191,"type":"utility","footprint":"12.9M"},{"pid":91193,"type":"renderer","footprint":"234.0M"},{"pid":91208,"type":"utility","footprint":"35.2M"}]
+
+## B. 合成层（提交 90887960，读完全部后）
+
+LayerTree.compositingReasons：每个画内容的层的尺寸（CSS 像素 × 2）、元素和提升原因。Overlap 是因为盖在别的合成层上而被连带提升。
+
+{ imgs: [], canvases: [], urls: [] }
+layers drawing content: 22 total area (CSS px²): 151155776
+  1806x33733 div.cscroll markdown-chat :: Overlap
+  495x122262 div.side-list role :: Overlap
+  2880x1800 . :: RootScroller, OverflowScrolling
+  2385x1800  :: Overlap
+  734x4226 pre. :: Overlap
+  734x3660 pre. :: Overlap
+  1504x1778 div.md-table md-wide :: Overlap
+  1504x1636 p. :: Overlap
+  1504x1580 p. :: Overlap
+  1504x1468 p. :: Overlap
+  734x2812 pre. :: Overlap
+  734x1823 pre. :: Overlap
+  1806x240 div.cmp-zone session :: Overlap
+  506x511 section.insp :: BackdropFilter
+
+## C. 关掉表头吸顶、毛玻璃（提交 90887960）
+
+同一段会话里依次改样式再测：层数、渲染进程 cc（瓦片）、GPU 进程 gpu+iosurface（memory-infra，MB）。第一行之后的下降来自测量顺序，不来自改动：层数没有变。
+
+as it is                           layers  22 · renderer cc  197 MB · GPU gpu+iosurface  545 MB
+th not sticky                      layers  22 · renderer cc  112 MB · GPU gpu+iosurface  364 MB
+no backdrop on .insp               layers  20 · renderer cc  124 MB · GPU gpu+iosurface  387 MB
+no backdrop on .ctool              layers  22 · renderer cc  124 MB · GPU gpu+iosurface  388 MB
+all three                          layers  20 · renderer cc  124 MB · GPU gpu+iosurface  387 MB
+
+## D. 去掉代码块和表格的内部纵向滚动（提交 90887960）
+
+交替测三轮 base 和改过的样式（max-height:none）。tiles 是渲染进程的瓦片内存（memory-infra），footprint 是 vmmap。两种样式的瓦片都在 90～145 MB 之间波动。
+
+base                                       layers  39 (drawing 22) · tiles  123 MB · footprint GPU 205.1M · renderer 146.8M
+no inner vertical scroll (code, tables)    layers  39 (drawing 24) · tiles  110 MB · footprint GPU 244.3M · renderer 156.6M
+base                                       layers  34 (drawing 20) · tiles  145 MB · footprint GPU 197.7M · renderer 152.5M
+no inner vertical scroll (code, tables)    layers  31 (drawing 20) · tiles   90 MB · footprint GPU 182.0M · renderer 153.1M
+base                                       layers  34 (drawing 20) · tiles   99 MB · footprint GPU 191.1M · renderer 140.0M
+
+## E. 内存紧张信号（提交 90887960，Memory.simulatePressureNotification）
+
+第一组不先做回收：渲染进程的大降来自信号顺带触发的垃圾回收。第二组每个时刻先回收，再发 moderate、critical 两级信号。
+
+start, new session page                      browser 128.9M · gpu-process 152.6M · utility 7281K · renderer 123.2M  | renderer: cc 38 · malloc 57 · discardable 0 · skia 0 · blink_gc 2 · v8 13
+a 5000-message conversation read back        browser 130.9M · gpu-process 226.5M · utility 8929K · renderer 434.5M · utility 29.6M  | renderer: cc 90 · malloc 106 · discardable 18 · skia 43 · blink_gc 22 · v8 37
+  then memory pressure (critical)            browser 116.6M · gpu-process 203.6M · utility 13.0M · renderer 195.3M  | renderer: cc 87 · malloc 107 · discardable 2 · skia 3 · blink_gc 17 · v8 36
+back on the new session page                 browser 116.9M · gpu-process 195.2M · utility 12.9M · renderer 198.1M  | renderer: cc 36 · malloc 105 · discardable 2 · skia 3 · blink_gc 17 · v8 27
+  then memory pressure (critical)            browser 116.2M · gpu-process 97.0M · utility 13.0M · renderer 172.7M  | renderer: cc 36 · malloc 105 · discardable 2 · skia 3 · blink_gc 17 · v8 25
+
+start: after GC                                renderer   97.5M · gpu  143.6M · browser 129.6M
+start: then moderate pressure                  renderer   97.1M · gpu  142.1M · browser 129.9M
+start: then critical pressure                  renderer  103.7M · gpu  154.8M · browser 129.9M
+read back: after GC                            renderer  187.8M · gpu  240.3M · browser 142.0M
+read back: then moderate pressure              renderer  181.6M · gpu  197.7M · browser 103.5M
+read back: then critical pressure              renderer  182.3M · gpu  185.8M · browser 103.5M
+left: after GC                                 renderer  153.2M · gpu  100.4M · browser 104.3M
+left: then moderate pressure                   renderer  148.3M · gpu   93.6M · browser 99.6M
+left: then critical pressure                   renderer  148.6M · gpu   86.7M · browser 99.7M
+
+## F. 离开后释放（438cb9d0 的页面代码）
+
+离开 5 秒后测一次。后半段想测最小化 35 秒，但用调试协议最小化窗口时页面仍是 visible：后台模式为了模拟焦点挂着调试会话，页面始终认为自己可见（见 H 段），所以最后一行只是又过了 35 秒。
+
+start, new session page                      renderer   95.8M · gpu  158.2M · browser  121.9M
+a 5000-message conversation read back        renderer  246.0M · gpu  226.5M · browser  156.5M
+left it, 5 s later                           renderer  132.4M · gpu  102.5M · browser  106.7M
+visibility while minimized: visible
+minimized 35 s                               renderer  117.6M · gpu   98.3M · browser  101.2M
+
+## G. 隐藏后释放：模拟（438cb9d0 的页面代码）
+
+窗口其实一直可见，"hidden" 是改写 document.visibilityState 并派发 visibilitychange 模拟的。真实隐藏见 H 段。
+
+read back, window visible                      renderer  237.5M · gpu  257.5M · browser  167.9M
+35 s later, still visible (nothing given back) renderer  217.4M · gpu  196.2M · browser  106.3M
+hidden 35 s                                    renderer  157.4M · gpu  176.0M · browser  100.0M
+
+## H. 隐藏后释放：真实的隐藏和最小化（2026-11-08 补测，438cb9d0）
+
+通过主进程的调试端口调用窗口的 hide()、showInactive()、minimize()。
+第一组保留后台模式的调试会话：hide() 和 minimize() 之后页面仍然是 visible，没有 visibilitychange 事件，所以没有释放。
+第二组先 detach 这个调试会话（等于真实使用）：hide() 和 minimize() 都让页面变成 hidden，隐藏 35 秒后内存回落。
+第三组同一轮里先可见 35 秒（Chromium 自己还的部分），再真正隐藏 35 秒。
+
+-- 第一组：带着调试会话
+main process sees the window: app://finxwork/index.html
+hide(): visible to the system false · page says visible
+showInactive(): page says visible · events []
+read back, window visible                      renderer  253.4M · gpu  235.5M · browser  157.4M
+after 35 s hidden, page says visible
+really hidden 35 s                             renderer  242.6M · gpu  196.3M · browser  105.7M
+minimize(): minimized true · page says visible · events []
+
+-- 第二组：去掉调试会话
+main process sees the window: app://finxwork/index.html
+debugger attached: true
+now attached: false
+hide(): visible to the system false · page says hidden
+showInactive(): page says visible · events ["hidden","visible"]
+read back, window visible                      renderer  216.7M · gpu  242.3M · browser  157.8M
+after 35 s hidden, page says hidden
+really hidden 35 s                             renderer  154.2M · gpu  152.0M · browser  105.4M
+minimize(): minimized true · page says hidden · events ["hidden","visible","hidden","visible","hidden"]
+
+-- 第三组：去掉调试会话，先可见 35 秒，再隐藏 35 秒
+read back, window visible                      renderer  264.5M · gpu  263.9M · browser  160.1M
+35 s later, still visible                      renderer  244.2M · gpu  195.4M · browser  106.1M
+page says hidden
+then really hidden 35 s                        renderer  159.7M · gpu  169.2M · browser  101.1M
+
+## I. 离开后释放：开关对照（2026-11-08 补测，438cb9d0）
+
+同一种测法、同样的时间点（离开后 5 秒和 35 秒）。"release OFF" 在页面里拦下调用 releaseMemory 的那个定时器，释放就不会发生；"release ON" 只数这个定时器，照常执行。两种各跑两次，交替进行。
+
+release OFF (its timers dropped)
+start, new session page              renderer   94.4M · gpu  157.3M · browser  127.2M
+read back                            renderer  245.9M · gpu  256.8M · browser  169.0M
+left, 5 s later                      renderer  232.1M · gpu   97.8M · browser  169.5M
+left, 35 s later                     renderer  209.5M · gpu   90.1M · browser  100.3M
+release timers seen: 1
+release ON (its timers counted)
+start, new session page              renderer   96.4M · gpu  150.4M · browser  128.0M
+read back                            renderer  231.0M · gpu  244.1M · browser  168.4M
+left, 5 s later                      renderer  130.1M · gpu  102.3M · browser  169.3M
+left, 35 s later                     renderer  119.8M · gpu   95.6M · browser  100.3M
+release timers seen: 1
+release OFF (its timers dropped)
+start, new session page              renderer   96.6M · gpu  149.3M · browser  127.5M
+read back                            renderer  222.1M · gpu  222.3M · browser  168.4M
+left, 5 s later                      renderer  207.1M · gpu  107.2M · browser  169.3M
+left, 35 s later                     renderer  181.8M · gpu   92.5M · browser  100.6M
+release timers seen: 1
+release ON (its timers counted)
+start, new session page              renderer   96.8M · gpu  149.8M · browser  130.0M
+read back                            renderer  227.4M · gpu  220.3M · browser  168.2M
+left, 5 s later                      renderer  128.6M · gpu  103.9M · browser  168.9M
+left, 35 s later                     renderer  120.6M · gpu   97.8M · browser  100.2M
+release timers seen: 1
+
+-- 另外两次，都开着释放（这一轮本想关掉释放，但预加载脚本暴露的对象不能改写，没关成）
+start, new session page              renderer   96.2M · gpu  158.5M · browser  120.8M
+read back                            renderer  230.4M · gpu  277.3M · browser  147.0M
+left, 5 s later                      renderer  135.1M · gpu  109.0M · browser  147.2M
+left, 35 s later                     renderer  125.8M · gpu   97.8M · browser  100.8M
+start, new session page              renderer   97.3M · gpu  161.9M · browser  121.1M
+read back                            renderer  260.6M · gpu  241.6M · browser  148.1M
+left, 5 s later                      renderer  132.9M · gpu  107.9M · browser  148.1M
+left, 35 s later                     renderer  123.1M · gpu  100.2M · browser  100.6M

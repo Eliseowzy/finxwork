@@ -1,0 +1,172 @@
+{
+  "load": {
+    "bots": 1200,
+    "sessions": 1500,
+    "turns": 60,
+    "churn": 40
+  },
+  "results": {
+    "startup": {
+      "sideMs": 116.6,
+      "firstBotRowMs": 222,
+      "longTasks": 1,
+      "longestMs": 53
+    },
+    "botsMemory": {
+      "heapMB": 10.6,
+      "nodes": 1827,
+      "listeners": 310,
+      "rendererMB": 225,
+      "appMB": 676
+    },
+    "botsIdle": {
+      "scriptPct": 0.2,
+      "taskPct": 3.8,
+      "layoutMs": 22.8,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 10.2,
+      "janky": 0
+    },
+    "botScroll": {
+      "frames": 373,
+      "p50": 8.3,
+      "p95": 9.2,
+      "max": 10.3,
+      "janky": 0
+    },
+    "botOpen": {
+      "medianMs": 48.5,
+      "maxMs": 66.9
+    },
+    "botTyping": {
+      "keys": 30,
+      "slowKeys": 10,
+      "worstMs": 40,
+      "p95Ms": 40,
+      "roundTripP95": 6
+    },
+    "botChatScroll": {
+      "frames": 399,
+      "p50": 8.3,
+      "p95": 10.1,
+      "max": 57.6,
+      "janky": 3,
+      "messages": 334
+    },
+    "toSessionsMs": 42.3,
+    "sessionsMemory": {
+      "heapMB": 12.4,
+      "nodes": 5155,
+      "listeners": 562,
+      "rendererMB": 347,
+      "appMB": 811
+    },
+    "sessionsIdle": {
+      "scriptPct": 8,
+      "taskPct": 13.7,
+      "layoutMs": 127.8,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 9.9,
+      "janky": 0
+    },
+    "sessionScroll": {
+      "frames": 283,
+      "p50": 8.3,
+      "p95": 9.8,
+      "max": 10.4,
+      "janky": 0
+    },
+    "regroup": {
+      "projectMs": 19.5,
+      "dateMs": 13.3,
+      "statusMs": 11.9
+    },
+    "sessionOpen": {
+      "medianMs": 62.4,
+      "maxMs": 80.2
+    },
+    "sessionChatScroll": {
+      "frames": 404,
+      "p50": 8.3,
+      "p95": 10.2,
+      "max": 44,
+      "janky": 1,
+      "messages": 65
+    },
+    "sessionTyping": {
+      "keys": 30,
+      "slowKeys": 2,
+      "worstMs": 24,
+      "p95Ms": 24,
+      "roundTripP95": 8
+    },
+    "searchMs": {
+      "median": 15.8,
+      "max": 17.3
+    },
+    "idle": {
+      "scriptPct": 0,
+      "taskPct": 0.2,
+      "layoutMs": 0.3,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 10.2,
+      "janky": 0
+    },
+    "afterVisits": {
+      "heapMB": 20.8,
+      "nodes": 31568,
+      "listeners": 539,
+      "rendererMB": 473,
+      "appMB": 940
+    },
+    "afterLeaving": {
+      "heapMB": 13.7,
+      "nodes": 856,
+      "listeners": 327,
+      "rendererMB": 449,
+      "appMB": 927
+    },
+    "churnBots": {
+      "scriptPct": 3.9,
+      "taskPct": 9.7,
+      "layoutMs": 151.5,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 9.6,
+      "janky": 0
+    },
+    "churnBotTyping": {
+      "keys": 40,
+      "slowKeys": 40,
+      "worstMs": 40,
+      "p95Ms": 32,
+      "roundTripP95": 6
+    },
+    "churnSessions": {
+      "scriptPct": 10.6,
+      "taskPct": 21.2,
+      "layoutMs": 335.6,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 10,
+      "janky": 0
+    },
+    "churnSessionTyping": {
+      "keys": 40,
+      "slowKeys": 40,
+      "worstMs": 40,
+      "p95Ms": 40,
+      "roundTripP95": 6
+    },
+    "churnMemory": {
+      "heapMB": 11.4,
+      "nodes": 927,
+      "listeners": 525,
+      "rendererMB": 345,
+      "appMB": 821
+    }
+  }
+}

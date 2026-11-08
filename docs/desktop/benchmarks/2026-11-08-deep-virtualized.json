@@ -1,0 +1,1081 @@
+{
+  "load": {
+    "sessions": 10000,
+    "projects": 100,
+    "messages": 5000,
+    "churn": 40,
+    "pages": 200
+  },
+  "results": {
+    "startup": {
+      "sideMs": 153,
+      "firstSessionRowMs": 310.6,
+      "longTasks": 0,
+      "longestMs": 0
+    },
+    "listMemory": {
+      "heapMB": 11.9,
+      "nodes": 840,
+      "listeners": 360,
+      "rendererMB": 203,
+      "appMB": 680
+    },
+    "listIdle": {
+      "scriptPct": 6.9,
+      "taskPct": 12.8,
+      "layoutMs": 142.4,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 9.3,
+      "janky": 0
+    },
+    "listScroll": {
+      "frames": 1895,
+      "p50": 8.3,
+      "p95": 9.2,
+      "max": 15.5,
+      "janky": 0
+    },
+    "regroup": {
+      "projectMs": 33.9,
+      "dateMs": 14.9,
+      "statusMs": 10.3
+    },
+    "projectScroll": {
+      "frames": 1917,
+      "p50": 8.3,
+      "p95": 9.4,
+      "max": 15.3,
+      "janky": 0
+    },
+    "searchMs": {
+      "median": 15.1,
+      "max": 16
+    },
+    "open": {
+      "ms": 105.2,
+      "steps": 8
+    },
+    "openTyping": {
+      "keys": 20,
+      "slowKeys": 6,
+      "worstMs": 40,
+      "p95Ms": 40,
+      "roundTripP95": 7
+    },
+    "streamingLast": {
+      "scriptPct": 4.8,
+      "taskPct": 9.7,
+      "layoutMs": 98.3,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 9.5,
+      "janky": 0,
+      "typing": {
+        "keys": 15,
+        "slowKeys": 15,
+        "worstMs": 32,
+        "p95Ms": 32,
+        "roundTripP95": 5
+      }
+    },
+    "pages": [
+      {
+        "ms": 36.5,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 54.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 57.5,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 27.3,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 48.1,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 53.2,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": true
+      },
+      {
+        "ms": 55.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 55.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 32.6,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 63.5,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 65.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": true
+      },
+      {
+        "ms": 57.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 35.2,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 37.1,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 39.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 61.5,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 30.6,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 50.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 32.5,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 32.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 43.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": true
+      },
+      {
+        "ms": 67.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 27,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 31.1,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 30.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 40.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 30,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 61.1,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 33.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 50.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 55.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": true
+      },
+      {
+        "ms": 64.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 38.6,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 63.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 68.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 63.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 26.6,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 55.3,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 49.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 28.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 71.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": true
+      },
+      {
+        "ms": 34.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 61.1,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 37.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 63.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 64.3,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 58.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 25.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 48.3,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 33.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 38.1,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": true
+      },
+      {
+        "ms": 36.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 44.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 35.2,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 38.6,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 52.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 65,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 30.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 37.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "ms": 38.9,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      }
+    ],
+    "checkpoints": [
+      {
+        "pages": 5,
+        "rows": 301,
+        "memory": {
+          "heapMB": 16.4,
+          "nodes": 6876,
+          "listeners": 392,
+          "rendererMB": 366,
+          "appMB": 891
+        },
+        "idle": {
+          "scriptPct": 0,
+          "taskPct": 0.2,
+          "layoutMs": 0.1,
+          "longTasks": 0,
+          "longMs": 0,
+          "frameP95": 9.3,
+          "janky": 0
+        },
+        "wheel": {
+          "frames": 155,
+          "p50": 8.3,
+          "p95": 9.7,
+          "max": 20.1,
+          "janky": 0,
+          "blank": 0,
+          "messages": 10
+        },
+        "typing": {
+          "keys": 15,
+          "slowKeys": 1,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 5
+        }
+      },
+      {
+        "pages": 10,
+        "rows": 553,
+        "memory": {
+          "heapMB": 17.3,
+          "nodes": 6857,
+          "listeners": 394,
+          "rendererMB": 373,
+          "appMB": 901
+        },
+        "idle": {
+          "scriptPct": 0,
+          "taskPct": 0.3,
+          "layoutMs": 0.1,
+          "longTasks": 0,
+          "longMs": 0,
+          "frameP95": 9.3,
+          "janky": 0
+        },
+        "wheel": {
+          "frames": 157,
+          "p50": 8.3,
+          "p95": 9.3,
+          "max": 17.6,
+          "janky": 0,
+          "blank": 0,
+          "messages": 16
+        },
+        "typing": {
+          "keys": 15,
+          "slowKeys": 1,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 10
+        }
+      },
+      {
+        "pages": 20,
+        "rows": 1058,
+        "memory": {
+          "heapMB": 19.2,
+          "nodes": 7698,
+          "listeners": 394,
+          "rendererMB": 400,
+          "appMB": 924
+        },
+        "idle": {
+          "scriptPct": 0,
+          "taskPct": 0.2,
+          "layoutMs": 0.2,
+          "longTasks": 0,
+          "longMs": 0,
+          "frameP95": 9.3,
+          "janky": 0
+        },
+        "wheel": {
+          "frames": 158,
+          "p50": 8.3,
+          "p95": 10.1,
+          "max": 23.7,
+          "janky": 0,
+          "blank": 0,
+          "messages": 11
+        },
+        "typing": {
+          "keys": 15,
+          "slowKeys": 1,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 8
+        }
+      },
+      {
+        "pages": 30,
+        "rows": 1558,
+        "memory": {
+          "heapMB": 20.8,
+          "nodes": 7583,
+          "listeners": 390,
+          "rendererMB": 411,
+          "appMB": 928
+        },
+        "idle": {
+          "scriptPct": 0,
+          "taskPct": 0.3,
+          "layoutMs": 0.2,
+          "longTasks": 0,
+          "longMs": 0,
+          "frameP95": 9.3,
+          "janky": 0
+        },
+        "wheel": {
+          "frames": 155,
+          "p50": 8.3,
+          "p95": 10.3,
+          "max": 16,
+          "janky": 0,
+          "blank": 0,
+          "messages": 11
+        },
+        "typing": {
+          "keys": 15,
+          "slowKeys": 1,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 8
+        }
+      },
+      {
+        "pages": 40,
+        "rows": 2060,
+        "memory": {
+          "heapMB": 22.4,
+          "nodes": 7180,
+          "listeners": 394,
+          "rendererMB": 404,
+          "appMB": 923
+        },
+        "idle": {
+          "scriptPct": 0,
+          "taskPct": 0.3,
+          "layoutMs": 0.1,
+          "longTasks": 0,
+          "longMs": 0,
+          "frameP95": 9.3,
+          "janky": 0
+        },
+        "wheel": {
+          "frames": 154,
+          "p50": 8.4,
+          "p95": 10.1,
+          "max": 16.8,
+          "janky": 0,
+          "blank": 0,
+          "messages": 11
+        },
+        "typing": {
+          "keys": 15,
+          "slowKeys": 7,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 5
+        }
+      },
+      {
+        "pages": 50,
+        "rows": 2552,
+        "memory": {
+          "heapMB": 23.9,
+          "nodes": 6315,
+          "listeners": 390,
+          "rendererMB": 414,
+          "appMB": 934
+        },
+        "idle": {
+          "scriptPct": 0,
+          "taskPct": 0.3,
+          "layoutMs": 0.1,
+          "longTasks": 0,
+          "longMs": 0,
+          "frameP95": 9.4,
+          "janky": 0
+        },
+        "wheel": {
+          "frames": 155,
+          "p50": 8.3,
+          "p95": 10,
+          "max": 16.1,
+          "janky": 0,
+          "blank": 0,
+          "messages": 11
+        },
+        "typing": {
+          "keys": 15,
+          "slowKeys": 15,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 5
+        }
+      },
+      {
+        "pages": 60,
+        "rows": 3003,
+        "memory": {
+          "heapMB": 24.8,
+          "nodes": 4122,
+          "listeners": 377,
+          "rendererMB": 417,
+          "appMB": 939
+        },
+        "idle": {
+          "scriptPct": 0,
+          "taskPct": 0.3,
+          "layoutMs": 0.1,
+          "longTasks": 0,
+          "longMs": 0,
+          "frameP95": 9.2,
+          "janky": 0
+        },
+        "wheel": {
+          "frames": 156,
+          "p50": 8.3,
+          "p95": 9.4,
+          "max": 17.7,
+          "janky": 0,
+          "blank": 0,
+          "messages": 11
+        },
+        "typing": {
+          "keys": 15,
+          "slowKeys": 15,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 5
+        }
+      }
+    ],
+    "readUp": {
+      "frames": 486,
+      "p50": 8.3,
+      "p95": 9.9,
+      "max": 17.7,
+      "janky": 0,
+      "blank": 0,
+      "messages": 16
+    },
+    "jumpTop": 2,
+    "jumpEnd": 2,
+    "streaming": {
+      "scriptPct": 6.7,
+      "taskPct": 11,
+      "layoutMs": 95.5,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 9.3,
+      "janky": 0
+    },
+    "streamingTyping": {
+      "keys": 15,
+      "slowKeys": 15,
+      "worstMs": 32,
+      "p95Ms": 32,
+      "roundTripP95": 3
+    },
+    "followingPx": 0,
+    "afterSwitch": {
+      "heapMB": 15.3,
+      "nodes": 3718,
+      "listeners": 383,
+      "rendererMB": 428,
+      "appMB": 965
+    },
+    "backMs": 56.5,
+    "afterLeaving": {
+      "heapMB": 15.4,
+      "nodes": 1630,
+      "listeners": 384,
+      "rendererMB": 429,
+      "appMB": 986
+    },
+    "misses": [],
+    "slowestPages": [
+      {
+        "page": 41,
+        "ms": 71.8,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": true
+      },
+      {
+        "page": 35,
+        "ms": 68.4,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      },
+      {
+        "page": 22,
+        "ms": 67.7,
+        "longest": 0,
+        "blocked": 0,
+        "afterCheckpoint": false
+      }
+    ],
+    "churn": {
+      "scriptPct": 22.2,
+      "taskPct": 33.2,
+      "layoutMs": 369.2,
+      "longTasks": 0,
+      "longMs": 0,
+      "frameP95": 11.2,
+      "janky": 0
+    },
+    "churnTyping": {
+      "keys": 30,
+      "slowKeys": 30,
+      "worstMs": 24,
+      "p95Ms": 24,
+      "roundTripP95": 5
+    },
+    "churnMemory": {
+      "heapMB": 16,
+      "nodes": 862,
+      "listeners": 641,
+      "rendererMB": 246,
+      "appMB": 749
+    },
+    "bot": {
+      "pages": [
+        {
+          "ms": 36.2,
+          "longest": 0
+        },
+        {
+          "ms": 32.2,
+          "longest": 0
+        },
+        {
+          "ms": 26.6,
+          "longest": 0
+        },
+        {
+          "ms": 34.7,
+          "longest": 0
+        },
+        {
+          "ms": 28,
+          "longest": 0
+        },
+        {
+          "ms": 36.4,
+          "longest": 0
+        },
+        {
+          "ms": 32.3,
+          "longest": 0
+        },
+        {
+          "ms": 30.4,
+          "longest": 0
+        },
+        {
+          "ms": 28.5,
+          "longest": 0
+        },
+        {
+          "ms": 35.9,
+          "longest": 0
+        },
+        {
+          "ms": 35.5,
+          "longest": 0
+        },
+        {
+          "ms": 33.9,
+          "longest": 0
+        },
+        {
+          "ms": 26,
+          "longest": 0
+        },
+        {
+          "ms": 36,
+          "longest": 0
+        },
+        {
+          "ms": 30.3,
+          "longest": 0
+        },
+        {
+          "ms": 30.6,
+          "longest": 0
+        },
+        {
+          "ms": 32.9,
+          "longest": 0
+        },
+        {
+          "ms": 37.2,
+          "longest": 0
+        },
+        {
+          "ms": 37.6,
+          "longest": 0
+        },
+        {
+          "ms": 42.9,
+          "longest": 0
+        },
+        {
+          "ms": 32,
+          "longest": 0
+        },
+        {
+          "ms": 32.8,
+          "longest": 0
+        },
+        {
+          "ms": 35.8,
+          "longest": 0
+        },
+        {
+          "ms": 33.9,
+          "longest": 0
+        },
+        {
+          "ms": 33.7,
+          "longest": 0
+        },
+        {
+          "ms": 42.3,
+          "longest": 0
+        },
+        {
+          "ms": 27.9,
+          "longest": 0
+        },
+        {
+          "ms": 30,
+          "longest": 0
+        },
+        {
+          "ms": 29.9,
+          "longest": 0
+        },
+        {
+          "ms": 32.5,
+          "longest": 0
+        },
+        {
+          "ms": 35.7,
+          "longest": 0
+        },
+        {
+          "ms": 42.1,
+          "longest": 0
+        },
+        {
+          "ms": 46.6,
+          "longest": 0
+        },
+        {
+          "ms": 44.4,
+          "longest": 0
+        },
+        {
+          "ms": 29.9,
+          "longest": 0
+        },
+        {
+          "ms": 40.9,
+          "longest": 0
+        },
+        {
+          "ms": 30.1,
+          "longest": 0
+        },
+        {
+          "ms": 27.4,
+          "longest": 0
+        },
+        {
+          "ms": 39.5,
+          "longest": 0
+        },
+        {
+          "ms": 36.3,
+          "longest": 0
+        },
+        {
+          "ms": 31.4,
+          "longest": 0
+        },
+        {
+          "ms": 37.8,
+          "longest": 0
+        },
+        {
+          "ms": 42.3,
+          "longest": 0
+        },
+        {
+          "ms": 36,
+          "longest": 0
+        },
+        {
+          "ms": 37,
+          "longest": 0
+        },
+        {
+          "ms": 35.4,
+          "longest": 0
+        },
+        {
+          "ms": 35.8,
+          "longest": 0
+        },
+        {
+          "ms": 32,
+          "longest": 0
+        },
+        {
+          "ms": 27.6,
+          "longest": 0
+        },
+        {
+          "ms": 39.4,
+          "longest": 0
+        },
+        {
+          "ms": 34.5,
+          "longest": 0
+        },
+        {
+          "ms": 33.4,
+          "longest": 0
+        },
+        {
+          "ms": 31.7,
+          "longest": 0
+        },
+        {
+          "ms": 28.9,
+          "longest": 0
+        },
+        {
+          "ms": 27.4,
+          "longest": 0
+        },
+        {
+          "ms": 34.4,
+          "longest": 0
+        },
+        {
+          "ms": 31.7,
+          "longest": 0
+        },
+        {
+          "ms": 42.2,
+          "longest": 0
+        },
+        {
+          "ms": 30,
+          "longest": 0
+        },
+        {
+          "ms": 32.5,
+          "longest": 0
+        }
+      ],
+      "replyLast": {
+        "scriptPct": 0.3,
+        "taskPct": 5,
+        "layoutMs": 38.2,
+        "longTasks": 0,
+        "longMs": 0,
+        "frameP95": 9.2,
+        "janky": 0,
+        "typing": {
+          "keys": 15,
+          "slowKeys": 2,
+          "worstMs": 32,
+          "p95Ms": 32,
+          "roundTripP95": 5
+        }
+      },
+      "memory": {
+        "heapMB": 12.8,
+        "nodes": 815,
+        "listeners": 257,
+        "rendererMB": 292,
+        "appMB": 734
+      },
+      "readUp": {
+        "frames": 515,
+        "p50": 8.3,
+        "p95": 9.7,
+        "max": 14,
+        "janky": 0,
+        "blank": 0,
+        "messages": 51
+      },
+      "replyAll": {
+        "scriptPct": 1,
+        "taskPct": 4.3,
+        "layoutMs": 30.1,
+        "longTasks": 0,
+        "longMs": 0,
+        "frameP95": 9.3,
+        "janky": 0,
+        "typing": {
+          "keys": 15,
+          "slowKeys": 14,
+          "worstMs": 40,
+          "p95Ms": 40,
+          "roundTripP95": 5
+        }
+      }
+    }
+  }
+}
