@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, routineDot, type BotItem, type WorkingAgent, type SessionView } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
@@ -35,6 +35,7 @@ import { docxEditDetails } from "../docs/docx/aiPrompt";
 import { ModelBlocked, ModelRows } from "./ModelRows";
 import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
+import { useVirtualRows, type VirtualRow } from "../session/useVirtualRows";
 
 /** Bot mode's pause before a time line (bot-mode-design §6.6). */
 const PAUSE = 10 * 60_000;
@@ -46,14 +47,8 @@ const OPEN_ROUTINES = { botPanel: false, files: false, filesMax: false, browser:
 /** The text that goes in a bot's composer from beside it, for the composer on screen. */
 const composerText = new Map<string, (text: string) => void>();
 
-/** Brings a run's message into view and makes it stand out for a moment. */
-function showBubble(run: string) {
-  const bubble = document.querySelector<HTMLElement>(`.bot [data-run="${CSS.escape(run)}"]`);
-  if (!bubble) return;
-  bubble.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  bubble.classList.add("rtn-flash");
-  setTimeout(() => bubble.classList.remove("rtn-flash"), 1500);
-}
+/** For each bot, how its conversation on screen brings a run's message into view (it may have to draw it first). */
+const runShowers = new Map<string, (run: string) => void>();
 
 /**
  * A bot's page (bot-mode-design §6.5–§6.17): its avatar and name in the
@@ -139,7 +134,7 @@ export function BotPage({ bot }: { bot: BotSummary }) {
               st.set({ botRoutines: null });
               composerText.get(bot.id)?.(text);
             }}
-            onShowBubble={showBubble}
+            onShowBubble={(run) => runShowers.get(bot.id)?.(run)}
             onClose={() => st.set({ botRoutines: null })}
           />
         </ContentScope>
@@ -241,9 +236,24 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
   const busy = busyBubble(view);
   const [dock, setDock] = useState(0);
   const scroll = useRef<HTMLDivElement>(null);
-  // What was on screen when the page opened slides in no more; what comes after does.
-  const seen = useRef<Set<string> | null>(null);
-  seen.current ??= new Set(items.map((i) => i.key));
+  // The scroller and the list as elements too, for the window (useVirtualRows): set once, by refs that do not change.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [list, setList] = useState<HTMLDivElement | null>(null);
+  const scrollRef = useCallback((el: HTMLDivElement | null) => {
+    scroll.current = el;
+    setScroller(el);
+  }, []);
+  // Messages that came after the page opened slide in, once: not what was there, not earlier history as it comes,
+  // and not a message drawn again after it was scrolled away from (only the rows near what is in sight are drawn).
+  const arrived = useRef<{ last: string | undefined; at: Map<string, number> } | null>(null);
+  arrived.current ??= { last: items.at(-1)?.key, at: new Map() };
+  {
+    const known = arrived.current;
+    const from = known.last === undefined ? 0 : items.findIndex((i) => i.key === known.last) + 1;
+    if (from > 0 || known.last === undefined) for (const item of items.slice(from)) if (!known.at.has(item.key)) known.at.set(item.key, performance.now());
+    known.last = items.at(-1)?.key ?? known.last;
+  }
+  const fresh = (key: string) => performance.now() - (arrived.current!.at.get(key) ?? -Infinity) < 1000;
 
   // Earlier history, a page at a time, as the owner nears the top.
   const [paging, setPaging] = useState(false);
@@ -308,9 +318,77 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
 
   const empty = items.length === 0 && !busy;
   const working = busy?.agents.length ?? 0;
+  // The rows, each with the time of the one before it and whether it sits close to its neighbours (two bubbles in a
+  // row from the same side, no time line between). Only the rows near what is in sight are drawn.
+  const rows = useMemo(() => botRows(items), [items]);
+  const virtual = useVirtualRows({ scroller, list, rows, initial: botRowHeights });
+  const { scrollToKey } = virtual;
+  useEffect(() => {
+    const show = (run: string) => {
+      const item = items.find((i) => (i as SentItem).source?.run_id === run);
+      if (!item) return;
+      atEnd.current = false;
+      scrollToKey(item.key, {
+        then: (el) => {
+          const bubble = el.querySelector<HTMLElement>("[data-run]") ?? el;
+          bubble.classList.add("rtn-flash");
+          setTimeout(() => bubble.classList.remove("rtn-flash"), 1500);
+        },
+      });
+    };
+    runShowers.set(bot.id, show);
+    return () => {
+      if (runShowers.get(bot.id) === show) runShowers.delete(bot.id);
+    };
+  }, [bot.id, items, scrollToKey]);
+  // One item of the conversation, with the time line before it after a pause.
+  const drawItem = (item: BotItem, previous: number | undefined) => {
+    const line = <TimeSince at={item.ts} previous={previous} />;
+    const message = (shown: React.ReactNode, copy?: string) => (
+      <BotMessage
+        key={item.key}
+        item={item as SentItem}
+        fresh={fresh(item.key)}
+        line={line}
+        copy={copy}
+      >
+        {shown}
+      </BotMessage>
+    );
+    switch (item.kind) {
+      case "user":
+        return <UserBubble key={item.key} item={item} fresh={fresh(item.key)} line={line} />;
+      case "routine":
+        return <RoutineChange key={item.key} item={item} line={line} />;
+      case "bot":
+        return message(
+          <div className="bbub">
+            <Markdown text={item.text} />
+          </div>,
+          item.text,
+        );
+      case "attachment":
+        return message(<SentFiles files={item.files} text={item.text} />, item.text);
+      case "question":
+        return message(
+          <Question
+            text={item.text}
+            options={item.options}
+            open={item.open}
+            // A tapped answer is the owner's message: while the bot works, it waits for the step under way (bot-design §3.1).
+            onAnswer={(label) => st.op(session, { type: "prompt", input: [{ type: "text", text: label }], mode: view.live ? "steer" : undefined })}
+          />,
+          item.text,
+        );
+      case "deck_edit":
+        return <DeckEditItem key={item.key} item={item} session={session} line={line} />;
+      case "failure":
+        return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} stateId={`failure:${item.key}`} /> : <PastFailure key={item.key} error={item.error} stateId={`failure:${item.key}`} />;
+    }
+  };
   return (
     <>
-      <div className="cscroll" ref={scroll} onScroll={onScroll}>
+      <div className="cscroll" ref={scrollRef} onScroll={onScroll}>
         <div className="dbody" ref={body} style={{ paddingBottom: dock + 40 }}>
           {view.before && (
             <div className="tdiv earlier">
@@ -324,53 +402,17 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
               <p>{t("chat.empty")}</p>
             </div>
           ) : (
-            <div className="tr bots" role="log" aria-label={t("chat.log")}>
-              {items.map((item, i) => {
-                const prev = items[i - 1];
-                const fresh = !seen.current!.has(item.key);
-                const line = <TimeSince at={item.ts} previous={prev?.ts} />;
-                const message = (shown: React.ReactNode, copy?: string) => (
-                  <BotMessage
-                    key={item.key}
-                    item={item as SentItem}
-                    fresh={fresh}
-                    line={line}
-                    copy={copy}
-                  >
-                    {shown}
-                  </BotMessage>
-                );
-                switch (item.kind) {
-                  case "user":
-                    return <UserBubble key={item.key} item={item} fresh={fresh} line={line} />;
-                  case "routine":
-                    return <RoutineChange key={item.key} item={item} line={line} />;
-                  case "bot":
-                    return message(
-                      <div className="bbub">
-                        <Markdown text={item.text} />
-                      </div>,
-                      item.text,
-                    );
-                  case "attachment":
-                    return message(<SentFiles files={item.files} text={item.text} />, item.text);
-                  case "question":
-                    return message(
-                      <Question
-                        text={item.text}
-                        options={item.options}
-                        open={item.open}
-                        // A tapped answer is the owner's message: while the bot works, it waits for the step under way (bot-design §3.1).
-                        onAnswer={(label) => st.op(session, { type: "prompt", input: [{ type: "text", text: label }], mode: view.live ? "steer" : undefined })}
-                      />,
-                      item.text,
-                    );
-                  case "deck_edit":
-                    return <DeckEditItem key={item.key} item={item} session={session} line={line} />;
-                  case "failure":
-                    return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
-                }
-              })}
+            <div className="tr bots" role="log" aria-label={t("chat.log")} ref={setList} data-rows={rows.length}>
+              {/* One flat list of keyed rows and spaces: a row keeps its element however the parts change. */}
+              {virtual.parts.flatMap((part) =>
+                "space" in part
+                  ? [<div key={`space:${part.at}`} className="vspace" style={{ height: part.space }} aria-hidden="true" />]
+                  : rows.slice(part.from, part.to).map((r) => (
+                      <div key={r.key} className={`vrow ${r.side ? `side-${r.side}` : ""} ${r.joinPrev ? "join-prev" : ""} ${r.joinNext ? "join-next" : ""}`} data-step-key={r.key} ref={virtual.measure(r.key)}>
+                        {drawItem(r.item, r.previous)}
+                      </div>
+                    )),
+              )}
               {busy && <BusyBubble busy={busy} retry={view.live?.retry} onOpen={follow} />}
             </div>
           )}
@@ -382,6 +424,24 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
       <BotDock bot={bot} view={view} session={session} onHeight={setDock} />
     </>
   );
+}
+
+/** A row of a bot's conversation: its item, the time of the one before, and whether it sits close to its neighbours. */
+type BotRow = VirtualRow & { item: BotItem; previous: number | undefined; side: "um" | "bm" | null; joinPrev: boolean; joinNext: boolean };
+
+/** Each kind's height until rows of it are measured: only how long the scrollbar is depends on it. */
+const botRowHeights: Record<string, number> = { user: 56, bot: 96, attachment: 160, question: 120, routine: 40, deck_edit: 120, failure: 60 };
+
+/** Which bubble an item draws: the owner's, the bot's, or neither (a line of its own). */
+const sideOf = (item: BotItem): BotRow["side"] => (item.kind === "user" ? "um" : item.kind === "bot" || item.kind === "attachment" || item.kind === "question" || item.kind === "deck_edit" ? "bm" : null);
+
+/**
+ * The rows of a bot's conversation. Two bubbles in a row from the same side, with no time line between (one shows
+ * after a pause, TimeSince), sit close: the rows are apart in the list, so each says so of itself.
+ */
+function botRows(items: BotItem[]): BotRow[] {
+  const close = (i: number) => i > 0 && sideOf(items[i]) !== null && sideOf(items[i]) === sideOf(items[i - 1]) && items[i].ts - items[i - 1].ts < PAUSE;
+  return items.map((item, i) => ({ key: item.key, kind: item.kind, item, previous: items[i - 1]?.ts, side: sideOf(item), joinPrev: close(i), joinNext: i + 1 < items.length && close(i + 1) }));
 }
 
 /** A time line before a message after a pause of ten minutes, and before the first. */

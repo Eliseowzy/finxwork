@@ -83,11 +83,11 @@
 /* Replies and rich blocks share the centered conversation column, including with side panels open. */
 .markdown-chat{container-type:inline-size}
 .markdown-chat>.dbody{max-width:calc(var(--conversation-width) + 32px)}
-.markdown-chat .tr>.am{width:100%;padding-inline:8px;align-self:center}
+.markdown-chat .vrow>.am{width:100%;padding-inline:8px;align-self:center}
 .markdown-chat .am>.md>*{max-width:var(--md-prose-width);margin-inline:auto}
 .markdown-chat .am>.msg-act{left:6px}
-.markdown-chat .tr>:not(.am){max-width:var(--conversation-width);width:100%;align-self:center}
-.markdown-chat .tr>.um{width:auto;align-self:flex-end;max-width:min(80%,var(--conversation-width))}
+.markdown-chat .tr>:not(.vrow,.vspace),.markdown-chat .vrow>:not(.am){max-width:var(--conversation-width);width:100%;align-self:center}
+.markdown-chat .vrow>.um{width:auto;align-self:flex-end;max-width:min(80%,var(--conversation-width))}
 .markdown-chat .am>.md>.md-wide{width:100%;max-width:var(--md-rich-width)}
 /* A table keeps the prose's left edge and grows to the right, so writing it never slides it.
    The end margin is its tools' place: a finished row's containment would clip them past the row. */
@@ -98,9 +98,7 @@
   .markdown-chat .am>.md>.md-table{margin-inline-end:0}
   .markdown-chat .md-table-box>.md-table-tools{top:7px;inset-inline:auto 7px;flex-direction:row;padding-inline-start:0;background:var(--win2)}
 }
-/* Keep offscreen replies out of layout/paint, while preserving DOM search, anchors and selections.
-   Every reply, the one being written too: one that gets this only when it stops being last has no size
-   remembered, so it drops to the estimate and comes back, which moves the whole conversation. Containment
-   also clips what hangs below a reply: the margin is for its bar (.msg-act). */
-.tr>.am{content-visibility:auto;contain-intrinsic-block-size:auto 180px;overflow-clip-margin:32px}
-@media print{.md-tools{display:none}.md-table-scroll{overflow:visible;max-height:none}.tr>.am{content-visibility:visible;contain:none}.md-wide{width:100%!important;margin:0!important}}
+/* Rows away from what is in sight are not drawn at all (conversation-virtualization-design): no
+   content-visibility on replies, which would skip drawn rows just outside the view and have them
+   measured at a placeholder's height. */
+@media print{.md-tools{display:none}.md-table-scroll{overflow:visible;max-height:none}.md-wide{width:100%!important;margin:0!important}}

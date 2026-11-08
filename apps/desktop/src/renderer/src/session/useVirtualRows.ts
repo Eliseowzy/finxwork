@@ -81,22 +81,45 @@ export function useVirtualRows({ scroller, list, rows, initial }: {
   });
   const drawnParts = parts(P, gap, segments([[first, end], ...pinned], n));
 
-  /** Where the window should be for what is in sight now; it moves (a render) only when that changed. */
+  /**
+   * Where the window should be for what is in sight now. It stays while it still reaches half a screen past what is
+   * in sight each way and no row of it is more than three screens away; otherwise it is placed a screen each way of
+   * what is in sight. A window placed again only when it must does not chase the small moves its own drawing makes
+   * (measured rows replacing guesses), and does not keep growing while rows come in at the end.
+   */
   const place = () => {
     const { rows, scroller, list } = latest.current;
     if (!scroller || !list) return;
     const n = rows.length;
     if (n === 0) return;
     const view = scroller.clientHeight;
-    // What is in sight, in the list's own terms, and a screen each way.
+    const g = kept.gap;
+    // What is in sight, in the list's own terms.
     const top = scroller.getBoundingClientRect().top + scroller.clientTop - list.getBoundingClientRect().top;
-    const [a, b] = windowOf(positions(rows.map(heightOf), kept.gap), kept.gap, top - view, top + 2 * view, STEP);
-    if (a === kept.drawn[0] && b === kept.drawn[1]) return;
+    const bottom = top + view;
+    const P = positions(rows.map(heightOf), g);
+    const [df, de] = kept.drawn;
+    if (de > df && de <= n) {
+      const reaches = (df === 0 || P[df] <= top - view / 2) && (de === n || P[de] - g >= bottom + view / 2);
+      const near = P[df + 1] - g >= top - 3 * view && P[de - 1] <= bottom + 3 * view;
+      if (reaches && near) return;
+    }
+    const [a, b] = windowOf(P, g, top - view, bottom + view, STEP);
+    if (a === df && b === de) return;
     kept.guesses = kept.means.snapshot();
     setWin({ first: rows[a].key, last: rows[b - 1].key, toEnd: b === n });
   };
   const placeRef = useRef(place);
   placeRef.current = place;
+  // After a render or a row's new size: once, in the next frame. Placing it at once could chain render to render.
+  const frame = useRef(0);
+  const schedule = useCallback(() => {
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      placeRef.current();
+    });
+  }, []);
 
   const pin = useCallback(
     (name: string, range: Range | null) =>
@@ -130,7 +153,7 @@ export function useVirtualRows({ scroller, list, rows, initial }: {
   // After each render: what was drawn, where the window should go (rows came or changed), a jump that waited for its row.
   useLayoutEffect(() => {
     kept.drawn = [first, end];
-    placeRef.current();
+    schedule();
     const jump = kept.jump;
     const el = jump && kept.elements.get(jump.key);
     if (el) landRef.current(el);
@@ -167,14 +190,15 @@ export function useVirtualRows({ scroller, list, rows, initial }: {
           if (i !== undefined) kept.means.set(key, latest.current.rows[i].kind, height);
           changed = true;
         }
-        if (changed) placeRef.current();
+        if (changed) schedule();
       }),
-    [],
+    [schedule],
   );
   useEffect(
     () => () => {
       observer.disconnect();
       clearTimeout(kept.unpin);
+      cancelAnimationFrame(frame.current);
     },
     [observer],
   );

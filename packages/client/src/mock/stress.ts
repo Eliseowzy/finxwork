@@ -209,14 +209,16 @@ export function stressReply(prompt: string): TaskScript {
   };
 }
 
-/** A bot's long conversation: the owner asks, the bot answers through send_to_user. */
-export function stressBotTranscript(seed: number, turns: number, start: number): TranscriptItem[] {
+/** A bot's long conversation: the owner asks, the bot answers through send_to_user; `messages` as for sessions. */
+export function stressBotTranscript(seed: number, turns: number, start: number, messages?: number): TranscriptItem[] {
   const r = rng(seed);
   const items: TranscriptItem[] = [];
   let ts = start;
   let n = 0;
   const id = () => `b${seed}_${n++}`;
-  for (let t = 0; t < turns; t++) {
+  let said = 0;
+  for (let t = 0; messages ? said < messages : t < turns; t++) {
+    const before = items.length;
     items.push({ type: "message", message_id: id(), message: { role: "user", content: [{ type: "text", text: pick(r, userLines) }], ts: (ts += 60_000) } });
     const sends = int(r, 1, 3);
     for (let k = 0; k < sends; k++) {
@@ -230,6 +232,7 @@ export function stressBotTranscript(seed: number, turns: number, start: number):
       });
       items.push({ type: "tool_result", call_id: cid, result: { call_id: cid, tool_name: "send_to_user", content: [{ type: "text", text: "Sent." }], is_error: false, ts: (ts += 50), duration_ms: 5 } });
     }
+    said += items.length - before;
     items.push({ type: "task_end", task_id: `bt${seed}_${t}`, outcome: "completed", reason: "done", ts, usage: { per_model: { "deepseek/deepseek-flash": usage } } });
   }
   return items;

@@ -96,12 +96,14 @@
    and buttons go beside the bubble, taking no room under it, so a run stays close. */
 .tr.bots{--bub:var(--bot-user)}
 .tr.bots .um{margin-bottom:var(--sp-1)}
-.tr.bots .um:has(+ .um){margin-bottom:0}
-.tr.bots .um+.um{margin-top:-7px}
+/* Each row is a box of its own (only the rows near what is in sight are drawn), so whether a bubble sits close to the
+   one before is the row's to say (botRows), not its neighbour's; the bubble at work follows the last row as before. */
+.tr.bots .vrow.join-next>.um{margin-bottom:0}
+.tr.bots .vrow.join-prev>.um{margin-top:-7px}
 .tr.bots .um .msg-act{top:auto;bottom:0;right:100%;padding:0 6px 0 0}
 .tr.bots .um.queued .bub{opacity:.72}
 .bm{border-radius:var(--r-md)}
-.tr.bots .bm+.bm{margin-top:-7px}
+.tr.bots .vrow.join-prev>.bm,.tr.bots .vrow.side-bm+.bm{margin-top:-7px}
 .bm-b{position:relative;min-width:0;display:flex;flex-direction:column;align-items:flex-start}
 .bline{anchor-scope:--bline;display:flex;align-items:flex-end;gap:6px;max-width:100%}
 .bline>:first-child{anchor-name:--bline}

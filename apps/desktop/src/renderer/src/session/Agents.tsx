@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { clockText, elapsedSeconds, runningAgents, taskGists, tokensText, totals, type AgentLaunch, type AgentView, type SessionView, type Step } from "@finx/client";
 import type { AgentStatus } from "@finx/protocol";
@@ -6,6 +5,7 @@ import { durationText } from "../format";
 import { Icon } from "../icons";
 import { useNow, useStore } from "../store";
 import { Markdown } from "./Markdown";
+import { useRowState } from "./useRowState";
 
 // Sub-agents in the conversation: the agents a reply started, each as it is
 // now; the reports they send back; and, at the conversation's end, how many
@@ -84,7 +84,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
 /** A sub-agent's report, where it reached the conversation: its first lines, the rest on request. */
 export function ReportCard({ step }: { step: Extract<Step, { kind: "report" }> }) {
   const { t } = useTranslation("session");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useRowState(`report:${step.key}`, false);
   const show = useShowAgent();
   const a = step.agent;
   // Time and tokens are the agent's as it is now: a report from an earlier round of it goes without them.
@@ -125,7 +125,7 @@ export function ReportCard({ step }: { step: Extract<Step, { kind: "report" }> }
 /** What a sub-agent sent while it worked, where it reached the conversation: drawn like a report, but its work goes on. */
 export function AgentMessageCard({ step }: { step: Extract<Step, { kind: "agent_message" }> }) {
   const { t } = useTranslation("session");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useRowState(`message:${step.key}`, false);
   const show = useShowAgent();
   const a = step.agent;
   const long = step.text.split("\n").length > 2 || step.text.length > 140;

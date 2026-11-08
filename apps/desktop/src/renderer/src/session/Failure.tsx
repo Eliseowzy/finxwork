@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import type { SessionView } from "@finx/client";
 import type { ErrorInfo, ModelsListResult } from "@finx/protocol";
@@ -9,6 +9,7 @@ import { failureAdvice, failureTitle, modelTitle } from "../format";
 import { Icon, type IconName } from "../icons";
 import { Brand } from "../settings/ProviderConnections";
 import { useLists, useNow, useStore } from "../store";
+import { useRowState } from "./useRowState";
 
 // A task's failure, as one row: the provider's mark with a badge in the tone
 // of what the failure asks of the owner, what happened, and one way out; the
@@ -86,13 +87,14 @@ function ModelItems({ current, models, onPick }: { current?: string; models: Mod
  * The session's current failure, with its way out. Background tasks the failure did not stop are
  * told of, with a way to stop them: they go on, with the same model, until they end by themselves.
  */
-export function FailureCard({ error, working, sessionId, model }: { error?: ErrorInfo; working: number; sessionId: string; model?: string }) {
+/** stateId: the row it is drawn in, whose state outlives the row not being drawn (useRowState). */
+export function FailureCard({ error, working, sessionId, model, stateId }: { error?: ErrorInfo; working: number; sessionId: string; model?: string; stateId?: string }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const kind = error?.kind ?? "unknown";
   const tone = toneOf(kind);
   const provider = useProvider(sessionId, model);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useRowState(stateId, false);
   const retry = () => st.op(sessionId, { type: "continue" });
   const askKey = (id = provider.id) => window.dispatchEvent(new CustomEvent(keyEvent, { detail: id }));
 
@@ -173,9 +175,9 @@ export function FailureCard({ error, working, sessionId, model }: { error?: Erro
 }
 
 /** A failure the conversation went on from: one quiet line, its message behind it. */
-export function PastFailure({ error }: { error?: ErrorInfo }) {
+export function PastFailure({ error, stateId }: { error?: ErrorInfo; stateId?: string }) {
   const { t } = useTranslation("session");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useRowState(stateId, false);
   const kind = error?.kind ?? "unknown";
   return (
     <div className="fail-wrap">

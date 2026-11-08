@@ -373,6 +373,10 @@ button.insp-row:active{background:var(--fill2)}
 /* A centered 768px conversation with 16px gutters; reply text is inset 8px. */
 .dbody{max-width:calc(var(--conversation-width) + 32px);margin:0 auto;padding:24px 16px 40px}
 .tr{display:flex;flex-direction:column;gap:var(--sp-2)}
+/* A conversation row's own box (useVirtualRows measures it): its parts (a time line and a message) as far apart
+   as rows are. The space for rows not drawn is never what the browser keeps in place while things above change. */
+.vrow{display:flex;flex-direction:column;gap:var(--sp-2)}
+.vspace{flex:none;overflow-anchor:none}
 /* A time line before a message, only after a pause: centred, no rule. */
 .tdiv{align-self:center;font-size:11.5px;color:var(--l3);margin:10px 0 2px}
 /* Earlier history: the link, or while it comes the spinner, in the same height so nothing below moves. */

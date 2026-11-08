@@ -8,6 +8,7 @@ import { Lightbox } from "../composer/Tile";
 import { Code } from "./Code";
 import { stepMenu } from "./contentMenus";
 import { useScope } from "./scope";
+import { useRowState } from "./useRowState";
 import { SearchResults, searchCall, searchDetails } from "./SearchResults";
 import { handoffOf } from "./Yours";
 import { DeckEditActions } from "./DeckEditActions";
@@ -20,22 +21,23 @@ import { docxEditDetails } from "../docs/docx/aiPrompt";
  * several as one grey line ("Read 2 files, ran 3 commands") that opens to
  * show each. Folded until the owner opens it; what is in progress shimmers.
  */
-export function Work({ items, live, flat = false }: { items: WorkItem[]; live: boolean; flat?: boolean }) {
+export function Work({ items, live, flat = false, keep = false }: { items: WorkItem[]; live: boolean; flat?: boolean; keep?: boolean }) {
   // A call waiting for approval shows in the approval at the bottom, as the baseline's pending question does.
   const shown = items.filter((it) => it.kind !== "tool" || it.tool.state !== "awaiting_approval");
   if (shown.length === 0) return null;
   // flat: every step on its own line (a sub-agent's work in the background panel).
   if (flat) return <>{shown.map((it) => <Item key={it.key} it={it} />)}</>;
-  if (shown.length === 1) return <Item it={shown[0]} />;
-  return <Group items={shown} live={live} />;
+  if (shown.length === 1) return <Item it={shown[0]} keep={keep} />;
+  return <Group items={shown} live={live} keep={keep} />;
 }
 
-function Group({ items, live }: { items: WorkItem[]; live: boolean }) {
+/** keep: in a conversation's row, which may stop being drawn and come back (useRowState): what is open stays open. */
+function Group({ items, live, keep }: { items: WorkItem[]; live: boolean; keep: boolean }) {
   // A deck change stays in sight under the folded line, to look at or take back.
   const edits = items.flatMap((it) => (it.kind === "tool" && (deckEditOf(it.tool) || docxEditOf(it.tool)) ? [it.tool] : []));
   return (
     <>
-      <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} card={false} />)} />
+      <Fold id={keep ? `group:${items[0].key}` : undefined} title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} card={false} keep={keep} />)} />
       {edits.map((tool) => <DeckEdit key={tool.call_id} tool={tool} />)}
     </>
   );
@@ -66,8 +68,8 @@ export function RunningCalls({ tools, after }: { tools: ToolView[]; after?: Reac
 }
 
 /** A line that opens to show the steps under it; it shimmers while they go. */
-function Fold({ title, live, after, body }: { title: string; live: boolean; after?: ReactNode; body: ReactNode }) {
-  const [open, setOpen] = useState(false);
+function Fold({ id, title, live, after, body }: { id?: string; title: string; live: boolean; after?: ReactNode; body: ReactNode }) {
+  const [open, setOpen] = useRowState(id, false);
   return (
     <div className={`tgroup ${open ? "open" : ""}`}>
       <button className={`tg-h ${live ? "shimmer" : ""}`} aria-expanded={open} aria-busy={live || undefined} onClick={() => setOpen(!open)}>
@@ -80,14 +82,18 @@ function Fold({ title, live, after, body }: { title: string; live: boolean; afte
   );
 }
 
-function Item({ it, card = true }: { it: WorkItem; card?: boolean }) {
-  return it.kind === "thinking" ? <Thinking text={it.text} redacted={it.redacted} live={it.live} /> : <ToolRow tool={it.tool} card={card} />;
+function Item({ it, card = true, keep = false }: { it: WorkItem; card?: boolean; keep?: boolean }) {
+  return it.kind === "thinking" ? (
+    <Thinking id={keep ? `think:${it.key}` : undefined} text={it.text} redacted={it.redacted} live={it.live} />
+  ) : (
+    <ToolRow tool={it.tool} card={card} stateId={keep ? `tool:${it.tool.call_id}` : undefined} />
+  );
 }
 
 /** The model's thinking: a quiet line with where it got to, the whole of it when opened. */
-function Thinking({ text, redacted, live }: { text: string; redacted: boolean; live: boolean }) {
+function Thinking({ id, text, redacted, live }: { id?: string; text: string; redacted: boolean; live: boolean }) {
   const { t } = useTranslation("session");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useRowState(id, false);
   const lines = text.trim().split("\n").filter((l) => l.trim() !== "");
   // While it thinks, the line it is on; after, how it began.
   const gist = redacted ? t("chat.thinkingHidden") : ((live ? lines.at(-1) : lines[0]) ?? "");
@@ -158,11 +164,11 @@ export function LiveThinking({ text, children }: { text: string; children: React
  * code. While the model is still writing a call, what it is on is not known
  * yet: the verb alone ("Editing…"). `after`: what follows on the line (how long the work has run).
  */
-export function ToolRow({ tool, after, card = true }: { tool: ToolView; after?: ReactNode; card?: boolean }) {
+export function ToolRow({ tool, after, card = true, stateId }: { tool: ToolView; after?: ReactNode; card?: boolean; stateId?: string }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const scope = useScope();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useRowState(stateId, false);
   const [large, setLarge] = useState<string | null>(null);
   const output = toolOutput(tool);
   // Images a tool returned (a browser screenshot, an image read): a thumbnail, over the window on a click.

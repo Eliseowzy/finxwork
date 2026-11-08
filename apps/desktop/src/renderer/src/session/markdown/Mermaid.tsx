@@ -2,7 +2,8 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../components";
 import { CodeBlock } from "../content";
-import { DraftContext } from "../scope";
+import { DraftContext, useScope } from "../scope";
+import { useRowState } from "../useRowState";
 
 function Svg({ svg }: { svg: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -19,9 +20,11 @@ function Svg({ svg }: { svg: string }) {
 export default function MermaidBlock({ text }: { text: string }) {
   const { t } = useTranslation("session");
   const draft = useContext(DraftContext);
+  // In a conversation, whether it shows its source outlives its row not being drawn (useRowState).
+  const scoped = useScope() !== null;
   const [dark, setDark] = useState(() => matchMedia("(prefers-color-scheme: dark)").matches);
   const [result, setResult] = useState<{ text: string; dark: boolean; svg?: string; error?: boolean }>();
-  const [source, setSource] = useState(false);
+  const [source, setSource] = useRowState(scoped ? `mermaid:${hashText(text)}` : undefined, false);
   const [expanded, setExpanded] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   useEffect(() => {
@@ -55,4 +58,11 @@ export default function MermaidBlock({ text }: { text: string }) {
     {draft || source || current?.error ? <><CodeBlock lang="mermaid" text={text} />{current?.error && <p className="md-render-note" role="status">{t("markdown.diagramFailed")}</p>}</> : current?.svg ? <Svg svg={current.svg} /> : <div className="md-diagram-loading" role="status">{t("markdown.rendering")}</div>}
     {expanded && current?.svg && <Dialog label={t("markdown.diagram")} width={1100} className="md-expanded" onClose={() => setExpanded(false)}><div className="md-tools"><button onClick={() => setExpanded(false)}>{t("markdown.close")}</button></div><Svg svg={current.svg} /></Dialog>}
   </div>;
+}
+
+/** A short name for a diagram's source (FNV-1a), to keep its state under. */
+function hashText(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
 }

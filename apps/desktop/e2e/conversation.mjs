@@ -120,7 +120,9 @@ try {
   };
   const scroller = `document.querySelector(".cscroll.markdown-chat")`;
   const below = () => run(`(() => { const el = ${scroller}; return Math.round(el.scrollHeight - el.scrollTop - el.clientHeight); })()`);
+  // Rows drawn (near what is in sight), and rows the conversation holds.
   const rows = `document.querySelectorAll("[data-step-key]").length`;
+  const loadedRows = `Number(document.querySelector(".tr")?.dataset.rows ?? 0)`;
   const open = async (title) => {
     await until(`the row of ${title}`, `[...document.querySelectorAll("aside *, [class*=side] *")].find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(title)})`);
     await run(`[...document.querySelectorAll("aside *, [class*=side] *")].find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(title)}).click()`);
@@ -178,7 +180,7 @@ try {
 
   console.log("▶ the bar under an earlier reply can be reached");
   const hit = await run(`(() => {
-    const row = [...document.querySelectorAll(".tr>.am")].filter((r) => r.querySelector(".msg-act")).at(-2);
+    const row = [...document.querySelectorAll(".vrow>.am")].filter((r) => r.querySelector(".msg-act")).at(-2);
     row.scrollIntoView({ block: "center" });
     const bar = row.querySelector(".msg-act").getBoundingClientRect();
     return !!document.elementFromPoint(bar.left + 10, bar.top + bar.height / 2)?.closest(".msg-act");
@@ -208,10 +210,106 @@ try {
   console.log("▶ going back to a session draws its latest page, not all that was loaded");
   await run(`(async () => {
     const el = ${scroller};
-    for (let i = 0; i < 1200 && ${rows} < 300; i++) { el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 })); el.scrollTop = 0; await new Promise((r) => setTimeout(r, 30)); }
+    for (let i = 0; i < 1200 && ${loadedRows} < 300; i++) { el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 })); el.scrollTop = 0; await new Promise((r) => setTimeout(r, 30)); }
   })()`);
-  const loaded = await run(rows);
+  const loaded = await run(loadedRows);
   assert.ok(loaded >= 300, `only ${loaded} rows of history came`);
+
+  // ── a long conversation draws only the rows near what is in sight (conversation-virtualization-design §6) ──
+  const drawn = (key) => run(`!!document.querySelector('.vrow[data-step-key="${key}"]')`);
+  const settle = () => run(`(async () => { const el = ${scroller}; let last = -1, same = 0; for (let i = 0; i < 120 && same < 4; i++) { await new Promise((r) => requestAnimationFrame(r)); same = el.scrollTop === last ? same + 1 : 0; last = el.scrollTop; } await new Promise((r) => setTimeout(r, 150)); })()`);
+  const margin = await run(`(() => { const r = ${scroller}.getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`);
+  assert.ok((await run(rows)) < loaded, `all ${loaded} rows are drawn`);
+
+  console.log("▶ reading up into rows not drawn before, what is read stays where it is");
+  await run(`${scroller}.scrollTop = Math.round(${scroller}.scrollHeight * 0.55)`);
+  await settle();
+  let worst = 0;
+  for (let i = 0; i < 30; i++) {
+    await call("Input.dispatchMouseEvent", { type: "mouseWheel", x: margin.x, y: margin.y, deltaX: 0, deltaY: -300 });
+    await settle();
+    const before = await run(`(() => { const el = ${scroller}; const r = el.getBoundingClientRect(); const row = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(".vrow"); return row && { key: row.dataset.stepKey, top: row.getBoundingClientRect().top }; })()`);
+    if (!before) continue;
+    await sleep(400);
+    const after = await run(`document.querySelector('.vrow[data-step-key="${before.key}"]')?.getBoundingClientRect().top ?? null`);
+    assert.ok(after !== null, "the row read was taken away");
+    worst = Math.max(worst, Math.abs(after - before.top));
+  }
+  assert.ok(worst <= 2, `what was read moved ${worst}px with nothing touched`);
+  console.log(`  moved at most ${worst}px`);
+
+  console.log("▶ a group of calls opened stays open after it was not drawn");
+  const opened = await run(`(() => {
+    const r = ${scroller}.getBoundingClientRect();
+    const tool = [...document.querySelectorAll(".vrow .tool:not(.open)")].find((t) => { const b = t.getBoundingClientRect(); return b.top > r.top + 40 && b.bottom < r.bottom - 120 && t.querySelector(".th[aria-expanded]"); });
+    if (!tool) return null;
+    tool.querySelector(".th").click();
+    return tool.closest(".vrow").dataset.stepKey;
+  })()`);
+  assert.ok(opened, "no closed call in sight to open");
+  await until("the call open", `document.querySelector('.vrow[data-step-key="${opened}"] .tool.open')`);
+  const there = await run(`${scroller}.scrollTop`);
+  await run(`${scroller}.scrollTop = ${there} + ${scroller}.clientHeight * 6`);
+  await settle();
+  assert.equal(await drawn(opened), false, "the call's row is still drawn six screens away");
+  await run(`${scroller}.scrollTop = ${there}`);
+  await settle();
+  assert.ok(await run(`!!document.querySelector('.vrow[data-step-key="${opened}"] .tool.open')`), "the call closed while its row was not drawn");
+
+  console.log("▶ a selection over several screens stays whole as the view moves on");
+  const picked = await run(`(() => {
+    const r = ${scroller}.getBoundingClientRect();
+    // Paragraphs, not rows: a reply here is taller than the view.
+    const node = [...document.querySelectorAll(".vrow .md p, .vrow .bub")].find((p) => { const b = p.getBoundingClientRect(); return b.top > r.top && b.bottom < r.bottom - 100; });
+    getSelection().setBaseAndExtent(node, 0, node, node.childNodes.length);
+    return { key: node.closest(".vrow").dataset.stepKey, text: node.textContent.trim().slice(0, 12) };
+  })()`);
+  await sleep(200);
+  const fromTop = await run(`${scroller}.scrollTop`);
+  for (let i = 0; i < 12; i++) await call("Input.dispatchMouseEvent", { type: "mouseWheel", x: margin.x, y: margin.y, deltaX: 0, deltaY: 300 });
+  await settle();
+  const toTop = await run(`${scroller}.scrollTop`);
+  assert.ok(await drawn(picked.key), "the row where the selection starts was taken away");
+  const extended = await run(`(() => {
+    const r = ${scroller}.getBoundingClientRect();
+    const node = [...document.querySelectorAll(".vrow .md p, .vrow .bub")].reverse().find((p) => { const b = p.getBoundingClientRect(); return b.bottom < r.bottom && b.top > r.top; });
+    const s = getSelection();
+    s.setBaseAndExtent(s.anchorNode, s.anchorOffset, node, node.childNodes.length);
+    return { text: node.textContent.trim().slice(-12), key: node.closest(".vrow").dataset.stepKey };
+  })()`);
+  await sleep(200);
+  const selected = await run("getSelection().toString()");
+  assert.ok(selected.includes(picked.text) && selected.includes(extended.text), "the selection lost its start or its end");
+  assert.ok(selected.length > 1000, `only ${selected.length} characters selected over several screens (scrolled ${fromTop} → ${toTop}, rows ${picked.key} → ${extended.key})`);
+  await run("getSelection().removeAllRanges()");
+  await settle();
+  await sleep(300);
+  await run(`${scroller}.dispatchEvent(new Event("scroll"))`);
+  await settle();
+  assert.equal(await drawn(picked.key), false, "the selection's row stays drawn after the selection went");
+
+  console.log("▶ the resend tray finds a message far above, drawing it first");
+  const lang = await run("window.finx.language");
+  const words = JSON.parse(fs.readFileSync(path.join(desktop, "src/locales", lang, "session.json"), "utf8"));
+  await run(`${scroller}.scrollTop = Math.round(${scroller}.scrollHeight * 0.3)`);
+  await settle();
+  // A message of the owner's among the rows drawn here (the pencil needs no hover to be clicked).
+  const mine = await run(`(() => {
+    const row = [...document.querySelectorAll(".vrow")].find((v) => v.querySelector(".um"));
+    row.querySelector('.um button[aria-label=${JSON.stringify(words.chat.resend)}]').click();
+    return row.dataset.stepKey;
+  })()`);
+  await until("the resend tray", `document.querySelector(".cq-find")`);
+  await run(`${scroller}.scrollTop = ${scroller}.scrollHeight`);
+  await settle();
+  assert.equal(await drawn(mine), false, "the message is still drawn at the end");
+  await run(`document.querySelector(".cq-find").click()`);
+  await until("the message drawn", `document.querySelector('.vrow[data-step-key="${mine}"]')`);
+  await settle();
+  const found = await run(`(() => { const r = ${scroller}.getBoundingClientRect(); const b = document.querySelector('.vrow[data-step-key="${mine}"]').getBoundingClientRect(); return b.top >= r.top && b.bottom <= r.bottom; })()`);
+  assert.ok(found, "the message is drawn but not in sight");
+  await run(`document.querySelector(".cq-x").click()`);
+  await until("the resend tray gone", `!document.querySelector(".cq-find")`);
   await open("短会话");
   await run(`window.__most = 0; new MutationObserver(() => { window.__most = Math.max(window.__most, ${rows}); }).observe(document.body, { childList: true, subtree: true })`);
   await open("长会话");

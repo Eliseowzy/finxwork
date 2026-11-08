@@ -245,18 +245,20 @@ async function wheel(sel, label, steps = 120, down = false) {
   // At the conversation's left margin: over a tool's output, the wheel would scroll that box instead.
   const at = await page.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`);
   const before = await page.run(`document.querySelector(${JSON.stringify(sel)}).scrollTop`);
-  await page.run(`window.__frames = []; (async () => { let l = performance.now(); window.__wheeling = true; while (window.__wheeling) { await new Promise((r) => requestAnimationFrame(r)); const t = performance.now(); window.__frames.push(t - l); l = t; } })(); 0`);
+  // Each frame: how long it took, and whether the middle of the view showed a space standing in for rows (blank).
+  await page.run(`window.__frames = []; window.__blank = 0; (async () => { const box = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); let l = performance.now(); window.__wheeling = true; while (window.__wheeling) { await new Promise((r) => requestAnimationFrame(r)); const t = performance.now(); window.__frames.push(t - l); l = t; if (document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".vspace")) window.__blank++; } })(); 0`);
   for (let i = 0; i < steps; i++) {
     await page.call("Input.dispatchMouseEvent", { type: "mouseWheel", x: at.x, y: at.y, deltaX: 0, deltaY: down ? 120 : -120 });
     await sleep(16);
   }
   await sleep(300);
   const gaps = await page.run("window.__wheeling = false; window.__frames.slice(1)");
+  const blank = await page.run("window.__blank");
   const after = await page.run(`document.querySelector(${JSON.stringify(sel)}).scrollTop`);
   const moved = await page.run(`document.querySelectorAll(${JSON.stringify(sel)} + " .md, " + ${JSON.stringify(sel)} + " .bub, " + ${JSON.stringify(sel)} + " .bbub").length`);
   assert.ok(after !== before, `${label}: the conversation did not scroll`);
-  const out = { frames: gaps.length, p50: ms(median(gaps)), p95: ms(pct(gaps, 95)), max: ms(Math.max(...gaps)), janky: gaps.filter((g) => g > 33.4).length, messages: moved };
-  note(`${label}: ${out.frames} frames · p50 ${out.p50} ms · p95 ${out.p95} ms · max ${out.max} ms · frames over 33 ms ${out.janky} · ${moved} messages drawn after`);
+  const out = { frames: gaps.length, p50: ms(median(gaps)), p95: ms(pct(gaps, 95)), max: ms(Math.max(...gaps)), janky: gaps.filter((g) => g > 33.4).length, blank, messages: moved };
+  note(`${label}: ${out.frames} frames · p50 ${out.p50} ms · p95 ${out.p95} ms · max ${out.max} ms · frames over 33 ms ${out.janky} · blank ${blank} · ${moved} messages drawn after`);
   return out;
 }
 
@@ -366,6 +368,22 @@ async function deepRun() {
   results.open = { ms: ms(open), steps: await page.run("document.querySelectorAll('.tr [data-step-key]').length") };
   note(`open a session of ${load.messages}+ messages: ${results.open.ms} ms (${results.open.steps} rows drawn: the last page)`);
   results.openTyping = await typing(20, "typing, the last page drawn");
+  const reply = async (label) => {
+    await page.run(`(() => { const el = document.querySelector(${JSON.stringify(conv)}); el.scrollTop = el.scrollHeight; })()`);
+    await sleep(500);
+    await page.run("document.querySelector('.cmp-in').focus()");
+    await page.call("Input.insertText", { text: "把缓存失效策略整理一下" });
+    await page.call("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await page.call("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await until("document.querySelector('.working')", "the reply under way", 10000);
+    await sleep(2500);
+    const out = await busy(8, label);
+    out.typing = await typing(15, `${label}: typing`);
+    await until("!document.querySelector('.working')", "the reply done", 60000);
+    await sleep(500);
+    return out;
+  };
+  results.streamingLast = await reply("a reply written out, the last page loaded");
 
   // Read back to the start: off the end with the wheel, then each page asked for at the top.
   const at = await page.run(`(() => { const r = document.querySelector(${JSON.stringify(conv)}).getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`);
@@ -375,8 +393,8 @@ async function deepRun() {
   results.checkpoints = [];
   const marksAt = new Set([5, 10, 20, 30, 40, 50]);
   const checkpoint = async (label) => {
-    const rows = await page.run("document.querySelectorAll('.tr [data-step-key]').length");
-    const point = { pages: results.pages.length, rows, memory: await memory(`${label}: ${rows} rows`) };
+    const rows = await page.run("Number(document.querySelector('.tr').dataset.rows)");
+    const point = { pages: results.pages.length, rows, memory: await memory(`${label}: ${rows} rows held`) };
     point.idle = await busy(3, `${label}: idle`);
     point.wheel = await wheel(conv, `${label}: wheel down`, 40, true);
     point.typing = await typing(15, `${label}: typing`);
@@ -386,10 +404,12 @@ async function deepRun() {
     const r = await page.run(`(async () => {
       const el = document.querySelector(${JSON.stringify(conv)});
       if (!document.querySelector('.tdiv.earlier')) return null;
-      const first = el.querySelector('[data-step-key]')?.dataset.stepKey;
+      // A page came when the conversation holds more rows (it draws only those near what is in sight).
+      const held = () => Number(document.querySelector('.tr').dataset.rows);
+      const first = held();
       const t0 = performance.now();
       el.scrollTop = 0;
-      while (el.querySelector('[data-step-key]')?.dataset.stepKey === first) {
+      while (held() === first) {
         if (performance.now() - t0 > 20000) return { timeout: true };
         await new Promise((r) => setTimeout(r, 5));
       }
@@ -404,10 +424,31 @@ async function deepRun() {
     if (marksAt.has(n)) await checkpoint(`after ${n} pages`);
     await sleep(50);
   }
-  const allRows = await page.run("document.querySelectorAll('.tr [data-step-key]').length");
+  const allRows = await page.run("Number(document.querySelector('.tr').dataset.rows)");
   assert.ok(!(await page.run("!!document.querySelector('.tdiv.earlier')")) || results.pages.length >= load.pages, "the conversation reads back to its start");
-  note(`read back to the start: ${results.pages.length} pages, ${allRows} rows drawn`);
+  note(`read back to the start: ${results.pages.length} pages, ${allRows} rows held, ${await page.run("document.querySelectorAll('.vrow').length")} drawn`);
   await checkpoint("all of it");
+  await page.run(`(() => { const el = document.querySelector(${JSON.stringify(conv)}); el.scrollTop = el.scrollHeight; })()`);
+  await sleep(500);
+  results.readUp = await wheel(conv, "all of it: wheel up from the end", 150);
+  const jump = async (to, label) => {
+    const frames = await page.run(`(async () => {
+      const el = document.querySelector(${JSON.stringify(conv)});
+      const box = el.getBoundingClientRect();
+      el.scrollTop = ${to === "top" ? "0" : "el.scrollHeight"};
+      for (let i = 1; i <= 60; i++) {
+        await new Promise((r) => requestAnimationFrame(r));
+        if (document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".vrow")) return i;
+      }
+      return 61;
+    })()`);
+    note(`${label}: rows in sight after ${frames} frames`);
+    return frames;
+  };
+  results.jumpTop = await jump("top", "scrollbar to the top");
+  await sleep(500);
+  results.jumpEnd = await jump("end", "scrollbar back to the end");
+  await sleep(500);
 
   // Answered while all of it is drawn: back to the end, a message sent, the reply written out.
   await page.run(`(() => { const el = document.querySelector(${JSON.stringify(conv)}); el.scrollTop = el.scrollHeight; })()`);
@@ -418,7 +459,7 @@ async function deepRun() {
   await page.call("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await until("document.querySelector('.working')", "the reply under way", 10000);
   await sleep(2500);
-  results.streaming = await busy(8, `a reply written out, ${allRows} rows drawn`);
+  results.streaming = await busy(8, `a reply written out, ${allRows} rows held`);
   results.streamingTyping = await typing(15, "typing while it writes");
   const following = await page.run(`(() => { const el = document.querySelector(${JSON.stringify(conv)}); return el.scrollHeight - el.scrollTop - el.clientHeight; })()`);
   note(`the reply's end is ${Math.round(following)} px below the view`);
@@ -439,6 +480,25 @@ async function deepRun() {
   assert.deepEqual(page.errors, [], "no page errors");
   await quit();
 
+  // The targets the conversation is held to (conversation-virtualization-design §2).
+  const all = results.checkpoints.at(-1);
+  const misses = [
+    all.memory.nodes > 50_000 && `${all.memory.nodes} DOM nodes with all of it read (50,000 at most)`,
+    all.memory.heapMB > 60 && `${all.memory.heapMB} MB of JS heap with all of it read (60 at most)`,
+    all.memory.rendererMB > 500 && `${all.memory.rendererMB} MB renderer with all of it read (500 at most)`,
+    Math.max(...results.pages.map((p) => p.ms)) > 80 && `a page took ${Math.max(...results.pages.map((p) => p.ms))} ms (80 at most)`,
+    Math.max(...results.pages.map((p) => p.longest)) > 50 && `a page blocked ${Math.max(...results.pages.map((p) => p.longest))} ms (50 at most)`,
+    results.streaming.taskPct > results.streamingLast.taskPct + 5 && `a reply costs ${results.streaming.taskPct}% with all of it, ${results.streamingLast.taskPct}% with the last page (5 points apart at most)`,
+    ...results.checkpoints.map((c) => c.typing.worstMs > 50 && `typing took ${c.typing.worstMs} ms ${c.rows} rows in (50 at most)`),
+    results.streamingTyping.worstMs > 50 && `typing took ${results.streamingTyping.worstMs} ms while a reply was written (50 at most)`,
+    ...results.checkpoints.map((c) => c.wheel.max > 50 && `a ${c.wheel.max} ms frame scrolling ${c.rows} rows in (50 at most)`),
+    results.readUp.max > 50 && `a ${results.readUp.max} ms frame reading up (50 at most)`,
+    results.readUp.blank > 0 && `${results.readUp.blank} blank frames reading up`,
+    results.jumpTop > 3 && `rows came ${results.jumpTop} frames after the scrollbar went to the top (3 at most)`,
+    results.jumpEnd > 3 && `rows came ${results.jumpEnd} frames after the scrollbar went to the end (3 at most)`,
+  ].filter(Boolean);
+  assert.deepEqual(misses, [], "targets missed");
+
   step(`${load.sessions} sessions changing: ${load.churn} changes a second`);
   await launch(`${spec},churn=${load.churn}`, { FINXWORK_DEFAULT_MODE: "sessions" });
   await page.run(helpers);
@@ -449,6 +509,79 @@ async function deepRun() {
   results.churnMemory = await memory("after the changes");
   assert.deepEqual(page.errors, [], "no page errors");
   await quit();
+
+  // A bot's one conversation, which never starts again: the same reading back, the same targets.
+  step(`A bot's conversation: at least ${load.messages} messages`);
+  await launch(`bots=1,sessions=0,messages=${load.messages}`);
+  await page.run(helpers);
+  await until("document.querySelector('.brow')", "bot rows", 60000);
+  await sleep(1000);
+  const chat = ".content .cscroll";
+  const held = "Number(document.querySelector('.tr.bots')?.dataset.rows ?? 0)";
+  // The stress bot: its name ends in its number, the demo's own bots' names do not.
+  await page.run(`[...document.querySelectorAll('.brow')].find((r) => /\\d$/.test(r.querySelector('.bname').textContent)).click()`);
+  await until("document.querySelectorAll('.tr.bots .vrow').length > 3", "the bot's conversation", 30000);
+  await sleep(1000);
+  const botReply = async (label) => {
+    await page.run(`(() => { const el = document.querySelector(${JSON.stringify(chat)}); el.scrollTop = el.scrollHeight; })()`);
+    await sleep(500);
+    await page.run("document.querySelector('.cmp-in').focus()");
+    await page.call("Input.insertText", { text: "今天的情况怎么样" });
+    await page.call("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await page.call("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await until("document.querySelector('.bm.working')", "the bot at work", 10000);
+    await sleep(1000);
+    const out = await busy(5, label);
+    out.typing = await typing(15, `${label}: typing`);
+    await until("!document.querySelector('.bm.working')", "the bot done", 60000);
+    await sleep(500);
+    return out;
+  };
+  const bot = { pages: [] };
+  bot.replyLast = await botReply("a bot's reply, the last page loaded");
+  await page.run(`document.querySelector(${JSON.stringify(chat)}).scrollTop = 0`);
+  for (let n = 1; n <= load.pages; n++) {
+    const r = await page.run(`(async () => {
+      const el = document.querySelector(${JSON.stringify(chat)});
+      if (!document.querySelector('.tdiv.earlier')) return null;
+      const held = () => ${held};
+      const first = held();
+      const t0 = performance.now();
+      el.scrollTop = 0;
+      while (held() === first) {
+        if (performance.now() - t0 > 20000) return { timeout: true };
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const long = window.__stress.long.filter((x) => x.at >= t0);
+      return { ms: performance.now() - t0, longest: Math.max(0, ...long.map((x) => x.ms)) };
+    })()`);
+    if (!r) break;
+    assert.ok(!r.timeout, `page ${n} of the bot's history did not come in 20 s`);
+    bot.pages.push({ ms: ms(r.ms), longest: ms(r.longest) });
+    if (n % 10 === 0) note(`bot page ${n}: ${ms(r.ms)} ms to draw, longest block ${ms(r.longest)} ms`);
+    await sleep(50);
+  }
+  note(`the bot's conversation read back: ${bot.pages.length} pages, ${await page.run(held)} rows held, ${await page.run("document.querySelectorAll('.tr.bots .vrow').length")} drawn`);
+  bot.memory = await memory("the bot's conversation, all of it read");
+  await page.run(`(() => { const el = document.querySelector(${JSON.stringify(chat)}); el.scrollTop = el.scrollHeight; })()`);
+  await sleep(500);
+  bot.readUp = await wheel(chat, "the bot's conversation: wheel up from the end", 150);
+  bot.replyAll = await botReply("a bot's reply, all of it loaded");
+  results.bot = bot;
+  assert.deepEqual(page.errors, [], "no page errors");
+  await quit();
+  const botMisses = [
+    bot.memory.nodes > 50_000 && `${bot.memory.nodes} DOM nodes with the bot's conversation read (50,000 at most)`,
+    bot.memory.heapMB > 60 && `${bot.memory.heapMB} MB of JS heap with the bot's conversation read (60 at most)`,
+    Math.max(...bot.pages.map((p) => p.ms)) > 80 && `a bot page took ${Math.max(...bot.pages.map((p) => p.ms))} ms (80 at most)`,
+    Math.max(...bot.pages.map((p) => p.longest)) > 50 && `a bot page blocked ${Math.max(...bot.pages.map((p) => p.longest))} ms (50 at most)`,
+    bot.replyAll.taskPct > bot.replyLast.taskPct + 5 && `a bot's reply costs ${bot.replyAll.taskPct}% with all of it, ${bot.replyLast.taskPct}% with the last page (5 points apart at most)`,
+    bot.replyAll.typing.worstMs > 50 && `typing took ${bot.replyAll.typing.worstMs} ms while the bot answered (50 at most)`,
+    bot.readUp.max > 50 && `a ${bot.readUp.max} ms frame reading the bot's conversation up (50 at most)`,
+    bot.readUp.blank > 0 && `${bot.readUp.blank} blank frames reading the bot's conversation up`,
+  ].filter(Boolean);
+  assert.deepEqual(botMisses, [], "the bot's targets missed");
 }
 
 async function listsRun() {

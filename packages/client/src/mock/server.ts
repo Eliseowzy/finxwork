@@ -147,8 +147,9 @@ export class MockServer {
   private readonly conns = new Set<Conn>();
   private readonly speed: number;
   private readonly still: boolean;
-  /** Turns of a stress test's conversations. */
+  /** Turns, or messages, of a stress test's conversations. */
   private readonly stressTurns: number;
+  private readonly stressMessages: number | undefined;
   /** The clock events are stamped with; in the past while the demo's history is written. */
   private clock: number | null = null;
   /** Providers whose key was saved with auth/set. */
@@ -169,6 +170,7 @@ export class MockServer {
     this.speed = o.speed ?? 1;
     this.still = o.still ?? false;
     this.stressTurns = o.stress?.turns ?? 60;
+    this.stressMessages = o.stress?.messages;
     this.addSnake();
     for (const d of demoSessions()) this.addDemo(d);
     this.addAgentsDemo();
@@ -1039,7 +1041,7 @@ export class MockServer {
           s = this.botSession(q.bot_id, Date.now());
           const at = Date.parse(bot.summary.created_at);
           // A stress test's bot: its conversation as long as its sessions'.
-          if (q.bot_id.startsWith("stress-bot-")) s.fill = () => stressBotTranscript(Number(q.bot_id.slice(11)) + 1, this.stressTurns, at);
+          if (q.bot_id.startsWith("stress-bot-")) s.fill = () => stressBotTranscript(Number(q.bot_id.slice(11)) + 1, this.stressTurns, at, this.stressMessages);
         }
         this.filled(s);
         if (!bot.summary.session_id || bot.summary.session_id !== s.id) bot.summary = { ...bot.summary, session_id: s.id };

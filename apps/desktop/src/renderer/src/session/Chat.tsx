@@ -15,6 +15,7 @@ import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Fa
 import { Markdown } from "./Markdown";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
 import { useBrowserStatus } from "./Yours";
+import { useVirtualRows, type VirtualRow } from "./useVirtualRows";
 
 /**
  * The conversation, newest at the bottom, ending with what the model is
@@ -28,6 +29,13 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   const settled = useMemo(() => settledSteps(view), [view.entries, view.agents, view.descriptions, view.live?.tools, view.live === null, view.info.cwd]);
   const steps = useMemo(() => withStreaming(settled, view), [settled, view.live?.streaming]);
   const scroll = useRef<HTMLDivElement>(null);
+  // The scroller and the list as elements too, for the window (useVirtualRows): set once, by refs that do not change.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [list, setList] = useState<HTMLDivElement | null>(null);
+  const scrollRef = useCallback((el: HTMLDivElement | null) => {
+    scroll.current = el;
+    setScroller(el);
+  }, []);
   const [dock, setDock] = useState(0);
   const retry = view.live?.retry;
   useResumeAfterCompact(s.session_id, view);
@@ -143,15 +151,20 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   const onResend = useCallback((messageId: string) => takeBack.current(messageId), []);
   const find = (messageId: string) => {
     atEnd.current = false;
-    scroll.current?.querySelector(`[data-mid="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    virtual.scrollToKey(messageId);
   };
 
   // The session's current failure is told once, at the end, with Retry; earlier ones in one quiet line.
   const lastEnd = steps.findLast((x) => x.kind === "end");
   const working = runningAgents(view).length;
+  // Each row with what it shows worked out from all the steps; rows that would draw nothing are left out, as an empty
+  // row in the list would still take a gap. Only the rows near what is in sight are drawn (conversation-virtualization-design).
+  const failed = !!view.failure && !view.live;
+  const rows = useMemo(() => rowsOf(steps, lastEnd, failed, working), [steps, lastEnd, failed, working]);
+  const virtual = useVirtualRows({ scroller, list, rows, initial: rowHeights });
   return (
     <>
-      <div className="cscroll markdown-chat" ref={scroll} onScroll={onScroll} onWheel={touch} onTouchMove={touch} onKeyDown={touch} onPointerDown={hold}>
+      <div className="cscroll markdown-chat" ref={scrollRef} onScroll={onScroll} onWheel={touch} onTouchMove={touch} onKeyDown={touch} onPointerDown={hold}>
         <div className="dbody" style={{ paddingBottom: dock + 40 }}>
           {s.archived && (
             <div className="anote">
@@ -165,10 +178,17 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
               {paging ? <span className="mini-spin" aria-label={t("chat.loadingEarlier")} /> : <button className="link" onClick={earlier}>{t("chat.earlier")}</button>}
             </div>
           )}
-          <div className="tr" role="log" aria-label={t("chat.log")}>
-            {steps.map((step, i) => (
-              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} working={step === lastEnd ? working : 0} sessionId={s.session_id} again={step.key === again} onResend={s.archived ? undefined : onResend} />
-            ))}
+          <div className="tr" role="log" aria-label={t("chat.log")} ref={setList} data-rows={rows.length}>
+            {/* One flat list of keyed rows and spaces: a row keeps its element (and what is selected in it) however the parts change. */}
+            {virtual.parts.flatMap((part) =>
+              "space" in part
+                ? [<div key={`space:${part.at}`} className="vspace" style={{ height: part.space }} aria-hidden="true" />]
+                : rows.slice(part.from, part.to).map((r) => (
+                    <div key={r.key} className="vrow" data-step-key={r.key} ref={virtual.measure(r.key)}>
+                      <Row step={r.step} previous={r.previous} final={r.final} merged={false} current={r.current} working={r.working} sessionId={s.session_id} again={r.key === again} onResend={s.archived ? undefined : onResend} />
+                    </div>
+                  )),
+            )}
             {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
             <Working view={view} steps={steps} />
             <BackgroundLine view={view} />
@@ -310,6 +330,27 @@ function isMerged(steps: Step[], i: number): boolean {
   return false;
 }
 
+/** A row of the list: its step and what it shows of the steps around it. */
+type ChatRow = VirtualRow & { step: Step; previous: number | undefined; final: EndStep | undefined; current: boolean; working: number };
+
+/** Each kind's height until rows of it are measured: only how long the scrollbar is depends on it. */
+const rowHeights: Record<string, number> = { user: 64, text: 220, work: 40, agents: 120, report: 120, agent_message: 100, end: 32, note: 32 };
+
+/**
+ * The rows the conversation draws, in order: the steps but those that draw nothing (an end that went under the model's
+ * last words, a group whose calls all show in the working line or the approval), each with the time of the owner's
+ * message before it, its task's end, and whether it is the current failure.
+ */
+function rowsOf(steps: Step[], lastEnd: Step | undefined, failed: boolean, working: number): ChatRow[] {
+  const out: ChatRow[] = [];
+  steps.forEach((step, i) => {
+    if (isMerged(steps, i)) return;
+    if (step.kind === "work" && !step.items.some((it) => !runs(it) && !thinks(it) && !(it.kind === "tool" && it.tool.state === "awaiting_approval"))) return;
+    out.push({ key: step.key, kind: step.kind, step, previous: previousUser(steps, i), final: finalOf(steps, i), current: step === lastEnd && failed, working: step === lastEnd ? working : 0 });
+  });
+  return out;
+}
+
 /** `working`: the background tasks still working, for the last task end. */
 type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string; again: boolean; onResend?: (messageId: string) => void };
 
@@ -377,7 +418,7 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
       return (
         <>
           <TimeLine at={step.ts} previous={previous} />
-          <div className={`um ${again ? "again" : ""}`} data-mid={step.key} data-step-key={step.key}>
+          <div className={`um ${again ? "again" : ""}`}>
             {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0 || step.tabs.length > 0) && (
               <div className="um-att">
                 {rest.map((im, i) => (
@@ -409,14 +450,14 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
     }
     case "text":
       return (
-        <div className={`am ${final ? "act" : ""}`} data-step-key={step.key}>
+        <div className={`am ${final ? "act" : ""}`}>
           <Markdown text={step.text} streaming={step.live} />
           {final && <MessageBar text={step.text} at={step.ts} task={finished(final) ? <TaskTook end={final} started={previous} /> : undefined} />}
         </div>
       );
     case "work":
       // Calls that run, and the thinking in progress, are drawn in the working line at the end.
-      return <Work items={step.items.filter((it) => !runs(it) && !thinks(it))} live={step.live} />;
+      return <Work items={step.items.filter((it) => !runs(it) && !thinks(it))} live={step.live} keep />;
     case "agents":
       return <AgentCard launches={step.launches} />;
     case "report":
@@ -425,7 +466,7 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
       return <AgentMessageCard step={step} />;
     case "end":
       if (merged) return null;
-      return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} working={working} sessionId={sessionId} />;
+      return <TaskEnd id={step.key} end={step.end} chain={step.chain} started={previous} current={current} working={working} sessionId={sessionId} />;
     case "note":
       return step.note.note === "compaction" ? (
         <div className="tnote">{t("chat.compacted", { before: kilo(step.note.tokens_before), after: kilo(step.note.tokens_after) })}</div>
@@ -517,7 +558,7 @@ export function MessageTime({ at }: { at: Date }) {
  * of work that took several tasks or sub-agents is told once, at its end, as
  * a whole.
  */
-function TaskEnd({ end, chain, started, current, working, sessionId }: { end: TaskEndItem; chain?: TaskChain; started: number | undefined; current: boolean; working: number; sessionId: string }) {
+function TaskEnd({ id, end, chain, started, current, working, sessionId }: { id: string; end: TaskEndItem; chain?: TaskChain; started: number | undefined; current: boolean; working: number; sessionId: string }) {
   const { t } = useTranslation("session");
   const parts = useTaskParts(end, chain, started);
   if (end.outcome === "interrupted") return <div className="tnote">{t("chat.interrupted")}</div>;
@@ -530,7 +571,7 @@ function TaskEnd({ end, chain, started, current, working, sessionId }: { end: Ta
       </div>
     );
   }
-  return current ? <FailureCard error={end.error ?? undefined} working={working} sessionId={sessionId} /> : <PastFailure error={end.error ?? undefined} />;
+  return current ? <FailureCard error={end.error ?? undefined} working={working} sessionId={sessionId} stateId={`failure:${id}`} /> : <PastFailure error={end.error ?? undefined} stateId={`failure:${id}`} />;
 }
 
 /** A message's words, its skill mentions drawn as tags (the text copied is still `/skill:name`). */
