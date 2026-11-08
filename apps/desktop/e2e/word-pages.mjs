@@ -52,7 +52,7 @@ try {
   const H = (probe.sh - 16) / total;
   for (let i = 0; i < total; i++) {
     await page.run(`(() => { const c = document.querySelector(".fpn .word-editor-canvas"); const s = [...document.querySelectorAll(".fpn *")].filter((e) => e.scrollHeight > e.clientHeight + 200 && /auto|scroll/.test(getComputedStyle(e).overflowY)).sort((a, b) => b.scrollHeight - a.scrollHeight)[0]; s.scrollTop = ${i * H}; })()`);
-    await sleep(700);
+    await sleep(Number(process.env.SHOT_WAIT ?? 700));
     const r = await page.run(`(() => { const r = document.querySelector(".docx-editor__scroll-container").getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height, scale: 1 }; })()`);
     const { data } = await page.cdp("Page.captureScreenshot", { format: "png", clip: r });
     fs.mkdirSync(process.env.FINXWORK_E2E_SHOTS, { recursive: true });
