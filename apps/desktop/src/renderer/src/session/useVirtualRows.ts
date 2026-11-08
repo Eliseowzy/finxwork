@@ -59,6 +59,8 @@ export function useVirtualRows({ scroller, list, rows, initial }: {
     gap: 0,
     jump: null as { key: string; block: ScrollLogicalPosition; smooth: boolean; then?: (el: HTMLElement) => void } | null,
     unpin: undefined as ReturnType<typeof setTimeout> | undefined,
+    /** A window placed but not drawn yet. Placing takes new guesses for the rows not measured, which the page shows only once that window is drawn: placed again before then (a scroll in between), the page and the guesses disagree on where every row is, and the window would land screens away for a frame. */
+    placed: false,
   }).current;
   const [gap, setGap] = useState(0);
   kept.gap = gap;
@@ -89,7 +91,7 @@ export function useVirtualRows({ scroller, list, rows, initial }: {
    */
   const place = () => {
     const { rows, scroller, list } = latest.current;
-    if (!scroller || !list) return;
+    if (!scroller || !list || kept.placed) return;
     const n = rows.length;
     if (n === 0) return;
     const view = scroller.clientHeight;
@@ -107,6 +109,7 @@ export function useVirtualRows({ scroller, list, rows, initial }: {
     const [a, b] = windowOf(P, g, top - view, bottom + view, STEP);
     if (a === df && b === de) return;
     kept.guesses = kept.means.snapshot();
+    kept.placed = true;
     setWin({ first: rows[a].key, last: rows[b - 1].key, toEnd: b === n });
   };
   const placeRef = useRef(place);
@@ -153,6 +156,7 @@ export function useVirtualRows({ scroller, list, rows, initial }: {
   // After each render: what was drawn, where the window should go (rows came or changed), a jump that waited for its row.
   useLayoutEffect(() => {
     kept.drawn = [first, end];
+    kept.placed = false;
     schedule();
     const jump = kept.jump;
     const el = jump && kept.elements.get(jump.key);

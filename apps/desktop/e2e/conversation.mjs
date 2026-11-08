@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // The conversation page over a long session, in the real app with real finx: a generated log and a
 // local model that answers after a pause. What it checks broke silently before: following the end
-// after a message is sent, the bar under earlier replies, going back to a session, and what a running
-// task costs the page while its model says nothing.
+// after a message is sent, the bar under earlier replies, going back to a session, what a running
+// task costs the page while its model says nothing, and a long reply's tables kept while it is written.
 //
 //   node apps/desktop/e2e/conversation.mjs
 //   FINXWORK_E2E_NO_BUILD=1 node apps/desktop/e2e/conversation.mjs   with what is built already
@@ -59,15 +59,26 @@ function writeSession(title, tasks) {
 writeSession("长会话", 120);
 writeSession("短会话", 2);
 
-// ── the model: says nothing for `silence` ms, then a line ──
+// ── the model: says nothing for `silence` ms, then a line, or the pieces of `long` 40 ms apart ──
 let silence = 200;
 let replied = () => {};
+let long = null;
+/** While the pieces of a long reply are still being written: what the page shows of it then is the reply being written. */
+let writing = false;
+const piece = (content) => `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`;
 const provider = http.createServer((req, res) => {
   req.resume();
   req.on("end", async () => {
     res.writeHead(200, { "content-type": "text/event-stream" });
     await sleep(silence);
-    res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "收到。" }, finish_reason: null }] })}\n\n`);
+    if (long) {
+      writing = true;
+      for (const p of long) {
+        res.write(piece(p));
+        await sleep(40);
+      }
+      writing = false;
+    } else res.write(piece("收到。"));
     res.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}\n\ndata: [DONE]\n\n`);
     replied();
   });
@@ -221,6 +232,37 @@ try {
   const margin = await run(`(() => { const r = ${scroller}.getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`);
   assert.ok((await run(rows)) < loaded, `all ${loaded} rows are drawn`);
 
+  console.log("▶ a reply written at the end of a long conversation keeps its tables once stored");
+  // Its row is never taken off the page while it grows: its tables, marked while the model was still writing, are
+  // the same elements after it is stored. A window placed again before the last one was drawn put it screens away.
+  await run(`${scroller}.scrollTop = ${scroller}.scrollHeight`);
+  await settle();
+  long = ["## 长回复\n\n先列一下改动：\n\n", "| 文件 | 改动 |\n", "|:--|:--|\n", "| 流式表格 | 新增 |\n", "| b.rs | 修改 |\n\n"];
+  for (let i = 0; i < 160; i++) long.push(`第 ${i} 段：表格之后接着写，回复一直变长，所在的一行越来越高。\n\n`);
+  long.push("| 结尾 | 表格 |\n|--|--|\n| x | y |\n");
+  const streamed = send();
+  let key = null;
+  for (const end = Date.now() + 30000; !key; await sleep(30)) {
+    if (Date.now() > end) throw new Error("the reply's table never showed while it was written");
+    const k = await run(`(() => {
+      const table = [...document.querySelectorAll(".vrow table")].find((t) => t.textContent.includes("流式表格"));
+      const row = table?.closest(".vrow");
+      row?.querySelectorAll("table").forEach((t) => (t.__kept = true));
+      return row?.dataset.stepKey ?? null;
+    })()`);
+    // Still writing after the marks were set: the row marked is the reply being written, not the one stored.
+    if (k && writing) key = k;
+  }
+  await streamed;
+  long = null;
+  await until("the reply stored", `document.querySelector('.vrow[data-step-key="${key}"] .msg-act')`);
+  await settle();
+  const tables = await run(`[...document.querySelectorAll('.vrow[data-step-key="${key}"] table')].map((t) => t.__kept === true)`);
+  assert.ok(tables.length >= 2, `the stored reply shows ${tables.length} tables`);
+  assert.ok(tables[0], "the reply's table was drawn anew while it was written or when it was stored");
+  const left = await below();
+  assert.ok(left < 80, `${left}px below the end after the long reply`);
+
   console.log("▶ reading up into rows not drawn before, what is read stays where it is");
   await run(`${scroller}.scrollTop = Math.round(${scroller}.scrollHeight * 0.55)`);
   await settle();
@@ -239,14 +281,15 @@ try {
   console.log(`  moved at most ${worst}px`);
 
   console.log("▶ a group of calls opened stays open after it was not drawn");
+  // A closed call among the rows drawn, brought to the middle of the view: where the last step left the view may hold none.
   const opened = await run(`(() => {
-    const r = ${scroller}.getBoundingClientRect();
-    const tool = [...document.querySelectorAll(".vrow .tool:not(.open)")].find((t) => { const b = t.getBoundingClientRect(); return b.top > r.top + 40 && b.bottom < r.bottom - 120 && t.querySelector(".th[aria-expanded]"); });
-    if (!tool) return null;
-    tool.querySelector(".th").click();
-    return tool.closest(".vrow").dataset.stepKey;
+    const tool = [...document.querySelectorAll(".vrow .tool:not(.open)")].find((t) => t.querySelector(".th[aria-expanded]"));
+    tool?.scrollIntoView({ block: "center" });
+    return tool?.closest(".vrow").dataset.stepKey ?? null;
   })()`);
-  assert.ok(opened, "no closed call in sight to open");
+  assert.ok(opened, "no closed call drawn to open");
+  await settle();
+  await run(`document.querySelector('.vrow[data-step-key="${opened}"] .tool:not(.open) .th[aria-expanded]').click()`);
   await until("the call open", `document.querySelector('.vrow[data-step-key="${opened}"] .tool.open')`);
   const there = await run(`${scroller}.scrollTop`);
   await run(`${scroller}.scrollTop = ${there} + ${scroller}.clientHeight * 6`);
@@ -317,7 +360,7 @@ try {
   const most = await run("window.__most");
   assert.ok(most < 150, `${most} rows drawn on going back, of ${loaded} loaded`);
 
-  console.log(`✔ the conversation follows, its bars show, a silent task costs little, going back draws ${most} of ${loaded} rows`);
+  console.log(`✔ the conversation follows, its bars show, a silent task costs little, going back draws ${most} of ${loaded} rows, a reply written at the end keeps its tables`);
 } catch (e) {
   failed = true;
   console.error(`✘ ${e.message}\n  kept ${work}`);

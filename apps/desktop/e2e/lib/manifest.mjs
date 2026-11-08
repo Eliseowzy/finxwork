@@ -30,7 +30,7 @@ export const scripts = {
   "computer-use": { covers: [`${renderer}settings/DesktopSettings`, `${renderer}desktopControl`, "crates/finx-desktop/", `${core}desktop.rs`, `${main}desktop`] },
   "connector-login": { covers: [`${core}connectors/`, "crates/finx-connections/"] },
   "content-actions": { covers: [`${renderer}session/content`, `${renderer}session/Code`, `${renderer}session/Chat`, `${renderer}session/Markdown`, `${renderer}session/markdown/`, `${main}files`, `${main}ipc`, `${core}prompts/`] },
-  conversation: { covers: [`${renderer}session/Chat`, `${renderer}session/Steps`, `${renderer}session/useSession`, `${renderer}session/SessionPage`, `${client}steps`, `${client}history`] },
+  conversation: { covers: [`${renderer}session/Chat`, `${renderer}session/Steps`, `${renderer}session/useSession`, `${renderer}session/SessionPage`, `${renderer}session/useVirtualRows`, `${renderer}session/virtual`, `${renderer}session/useRowState`, `${client}steps`, `${client}history`] },
   customize: { covers: [`${renderer}customize/`, `${server}customize`, `${core}mcp/`, `${core}skills/`, "crates/finx-mcp/"] },
   "deck-edit": { covers: [`${renderer}session/DeckEditActions`, `${renderer}docs/pptx/deckEdit`, `${core}deck`, "crates/finx-docs/src/deck/", `${server}decks`] },
   "desktop-approval": { covers: [`${renderer}session/Approval`, `${renderer}settings/DesktopSettings`, "crates/finx-desktop/", `${core}desktop.rs`] },

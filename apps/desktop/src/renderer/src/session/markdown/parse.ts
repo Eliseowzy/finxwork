@@ -59,12 +59,18 @@ export function createMarkdownSlices() {
 }
 
 /** Only suppress a provisional table outside a fenced block. Escaped pipes and
- * pipes in inline code belong to a cell, not to the column count. */
+ * pipes in inline code belong to a cell, not to the column count. Until its
+ * delimiter row is whole a table is a paragraph's last lines, its header and the
+ * part of that row written: those lines, each starting with a pipe, wait. */
 export function pendingText(text: string): string {
   const nodes = parser.parse(text).children;
   const last = nodes.at(-1);
   if (last?.type !== "paragraph") return text;
   const start = last.position!.start.offset!;
-  const tail = text.slice(start);
-  return /^\s*\|[^\n]*\n?$/.test(tail) ? text.slice(0, start) : text;
+  const lines = text.slice(start).split("\n");
+  const end = lines.at(-1) === "" ? lines.length - 1 : lines.length;
+  let cut = end;
+  while (cut > 0 && /^\s*\|/.test(lines[cut - 1])) cut--;
+  if (cut === end) return text;
+  return cut === 0 ? text.slice(0, start) : text.slice(0, start) + lines.slice(0, cut).join("\n");
 }

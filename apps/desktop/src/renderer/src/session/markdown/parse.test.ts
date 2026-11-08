@@ -42,6 +42,16 @@ test("code and escaped pipes never disappear as provisional tables", () => {
   const table = "|a|b|\n|-|-|\n|x\\|y|z|";
   assert.equal(pendingText(table), table);
 });
+test("a table whose delimiter row is still being written waits, however many of its lines came", () => {
+  assert.equal(pendingText("Intro\n\n| 文件 | 改动 |\n|--"), "Intro\n\n");
+  assert.equal(pendingText("Intro\n\n| 文件 | 改动 |\n|-"), "Intro\n\n");
+  assert.equal(pendingText("Intro\n\n| 文件 | 改动 |\n"), "Intro\n\n");
+  assert.equal(pendingText("看这里\n| 文件 | 改动 |\n|--"), "看这里");
+  // Once its delimiter row is whole it is a table, shown as it grows.
+  const head = "Intro\n\n| 文件 | 改动 |\n|---|---|";
+  assert.equal(pendingText(head), head);
+  assert.equal(pendingText(head + "\n| a.go |"), head + "\n| a.go |");
+});
 // A bracket mid-reply must not rebuild what is finished: ids stay, so React keeps the nodes.
 for (const text of ["先看 `arr[0]` 的值。\n\n第二段\n\n第三段\n\n第四段", "写 [注意] 这句。\n\n第二段\n\n第三段\n\n第四段", "- [x] done\n\n第二段\n\n第三段\n\n第四段", "匹配 `[^a-z]` 的字符。\n\n第二段\n\n第三段\n\n第四段", "> [!NOTE]\n> 提示\n\n第二段\n\n第三段\n\n第四段", "```text\n[r]: https://example.com\n```\n\n第二段\n\n第三段\n\n第四段"]) test(`no definition, no whole-document parse: ${text.slice(0, 20)}`, () => {
   const split = createMarkdownSlices();
