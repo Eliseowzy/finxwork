@@ -113,7 +113,8 @@ async function connectPage(url) {
   const run = async (expression) => {
     const r = await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
+    // -0, NaN and the infinities come apart from the value.
+    return r.result.unserializableValue !== undefined ? Number(r.result.unserializableValue) : r.result.value;
   };
   return { call, run, errors, close: () => ws.close() };
 }

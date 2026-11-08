@@ -112,7 +112,8 @@ try {
   const run = async (expression) => {
     const r = await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
+    // -0, NaN and the infinities come apart from the value: a position rounded to -0 at the very end is 0, not undefined.
+    return r.result.unserializableValue !== undefined ? Number(r.result.unserializableValue) : r.result.value;
   };
   const until = async (what, expression, ms = 30000) => {
     for (const end = Date.now() + ms; !(await run(`Boolean(${expression})`)); await sleep(60)) if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
@@ -172,7 +173,8 @@ try {
   silence = 200;
   await send();
   await sleep(700);
-  assert.ok((await below()) < 80, "going back to the end follows again");
+  const back = await below();
+  assert.ok(back < 80, `going back to the end follows again: ${back}px below the end`);
 
   console.log("▶ the bar under an earlier reply can be reached");
   const hit = await run(`(() => {
