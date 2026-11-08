@@ -269,8 +269,9 @@ async function quit() {
 }
 
 const busy = `!!document.querySelector(".tr.bots .bm.working")`;
-const messages = `[...document.querySelectorAll(".tr.bots > .bm:not(.working)")]`;
+const messages = `[...document.querySelectorAll(".tr.bots > .vrow > .bm:not(.working)")]`;
 const lastMessage = `${messages}.at(-1)`;
+const held = `Number(document.querySelector(".tr.bots")?.dataset.rows ?? 0)`;
 const rowLine = `document.querySelector(".brow.sel .bprev")?.textContent`;
 const size = (e) => `(() => { const r = ${e}?.getBoundingClientRect(); return r ? [Math.round(r.width), Math.round(r.height)] : null; })()`;
 
@@ -284,11 +285,14 @@ async function say(page, text) {
   await page.run(`document.querySelector("button.send").click()`);
 }
 
-/** Says something and waits for the bot to be done with it: `count` more messages from it. */
+/**
+ * Says something and waits for the bot to be done with it: the owner's message and `count` more from the bot, counted
+ * among the rows the conversation holds (it draws only those near what is in sight, so drawn bubbles are no count).
+ */
 async function ask(page, text, count = 1) {
-  const before = await page.run(`${messages}.length`);
+  const before = await page.run(held);
   await say(page, text);
-  await page.until(`the answer to ${text}`, `${messages}.length >= ${before + count} && !${busy}`);
+  await page.until(`the answer to ${text}`, `${held} >= ${before + 1 + count} && !${busy}`);
   await sleep(250);
 }
 
@@ -349,7 +353,7 @@ try {
   check(widths[0] >= 298 && widths[1] < 150, `narrow long and short bubbles: ${widths}`);
 
   step("19. the large view steps through them");
-  await page.click(`.tr.bots > .bm:last-of-type .bim`, 1);
+  await page.click(`.tr.bots > :nth-last-child(1 of .vrow:has(> .bm)) > .bm .bim`, 1);
   await page.until("the large view", `!!document.querySelector(".lightbox.many")`);
   same(await page.run(`document.querySelector(".lb-cap").textContent.replace(/\\s+/g, " ")`), "2 / 5 · b.png", "the caption");
   await page.key("ArrowRight");
@@ -369,7 +373,7 @@ try {
   await ask(page, "小图");
   same(await page.run(size(`${lastMessage}.querySelector(".bims.one")`)), [64, 64], "a small picture");
   await page.shot("03-one-image");
-  await page.click(`.tr.bots > .bm:last-of-type .bim`);
+  await page.click(`.tr.bots > :nth-last-child(1 of .vrow:has(> .bm)) > .bm .bim`);
   await page.until("the large view", `!!document.querySelector(".lightbox")`);
   check(!(await page.run(`!!document.querySelector(".lb-go")`)), "one image has no arrows");
   await page.key("Escape");
@@ -384,7 +388,7 @@ try {
   await page.shot("04-mixed");
 
   step("19. a file opens over the window to read, not beside the conversation");
-  const tiles = `.tr.bots > .bm:last-of-type .bfiles .tile-open`;
+  const tiles = `.tr.bots > :nth-last-child(1 of .vrow:has(> .bm)) > .bm .bfiles .tile-open`;
   const previewing = (name) => `document.querySelector(".fpv .fpv-name")?.textContent === ${JSON.stringify(name)}`;
   const closed = `!document.querySelector(".fpv")`;
   const panelClose = `[...document.querySelectorAll('.bgp button.tb.on[aria-pressed="true"]')].at(-1).click()`;
@@ -564,7 +568,7 @@ try {
   check(await page.run(`(() => { const t = ${lastMessage}.innerText; return t.includes("不存在的图") && t.includes("网上的图") && t.includes("说明在这里"); })()`), "the others are their alt text");
   same(await page.run(size(`${lastMessage}.querySelector(".md-img")`)), [480, 300], "as wide as one sent as a file");
   await page.shot("05c-image-in-words");
-  await page.click(`.tr.bots > .bm:last-of-type .md-img`);
+  await page.click(`.tr.bots > :nth-last-child(1 of .vrow:has(> .bm)) > .bm .md-img`);
   await page.until("the large view", `!!document.querySelector(".lightbox")`);
   same(await page.run(`document.querySelector(".lb-cap").textContent`), "指数走势", "its caption");
   await page.key("Escape");
@@ -585,7 +589,7 @@ try {
   await page.shot("06-question");
   await page.click(".bq-opt", 1);
   await page.until("the answer's reply", `${messages}.at(-1).innerText.includes("收到：发给财务组")`);
-  same(await page.run(`[...document.querySelectorAll(".tr.bots > .um")].at(-1).querySelector(".bub").textContent`), "发给财务组", "the owner's message");
+  same(await page.run(`[...document.querySelectorAll(".tr.bots > .vrow > .um")].at(-1).querySelector(".bub").textContent`), "发给财务组", "the owner's message");
   await page.until("the options gone", `document.querySelectorAll(".bq-opt").length === 0`);
   check(await page.run(`[...document.querySelectorAll(".bq")].at(-1).innerText.includes("报告要发给谁")`), "the question stays");
   same(said(lastRequest), "发给财务组", "the model got the answer as the owner's message");
@@ -605,7 +609,7 @@ try {
   step("21. reopened: an open question stays open, an answered one stays closed");
   await ask(page, "提问");
   await page.run(`location.reload()`);
-  await page.until("the conversation", `document.querySelectorAll(".tr.bots > .bm").length > 0`, 30000);
+  await page.until("the conversation", `document.querySelectorAll(".tr.bots > .vrow > .bm").length > 0`, 30000);
   await page.until("the question open", `document.querySelectorAll(".bq-opt").length === 3`);
   same(await page.run(`document.querySelectorAll(".bq").length`), 4, "four questions in all");
   await page.click(".bq-opt", 0);
@@ -622,11 +626,11 @@ try {
   fs.rmSync(at("gone.png"));
   fs.rmSync(at("gone.pdf"));
   await page.run(`location.reload()`);
-  await page.until("the conversation", `document.querySelectorAll(".tr.bots > .bm").length > 0`, 30000);
+  await page.until("the conversation", `document.querySelectorAll(".tr.bots > .vrow > .bm").length > 0`, 30000);
   await page.until("gone rows", `${lastMessage}.querySelectorAll(".tile.gone").length === 2`, 15000);
   same(await page.run(`[...${lastMessage}.querySelectorAll(".tile.gone .tile-kind")].map((k) => k.textContent)`), ["文件已不在", "文件已不在"], "the rows");
   same(await page.run(`${lastMessage}.querySelectorAll(".bims.one .bim").length`), 1, "one image left, alone");
-  await page.click(`.tr.bots > .bm:last-of-type .tile.gone .tile-open`);
+  await page.click(`.tr.bots > :nth-last-child(1 of .vrow:has(> .bm)) > .bm .tile.gone .tile-open`);
   await sleep(300);
   check(!(await page.run(`!!document.querySelector(".bgp")`)), "a gone file opens nothing");
   await page.shot("08-gone");

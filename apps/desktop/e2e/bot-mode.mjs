@@ -144,7 +144,19 @@ async function quit() {
 }
 
 // ── what the page shows ──
-const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub")].map((b) => b.innerText.trim())`;
+// The bot's bubbles drawn now, each with its row's key, and whose page this is.
+const drawnBubbles = `({ bot: document.querySelector(".bhead-n")?.textContent ?? "", shown: [...document.querySelectorAll(".tr.bots .vrow")].flatMap((v) => [...v.querySelectorAll(".bm:not(.working) .bbub")].map((b, i) => [v.dataset.stepKey + "#" + i, b.innerText.trim()])) })`;
+/**
+ * Every bubble of the bot on screen shown so far, in order. The conversation draws only the rows near what is in sight,
+ * so earlier ones go as it grows: they are gathered as they show (a new one comes at the end, drawn), per bot.
+ */
+const gathered = { bot: null, bubbles: new Map() };
+async function allBubbles(page) {
+  const { bot, shown } = await page.run(drawnBubbles);
+  if (bot !== gathered.bot) Object.assign(gathered, { bot, bubbles: new Map() });
+  for (const [key, text] of shown) gathered.bubbles.set(key, text);
+  return [...gathered.bubbles.values()];
+}
 const mine = `[...document.querySelectorAll(".tr.bots .um .bub")].map((b) => b.innerText.trim())`;
 const rows = `[...document.querySelectorAll(".brow")].map((r) => ({ name: r.querySelector(".bname").textContent, line: r.querySelector(".bprev")?.textContent ?? "", unread: r.querySelector(".bbadge")?.textContent ?? "", sel: r.classList.contains("sel"), pinned: !!r.querySelector(".bpin") }))`;
 const busy = `!!document.querySelector(".tr.bots .bm.working")`;
@@ -158,7 +170,7 @@ async function answerAll(page, allow, done, from, ms = 180000) {
   for (;;) {
     if (await page.run(asking)) {
       note(`${allow ? "allowed" : "not allowed"}: ${await page.run(`document.querySelector(".appr .appr-pre")?.textContent`)}`);
-      last = (await page.run(bubbles)).length;
+      last = (await allBubbles(page)).length;
       if (allow) await page.run(`document.querySelector(".appr .btn.primary").click()`);
       else {
         // Deny opens a line for why: leave it empty.
@@ -168,7 +180,7 @@ async function answerAll(page, allow, done, from, ms = 180000) {
       }
       await sleep(500);
     }
-    if (done() && !(await page.run(busy)) && !(await page.run(asking)) && (await page.run(bubbles)).length > last) return;
+    if (done() && !(await page.run(busy)) && !(await page.run(asking)) && (await allBubbles(page)).length > last) return;
     if (Date.now() > end) fail("timed out waiting for the bot to finish after its approvals");
     await sleep(500);
   }
@@ -187,7 +199,7 @@ async function replies(page, count, ms = 180000) {
   const seen = new Map();
   const end = Date.now() + ms;
   for (;;) {
-    const now = await page.run(bubbles);
+    const now = await allBubbles(page);
     now.forEach((text, i) => {
       // Bubbles are whole when they appear: never a growing text (no streaming).
       if (seen.has(i) && seen.get(i) !== text) fail(`a message changed while shown: ${JSON.stringify(seen.get(i))} → ${JSON.stringify(text)}`);
@@ -239,7 +251,7 @@ try {
 
   step("4/6/7. a question: one message back, whole, nothing internal in it");
   await say(page, "你好，你是谁？用一句话回答。");
-  await page.until("the busy bubble or a reply", `${busy} || ${bubbles}.length > 0`, 30000);
+  await page.until("the busy bubble or a reply", `${busy} || !!document.querySelector(".tr.bots .bm:not(.working) .bbub")`, 30000);
   await page.shot("02-busy");
   const first = await replies(page, 1);
   note(`FinxBot: ${first.at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
@@ -247,7 +259,7 @@ try {
   await page.shot("03-answer");
 
   step("5. four poems in a row: four messages, in order");
-  const before = (await page.run(bubbles)).length;
+  const before = (await allBubbles(page)).length;
   for (const s of ["春", "夏", "秋", "冬"]) await say(page, `写一首${s}天的四行小诗`);
   await page.until("the four messages sent", `${mine}.filter((t) => t.includes("小诗")).length === 4`, 15000);
   const poems = (await replies(page, before + 4, 240000)).slice(before);
@@ -264,17 +276,17 @@ try {
   await page.shot("04b-poems-hover");
 
   step("15. reopened, the conversation keeps its order");
-  const shownOrder = await page.run(`[...document.querySelectorAll(".tr.bots > .um, .tr.bots > .bm:not(.working)")].map((e) => e.innerText.trim().slice(0, 12))`);
+  const shownOrder = await page.run(`[...document.querySelectorAll(".tr.bots > .vrow > .um, .tr.bots > .vrow > .bm:not(.working)")].map((e) => e.innerText.trim().slice(0, 12))`);
   await page.cdp("Page.reload");
   await sleep(1500);
-  await page.until("the page again", `document.querySelectorAll(".tr.bots > .bm").length > 0`, 30000);
-  const reopenedOrder = await page.run(`[...document.querySelectorAll(".tr.bots > .um, .tr.bots > .bm:not(.working)")].map((e) => e.innerText.trim().slice(0, 12))`);
+  await page.until("the page again", `document.querySelectorAll(".tr.bots > .vrow > .bm").length > 0`, 30000);
+  const reopenedOrder = await page.run(`[...document.querySelectorAll(".tr.bots > .vrow > .um, .tr.bots > .vrow > .bm:not(.working)")].map((e) => e.innerText.trim().slice(0, 12))`);
   check(JSON.stringify(shownOrder) === JSON.stringify(reopenedOrder), `the order changed on reopening:\n${JSON.stringify(shownOrder)}\n${JSON.stringify(reopenedOrder)}`);
 
   step("8/9. two things for sub-agents, a quick question meanwhile");
   // Work a sub-agent can finish by itself, with no question for the owner to answer
   // (subagent-design D-43); the approval the bot itself asks for is step 11.
-  const n0 = (await page.run(bubbles)).length;
+  const n0 = (await allBubbles(page)).length;
   await say(page, "请交给两个子智能体分别去做，做完分别告诉我：一个写一首关于秋天的十四行诗；一个把《静夜思》翻译成英文。");
   await sleep(2500);
   await say(page, "顺便问一下，1 公里是多少英里？");
@@ -299,55 +311,55 @@ try {
       note(`its row says: ${await page.run(`${rows}.find((r) => r.sel)?.line`)}`);
     }
     // Until all three came: between a sub-agent's end and the bot's relay, nothing shows as busy.
-    const sofar = (await page.run(bubbles)).slice(n0);
+    const sofar = (await allBubbles(page)).slice(n0);
     const done = sofar.some(isQuick) && sofar.some(isSonnet) && sofar.some(isTranslation) && !(await page.run(busy)) && !(await page.run(asking));
     quiet = done ? quiet + 1 : 0;
     if (quiet >= 6) break;
     if (Date.now() > end) fail(`timed out waiting for the sub-agents' work and the quick answer: ${JSON.stringify(sofar.map((t) => t.slice(0, 40)))}`);
     await sleep(500);
   }
-  const mixed = (await page.run(bubbles)).slice(n0);
+  const mixed = (await allBubbles(page)).slice(n0);
   for (const t of mixed) note(`→ ${t.replace(/\s+/g, " ").slice(0, 90)}`);
   check(sawAgent, "the work went to sub-agents");
   if (!sawTwo) note("(never two sub-agents at once)");
   await page.shot("07-mixed");
 
   step("8b. a long job in the background, talking meanwhile (bot-turn-design §3)");
-  const n8 = (await page.run(bubbles)).length;
+  const n8 = (await allBubbles(page)).length;
   const t8 = Date.now();
   await say(page, "写一篇两千字的小作文，主题随便，写好整理成文件告诉我。");
   const allowing = async () => {
     if (await page.run(asking)) await page.run(`document.querySelector(".appr .btn.primary").click()`);
   };
   const atWork = `(document.querySelector(".tr.bots .bm.working .wb-t")?.textContent ?? "") !== ""`;
-  for (const until8 = Date.now() + 120000; (await page.run(bubbles)).length === n8; await sleep(200)) {
+  for (const until8 = Date.now() + 120000; (await allBubbles(page)).length === n8; await sleep(200)) {
     await allowing();
     if (Date.now() > until8) fail("timed out waiting for the first message");
   }
-  note(`first message after ${((Date.now() - t8) / 1000).toFixed(1)} s: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
+  note(`first message after ${((Date.now() - t8) / 1000).toFixed(1)} s: ${(await allBubbles(page)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
   for (const until8 = Date.now() + 120000; !(await page.run(atWork)); await sleep(300)) {
     await allowing();
     if (Date.now() > until8) fail("timed out waiting for a sub-agent at work");
   }
   for (const question of ["刚才给你发啥了你知道么", "为什么你在写的时候我还能给你发消息"]) {
-    const n = (await page.run(bubbles)).length;
+    const n = (await allBubbles(page)).length;
     const t = Date.now();
     await say(page, question);
-    for (const until = Date.now() + 90000; (await page.run(bubbles)).length === n; await sleep(200)) {
+    for (const until = Date.now() + 90000; (await allBubbles(page)).length === n; await sleep(200)) {
       await allowing();
       if (Date.now() > until) fail(`timed out waiting for an answer to: ${question}`);
     }
-    note(`answered after ${((Date.now() - t) / 1000).toFixed(1)} s: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
+    note(`answered after ${((Date.now() - t) / 1000).toFixed(1)} s: ${(await allBubbles(page)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
     check(await page.run(atWork), "the work goes on while it answers");
   }
   await page.shot("07a-talking-on");
-  const n8b = (await page.run(bubbles)).length;
+  const n8b = (await allBubbles(page)).length;
   for (const until8 = Date.now() + 900000, quiet8 = { n: 0 }; quiet8.n < 6; await sleep(500)) {
     await allowing();
-    quiet8.n = (await page.run(bubbles)).length > n8b && !(await page.run(busy)) && !(await page.run(asking)) ? quiet8.n + 1 : 0;
+    quiet8.n = (await allBubbles(page)).length > n8b && !(await page.run(busy)) && !(await page.run(asking)) ? quiet8.n + 1 : 0;
     if (Date.now() > until8) fail("timed out waiting for the essay");
   }
-  note(`delivered: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 120)}`);
+  note(`delivered: ${(await allBubbles(page)).at(-1).replace(/\s+/g, " ").slice(0, 120)}`);
   await page.shot("07a-delivered");
 
   step("10. 'no need any more': the sub-agent stops, the bot says so");
@@ -359,18 +371,18 @@ try {
   }
   note(`busy bubble: ${await page.run(`document.querySelector(".tr.bots .bm.working .wb-t")?.textContent`)}`);
   await sleep(1500);
-  const asked10 = (await page.run(bubbles)).length;
+  const asked10 = (await allBubbles(page)).length;
   await say(page, "那篇小说不用写了，停下吧。");
   // It may look at its folder first, which asks: allowed.
   await answerAll(page, true, () => true, asked10);
-  const after10 = (await page.run(bubbles)).slice(asked10);
+  const after10 = (await allBubbles(page)).slice(asked10);
   for (const t of after10) note(`→ ${t.replace(/\s+/g, " ").slice(0, 90)}`);
   check(after10.every((t) => t.length < 1500), "no story came after it was called off");
   await page.shot("07b-stopped");
 
   step("11. an approval: the prompt above the composer, none in the conversation; allowed, the work goes on");
   const hello = () => fs.readdirSync(path.join(home, "bots")).map((id) => path.join(home, "bots", id, "files", "hello.txt")).find((f) => fs.existsSync(f));
-  const n1 = (await page.run(bubbles)).length;
+  const n1 = (await allBubbles(page)).length;
   await say(page, "在你的文件夹里新建 hello.txt，内容写 hi。");
   await page.until("the approval", asking, 120000);
   check(!(await page.run(`!!document.querySelector(".tr.bots .appr")`)), "the conversation has no approval in it");
@@ -384,11 +396,11 @@ try {
   await page.shot("09-allowed");
 
   step("11. not allowed: the bot says so, nothing happens");
-  const n1b = (await page.run(bubbles)).length;
+  const n1b = (await allBubbles(page)).length;
   await say(page, "把你文件夹里的 hello.txt 删掉。");
   await page.until("the approval", asking, 120000);
   await answerAll(page, false, () => true, n1b);
-  note(`it says: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
+  note(`it says: ${(await allBubbles(page)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
   check(!!hello(), "hello.txt is still there");
   check(!(await page.run(`${rows}.find((r) => r.sel)?.line.includes("[待确认]")`)), "the row's [待确认] is gone");
   await page.shot("09b-denied");
@@ -419,7 +431,7 @@ try {
   await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
   await page.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await page.until("renamed in the list and the title", `${rows}.some((r) => r.name === "小研") && document.querySelector(".bhead-n").textContent === "小研"`);
-  const n2 = (await page.run(bubbles)).length;
+  const n2 = (await allBubbles(page)).length;
   await say(page, "你现在叫什么名字？只回答名字。");
   const named = (await replies(page, n2 + 1, 120000)).at(-1);
   note(`it says: ${named}`);
@@ -471,8 +483,8 @@ try {
   await page.until("Bot mode, FinxBot", `${rows}.some((r) => r.name === "FinxBot")`, 30000);
   // Should it have asked after all, the prompt is there: allowed, the work goes on.
   await answerAll(page, true, () => true, 0, 120000);
-  check((await page.run(bubbles)).some((t) => t.includes("银杏") && t.length > 100), "the answer is in the conversation");
-  note(`it wrote: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 60)}…`);
+  check((await allBubbles(page)).some((t) => t.includes("银杏") && t.length > 100), "the answer is in the conversation");
+  note(`it wrote: ${(await allBubbles(page)).at(-1).replace(/\s+/g, " ").slice(0, 60)}…`);
   await page.shot("13-after-restart");
 
   step("17. both themes");
@@ -485,7 +497,7 @@ try {
 
   step("17. reduced motion: the busy dots, avatar and row stand still");
   await page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
-  const n17 = (await page.run(bubbles)).length;
+  const n17 = (await allBubbles(page)).length;
   await say(page, "用一句话说说秋天适合做什么。");
   await page.until("the busy bubble", busy, 30000);
   const moving = await page.run(
@@ -501,7 +513,8 @@ try {
     const end = Date.now() + ms;
     for (;;) {
       if (await page.run(asking)) await page.run(`document.querySelector(".appr .btn.primary").click()`);
-      const v = await page.run(expr);
+      // An expression for the page, or a check of our own (one that gathers the bubbles shown).
+      const v = typeof expr === "function" ? await expr() : await page.run(expr);
       if (v) return v;
       if (Date.now() > end) fail(`timed out waiting for ${what}`);
       await sleep(400);
@@ -522,12 +535,12 @@ try {
   note(`options: ${await page.run(`[...document.querySelectorAll(".bq-opt")].map((b) => b.textContent).join(" / ")`)}`);
   await page.shot("20-question");
   const answer = await page.run(`document.querySelector(".bq-opt").textContent`);
-  const n21 = (await page.run(bubbles)).length;
+  const n21 = (await allBubbles(page)).length;
   await page.run(`document.querySelector(".bq-opt").click()`);
   await page.until("the tapped answer", `${mine}.at(-1) === ${JSON.stringify(answer)}`);
   await page.until("the options gone", `document.querySelectorAll(".bq-opt").length === 0`);
-  await allowUntil("its reply", `${bubbles}.length > ${n21} && !${busy}`);
-  note(`then: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
+  await allowUntil("its reply", async () => (await allBubbles(page)).length > n21 && !(await page.run(busy)));
+  note(`then: ${(await allBubbles(page)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
   await page.shot("21-answered");
 
   step("2. back in session mode: the switch remembers both sides, and the draft");

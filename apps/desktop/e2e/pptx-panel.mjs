@@ -193,9 +193,9 @@ async function ask(page, text) {
   await page.run(`document.querySelector(".cmp-in").focus()`);
   await page.cdp("Input.insertText", { text });
   await page.until("Send enabled", `!document.querySelector("button.send")?.disabled`);
-  const before = await page.run(`document.querySelectorAll(".tr.bots > .bm:not(.working)").length`);
+  const before = await page.run(`document.querySelectorAll(".tr.bots > .vrow > .bm:not(.working)").length`);
   await page.run(`document.querySelector("button.send").click()`);
-  await page.until(`the answer to ${text}`, `document.querySelectorAll(".tr.bots > .bm:not(.working)").length > ${before} && !document.querySelector(".tr.bots .bm.working")`, 40000);
+  await page.until(`the answer to ${text}`, `document.querySelectorAll(".tr.bots > .vrow > .bm:not(.working)").length > ${before} && !document.querySelector(".tr.bots .bm.working")`, 40000);
   await sleep(300);
 }
 
@@ -278,7 +278,7 @@ try {
 
   step("reopened, the remembered width still gives way");
   await page.run(`location.reload()`);
-  await page.until("the conversation", `document.querySelectorAll(".tr.bots > .bm").length > 0`, 30000);
+  await page.until("the conversation", `document.querySelectorAll(".tr.bots > .vrow > .bm").length > 0`, 30000);
   await page.run(`(() => { const s = document.querySelector(".cscroll"); s.scrollTop = 0; })()`);
   await page.clickTile("sample-presentation.pptx");
   const again = await opened(page);
