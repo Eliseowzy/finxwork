@@ -10,11 +10,11 @@ onlyBuiltDependencies:
 # published as release tarballs; see docs/desktop/betteroffice-fork.md. Overrides also catch
 # pptx-react's own dependency on pptx and pptx-i18n.
 overrides:
-  '@betteroffice/fonts-latin': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-fonts-latin-0.5.1-finx.gaed8ad6c.tgz
-  '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-fonts-0.5.1-finx.gaed8ad6c.tgz
-  '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-pptx-0.5.1-finx.gaed8ad6c.tgz
-  '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-pptx-i18n-0.5.1-finx.gaed8ad6c.tgz
-  '@betteroffice/pptx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-pptx-react-0.5.1-finx.gaed8ad6c.tgz
-  '@betteroffice/docx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-docx-0.5.1-finx.gaed8ad6c.tgz
-  '@betteroffice/docx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-docx-i18n-0.5.1-finx.gaed8ad6c.tgz
-  '@betteroffice/docx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.gaed8ad6c/betteroffice-docx-react-0.5.1-finx.gaed8ad6c.tgz
+  '@betteroffice/fonts-latin': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-fonts-latin-0.5.1-finx.g02b24170.tgz
+  '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-fonts-0.5.1-finx.g02b24170.tgz
+  '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-pptx-0.5.1-finx.g02b24170.tgz
+  '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-pptx-i18n-0.5.1-finx.g02b24170.tgz
+  '@betteroffice/pptx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-pptx-react-0.5.1-finx.g02b24170.tgz
+  '@betteroffice/docx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-docx-0.5.1-finx.g02b24170.tgz
+  '@betteroffice/docx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-docx-i18n-0.5.1-finx.g02b24170.tgz
+  '@betteroffice/docx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g02b24170/betteroffice-docx-react-0.5.1-finx.g02b24170.tgz

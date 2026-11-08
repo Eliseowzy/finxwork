@@ -278,12 +278,12 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "betteroffice-base-latin"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 
 [[package]]
 name = "betteroffice-docx"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-docx-edit",
  "betteroffice-docx-layout",
@@ -298,7 +298,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-docx-edit"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-docx-layout",
  "betteroffice-docx-parse",
@@ -320,7 +320,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-docx-layout"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-ooxml-text",
@@ -337,7 +337,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-docx-native-save"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-docx-edit",
@@ -354,7 +354,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-docx-parse"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-docx-raster"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-docx-layout",
@@ -387,7 +387,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-drawingml"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -401,7 +401,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-fonts"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "cc",
  "quick-xml 0.41.0",
@@ -414,7 +414,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-metafile"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -424,12 +424,12 @@ dependencies = [
 [[package]]
 name = "betteroffice-ooxml-diff"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 
 [[package]]
 name = "betteroffice-ooxml-raster"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-ooxml-text",
@@ -440,7 +440,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-ooxml-text"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-base-latin",
  "betteroffice-drawingml",
@@ -455,7 +455,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-opc"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "js-sys",
  "quick-xml 0.41.0",
@@ -465,7 +465,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-fonts",
  "betteroffice-pptx-edit",
@@ -477,7 +477,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-edit"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -494,7 +494,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-parse"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -508,7 +508,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-raster"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-metafile",
@@ -526,7 +526,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-render"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=aed8ad6caab4952bba4ff1c6eb95268afd25087b#aed8ad6caab4952bba4ff1c6eb95268afd25087b"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=02b241705294df58c1ac45b76a018e335ce825b7#02b241705294df58c1ac45b76a018e335ce825b7"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-metafile",
