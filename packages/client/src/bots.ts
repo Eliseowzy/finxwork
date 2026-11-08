@@ -3,9 +3,14 @@ import type { BotSummary, LastMessage } from "@finx/protocol";
 // What Bot mode's list shows about bots (docs/desktop/bot-mode-design.md §6.2),
 // worked out from the bots alone so it can be checked without a window.
 
+/** Each row's time, parsed once (a row is replaced, never changed): sorting runs on every change of any bot. */
+const parsed = new WeakMap<BotSummary, number>();
+
 /** When the bot last had a message, else when it was made: what the list sorts by. */
 export function botTime(b: BotSummary): number {
-  return Date.parse(b.last?.ts ?? b.created_at) || 0;
+  let t = parsed.get(b);
+  if (t === undefined) parsed.set(b, (t = Date.parse(b.last?.ts ?? b.created_at) || 0));
+  return t;
 }
 
 /** Pinned bots first, then the latest message first. Being busy moves nothing: rows would jump. */

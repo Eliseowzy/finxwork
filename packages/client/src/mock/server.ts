@@ -10,7 +10,7 @@ import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, siteS
 import { CustomizeMock, Failure as CustomizeFailure } from "./customize.ts";
 import { asks, type TaskScript, type ToolScript, type TurnScript } from "./script.ts";
 import { snake } from "./snake.ts";
-import { churnBot, churnSession, rng, stressBotTranscript, stressBots, stressSessions, stressTranscript, type StressOptions } from "./stress.ts";
+import { churnBot, churnSession, rng, stressBotTranscript, stressBots, stressReply, stressSessions, stressTranscript, type StressOptions } from "./stress.ts";
 
 // A stand-in for `finx serve` (desktop-design §6.4): the native protocol's
 // server side, with the proposed methods (§7), over NDJSON text. Tasks are
@@ -183,7 +183,7 @@ export class MockServer {
     for (const [i, summary] of stressSessions(o, now).entries()) {
       const s = this.create(summary.session_id, summary.cwd, summary.model!, "medium", "manual", Date.parse(summary.created_at), summary.no_project ?? false);
       s.summary = summary;
-      s.fill = () => stressTranscript(i + 1, turns, Date.parse(summary.created_at));
+      s.fill = () => stressTranscript(i + 1, turns, Date.parse(summary.created_at), o.messages);
     }
     for (const summary of stressBots(o, now)) this.bots.set(summary.id, { summary, routines: [] });
     if (!o.churn || this.still) return;
@@ -197,11 +197,12 @@ export class MockServer {
       owed += per;
       const changedBots: BotSummary[] = [];
       for (; owed >= 1; owed--) {
-        if (r() < 2 / 3) {
+        // Two bots for each session, while there are both.
+        if (bots.length && (!sessions.length || r() < 2 / 3)) {
           const b = bots[Math.floor(r() * bots.length)]!;
           b.summary = churnBot(r, b.summary, Date.now());
           changedBots.push(b.summary);
-        } else {
+        } else if (sessions.length) {
           const s = sessions[Math.floor(r() * sessions.length)]!;
           s.summary = churnSession(r, s.summary, Date.now());
           this.listChanged(s);
@@ -938,6 +939,7 @@ export class MockServer {
     }
     if (!script && s.bot) script = botScript(text);
     if (!script && wantsSite(text)) script = siteScript();
+    if (!script && s.id.startsWith("stress-session-")) script = stressReply(text);
     script = this.unkeyed(s) ?? script ?? replyScript(text);
     s.run = { cancelled: false, approvals: new Map() };
     this.startTask(s, input, id);

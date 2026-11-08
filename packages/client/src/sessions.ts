@@ -44,8 +44,16 @@ export function projectsOf(list: ListSession[]): string[] {
   return [...new Set(list.flatMap((s) => (s.no_project ? [] : [s.cwd])))];
 }
 
+/**
+ * Each summary's time, parsed once: a summary is replaced, never changed, when its session moves, and
+ * sorting thousands of sessions on every change of one would otherwise parse dates hundreds of thousands of times.
+ */
+const parsed = new WeakMap<ListSession, number>();
+
 export function updatedAt(s: ListSession): number {
-  return Date.parse(s.updated_at) || 0;
+  let t = parsed.get(s);
+  if (t === undefined) parsed.set(s, (t = Date.parse(s.updated_at) || 0));
+  return t;
 }
 
 /** The model's short name for a list row ("deepseek-flash"). */
@@ -179,11 +187,12 @@ export function mergeSessions(list: ListSession[], changed: ListSession[], delet
   let out = deleted.length ? list.filter((s) => !deleted.includes(s.session_id)) : list;
   if (!changed.length) return out;
   out = [...out];
-  const at = new Map(out.map((s, i) => [s.session_id, i]));
+  // A change or two, as finx sends them: looked up directly; many at once: through an index.
+  const at = changed.length > 8 ? new Map(out.map((s, i) => [s.session_id, i])) : null;
   for (const c of changed) {
-    const i = at.get(c.session_id);
-    if (i === undefined) {
-      at.set(c.session_id, out.length);
+    const i = at ? at.get(c.session_id) : out.findIndex((s) => s.session_id === c.session_id);
+    if (i === undefined || i < 0) {
+      at?.set(c.session_id, out.length);
       out.push(c);
     } else out[i] = c;
   }

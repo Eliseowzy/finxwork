@@ -7,6 +7,8 @@
 //
 //   node apps/desktop/e2e/stress.mjs
 //   … --bots 1200 --sessions 1500 --turns 60 --churn 40   (the default load)
+//   … --scenario deep --sessions 10000 --projects 100 --messages 5000
+//                                     sessions only: the list, then one conversation read back to its start
 //   … --json <file>                   also writes the numbers
 //   FINXWORK_E2E_NO_BUILD=1 …         uses the build there is
 import assert from "node:assert/strict";
@@ -23,7 +25,11 @@ const opt = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;
 };
-const load = { bots: Number(opt("bots", 1200)), sessions: Number(opt("sessions", 1500)), turns: Number(opt("turns", 60)), churn: Number(opt("churn", 40)) };
+const scenario = opt("scenario", "lists");
+const load =
+  scenario === "deep"
+    ? { sessions: Number(opt("sessions", 10000)), projects: Number(opt("projects", 100)), messages: Number(opt("messages", 5000)), churn: Number(opt("churn", 40)), pages: Number(opt("pages", 200)) }
+    : { bots: Number(opt("bots", 1200)), sessions: Number(opt("sessions", 1500)), turns: Number(opt("turns", 60)), churn: Number(opt("churn", 40)) };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const step = (s) => console.log(`\n▶ ${s}`);
 const note = (s) => console.log(`  · ${s}`);
@@ -36,7 +42,7 @@ if (!process.env.FINXWORK_E2E_NO_BUILD) execFileSync("pnpm", ["exec", "electron-
 let app = null;
 let page = null;
 
-async function launch(stress) {
+async function launch(stress, env = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxs-"));
   // A private HOME: the app registers the extension's host in the browsers under it.
   const userHome = path.join(work, "home");
@@ -45,7 +51,7 @@ async function launch(stress) {
   app = spawn(path.join(desktop, "node_modules/.bin/electron"), [desktop, `--remote-debugging-port=${port}`], {
     env: {
       ...process.env, FINXWORK_KERNEL: "mock", FINXWORK_MOCK_STRESS: stress, FINXWORK_E2E_BACKGROUND: process.env.FINXWORK_E2E_FOREGROUND ? "" : "1",
-      FINX_HOME: path.join(work, "finx"), HOME: userHome, FINXWORK_USER_DATA: path.join(work, "profile"), FINXWORK_NO_BROWSER: "1", FINX_NO_BROWSER: "1",
+      ...env, FINX_HOME: path.join(work, "finx"), HOME: userHome, FINXWORK_USER_DATA: path.join(work, "profile"), FINXWORK_NO_BROWSER: "1", FINX_NO_BROWSER: "1",
     },
     stdio: ["ignore", "ignore", "inherit"],
   });
@@ -145,7 +151,7 @@ const helpers = `(() => {
     action();
     const end = t0 + 10000;
     if (ready) while (!ready()) {
-      if (performance.now() > end) throw new Error("not ready in 10 s: " + ready);
+      if (performance.now() > end) throw new Error("not ready in 10 s: " + ready + " · selected " + JSON.stringify(document.querySelector(".srow.sel .stitle, .brow.sel .bname")?.textContent) + " · picked " + JSON.stringify(window.__picked) + " · rows " + document.querySelectorAll("[data-step-key]").length);
       await new Promise((r) => setTimeout(r, 5));
     }
     await frame(); await frame();
@@ -234,13 +240,13 @@ async function scroll(sel, label, rows) {
  * A conversation read back with the wheel, from its end upwards (it loads earlier pages on the way):
  * real input, as a conversation following its end lets go only for the person's own scrolling.
  */
-async function wheel(sel, label, steps = 120) {
+async function wheel(sel, label, steps = 120, down = false) {
   // At the conversation's left margin: over a tool's output, the wheel would scroll that box instead.
   const at = await page.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`);
   const before = await page.run(`document.querySelector(${JSON.stringify(sel)}).scrollTop`);
   await page.run(`window.__frames = []; (async () => { let l = performance.now(); window.__wheeling = true; while (window.__wheeling) { await new Promise((r) => requestAnimationFrame(r)); const t = performance.now(); window.__frames.push(t - l); l = t; } })(); 0`);
   for (let i = 0; i < steps; i++) {
-    await page.call("Input.dispatchMouseEvent", { type: "mouseWheel", x: at.x, y: at.y, deltaX: 0, deltaY: -120 });
+    await page.call("Input.dispatchMouseEvent", { type: "mouseWheel", x: at.x, y: at.y, deltaX: 0, deltaY: down ? 120 : -120 });
     await sleep(16);
   }
   await sleep(300);
@@ -302,9 +308,149 @@ async function typing(count, label) {
 
 const time = (action, ready) => page.run(`window.__time(() => { ${action} }, ${ready ? `() => ${ready}` : "null"})`);
 
-// ── the run ──
+// ── the runs ──
 
-try {
+/**
+ * Sessions only, a heavy owner's way: thousands of sessions in many projects, and one conversation of
+ * thousands of messages read back to its start a page at a time, then answered while all of it is drawn.
+ */
+async function deepRun() {
+  const spec = `bots=0,sessions=${load.sessions},projects=${load.projects},messages=${load.messages}`;
+  const conv = ".content .cscroll.markdown-chat";
+  step(`Sessions only: ${load.sessions} sessions in ${load.projects} projects, at least ${load.messages} messages each`);
+  await launch(spec, { FINXWORK_DEFAULT_MODE: "sessions" });
+  await page.run(helpers);
+  await until("document.querySelector('.srow')", "session rows", 60000);
+  await sleep(1500);
+  const marks = await page.run("window.__stress.marks");
+  const startLong = await page.run("window.__stress.long");
+  results.startup = { sideMs: ms(marks.side), firstSessionRowMs: ms(marks.sessionRow), longTasks: startLong.length, longestMs: ms(Math.max(0, ...startLong.map((x) => x.ms))) };
+  note(`startup: sidebar at ${results.startup.sideMs} ms · first session row at ${results.startup.firstSessionRowMs} ms · ${startLong.length} long tasks, longest ${results.startup.longestMs} ms`);
+  results.listMemory = await memory("the list loaded");
+  results.listIdle = await busy(5, "the new session page, idle");
+  results.listScroll = await scroll(".side-list", "session list scroll", ".srow, .grp-row");
+  const end = await page.run(`(() => { const l = document.querySelector('.side-list'); const rows = l.querySelectorAll('.srow'); return l.getBoundingClientRect().bottom - rows[rows.length - 1].getBoundingClientRect().bottom; })()`);
+  assert.ok(end >= 0 && end <= 12, `the session list's last row ends ${end}px from its end`);
+  const regroup = async (index, label) => {
+    await page.run("document.querySelector('.side-lh .tb').click()");
+    await until("document.querySelector('[data-pane=group]')", "view menu");
+    await page.run("document.querySelector('[data-pane=group]').click()");
+    await until("document.querySelectorAll('[role=menuitemradio]').length >= 3", "group menu");
+    const t = await time(`document.querySelectorAll('[role=menuitemradio]')[${index}].click()`);
+    note(`group by ${label}: ${ms(t)} ms`);
+    return ms(t);
+  };
+  results.regroup = { projectMs: await regroup(2, "project") };
+  results.projectScroll = await scroll(".side-list", `session list by project (${load.projects} groups) scroll`, ".srow, .grp-row");
+  results.regroup.dateMs = await regroup(1, "date");
+  results.regroup.statusMs = await regroup(0, "status");
+  await time(`document.querySelectorAll('.side-nav .nav-i')[1].click()`, `document.querySelector('.pal-in input')`);
+  const searches = [];
+  for (const q of ["缓存", "支付回调", "finx", "第 3 轮", "zzz"]) {
+    searches.push(await time(`const i = document.querySelector('.pal-in input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(q)}); i.dispatchEvent(new Event('input', { bubbles: true }));`));
+  }
+  results.searchMs = { median: ms(median(searches)), max: ms(Math.max(...searches)) };
+  note(`search keystroke over ${load.sessions} sessions: median ${results.searchMs.median} ms · max ${results.searchMs.max} ms`);
+  await page.run("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  await until("!document.querySelector('.pal')", "search closed");
+
+  // One conversation, opened at its end: deep in the list, past the mock's own few demo sessions at the top.
+  await page.run("document.querySelector('.side-list').scrollTop = 30000");
+  await sleep(200);
+  const open = await time(
+    `const rows = document.querySelectorAll('.srow:not(.sel)'); const r = rows[Math.min(rows.length - 1, 4)]; window.__picked = r.querySelector('.stitle').textContent; r.click();`,
+    `document.querySelector('.srow.sel .stitle')?.textContent === window.__picked && document.querySelectorAll('.tr [data-step-key]').length > 3`,
+  );
+  const picked = await page.run("window.__picked");
+  results.open = { ms: ms(open), steps: await page.run("document.querySelectorAll('.tr [data-step-key]').length") };
+  note(`open a session of ${load.messages}+ messages: ${results.open.ms} ms (${results.open.steps} rows drawn: the last page)`);
+  results.openTyping = await typing(20, "typing, the last page drawn");
+
+  // Read back to the start: off the end with the wheel, then each page asked for at the top.
+  const at = await page.run(`(() => { const r = document.querySelector(${JSON.stringify(conv)}).getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`);
+  for (let i = 0; i < 3; i++) await page.call("Input.dispatchMouseEvent", { type: "mouseWheel", x: at.x, y: at.y, deltaX: 0, deltaY: -240 });
+  await sleep(300);
+  results.pages = [];
+  results.checkpoints = [];
+  const marksAt = new Set([5, 10, 20, 30, 40, 50]);
+  const checkpoint = async (label) => {
+    const rows = await page.run("document.querySelectorAll('.tr [data-step-key]').length");
+    const point = { pages: results.pages.length, rows, memory: await memory(`${label}: ${rows} rows`) };
+    point.idle = await busy(3, `${label}: idle`);
+    point.wheel = await wheel(conv, `${label}: wheel down`, 40, true);
+    point.typing = await typing(15, `${label}: typing`);
+    results.checkpoints.push(point);
+  };
+  for (let n = 1; n <= load.pages; n++) {
+    const r = await page.run(`(async () => {
+      const el = document.querySelector(${JSON.stringify(conv)});
+      if (!document.querySelector('.tdiv.earlier')) return null;
+      const first = el.querySelector('[data-step-key]')?.dataset.stepKey;
+      const t0 = performance.now();
+      el.scrollTop = 0;
+      while (el.querySelector('[data-step-key]')?.dataset.stepKey === first) {
+        if (performance.now() - t0 > 20000) return { timeout: true };
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const long = window.__stress.long.filter((x) => x.at >= t0);
+      return { ms: performance.now() - t0, longest: Math.max(0, ...long.map((x) => x.ms)), long: long.reduce((a, x) => a + x.ms, 0) };
+    })()`);
+    if (!r) break;
+    assert.ok(!r.timeout, `page ${n} of earlier history did not come in 20 s`);
+    results.pages.push({ ms: ms(r.ms), longest: ms(r.longest), blocked: ms(r.long) });
+    if (n % 5 === 0 || n === 1) note(`page ${n}: ${ms(r.ms)} ms to draw, longest block ${ms(r.longest)} ms`);
+    if (marksAt.has(n)) await checkpoint(`after ${n} pages`);
+    await sleep(50);
+  }
+  const allRows = await page.run("document.querySelectorAll('.tr [data-step-key]').length");
+  assert.ok(!(await page.run("!!document.querySelector('.tdiv.earlier')")) || results.pages.length >= load.pages, "the conversation reads back to its start");
+  note(`read back to the start: ${results.pages.length} pages, ${allRows} rows drawn`);
+  await checkpoint("all of it");
+
+  // Answered while all of it is drawn: back to the end, a message sent, the reply written out.
+  await page.run(`(() => { const el = document.querySelector(${JSON.stringify(conv)}); el.scrollTop = el.scrollHeight; })()`);
+  await sleep(500);
+  await page.run("document.querySelector('.cmp-in').focus()");
+  await page.call("Input.insertText", { text: "把缓存失效策略整理一下" });
+  await page.call("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await page.call("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await until("document.querySelector('.working')", "the reply under way", 10000);
+  await sleep(2500);
+  results.streaming = await busy(8, `a reply written out, ${allRows} rows drawn`);
+  results.streamingTyping = await typing(15, "typing while it writes");
+  const following = await page.run(`(() => { const el = document.querySelector(${JSON.stringify(conv)}); return el.scrollHeight - el.scrollTop - el.clientHeight; })()`);
+  note(`the reply's end is ${Math.round(following)} px below the view`);
+  results.followingPx = Math.round(following);
+
+  // Somewhere else and back: the page keeps only its last page (latestPage).
+  await page.run("document.querySelector('.side-list').scrollTop = 30000");
+  await sleep(200);
+  await time(`[...document.querySelectorAll('.srow')].find((r) => r.querySelector('.stitle')?.textContent !== ${JSON.stringify(picked)}).click()`, `document.querySelectorAll('.tr [data-step-key]').length > 3 && document.querySelector('.srow.sel .stitle')?.textContent !== ${JSON.stringify(picked)}`);
+  await sleep(500);
+  results.afterSwitch = await memory("another session open");
+  const back = await time(`[...document.querySelectorAll('.srow')].find((r) => r.querySelector('.stitle')?.textContent === ${JSON.stringify(picked)}).click()`, `document.querySelector('.srow.sel .stitle')?.textContent === ${JSON.stringify(picked)} && document.querySelectorAll('.tr [data-step-key]').length > 3`);
+  results.backMs = ms(back);
+  note(`back to the long session: ${results.backMs} ms`);
+  await time(`document.querySelectorAll('.side-nav .nav-i')[0].click()`, `!document.querySelector(${JSON.stringify(conv)})`);
+  await sleep(800);
+  results.afterLeaving = await memory("back on the new session page");
+  assert.deepEqual(page.errors, [], "no page errors");
+  await quit();
+
+  step(`${load.sessions} sessions changing: ${load.churn} changes a second`);
+  await launch(`${spec},churn=${load.churn}`, { FINXWORK_DEFAULT_MODE: "sessions" });
+  await page.run(helpers);
+  await until("document.querySelector('.srow')", "session rows", 60000);
+  await sleep(1500);
+  results.churn = await busy(10, "session mode while sessions change");
+  results.churnTyping = await typing(30, "typing in the new session composer while sessions change");
+  results.churnMemory = await memory("after the changes");
+  assert.deepEqual(page.errors, [], "no page errors");
+  await quit();
+}
+
+async function listsRun() {
   const spec = `bots=${load.bots},sessions=${load.sessions},turns=${load.turns}`;
   step(`Static lists: ${load.bots} bots, ${load.sessions} sessions, ${load.turns} turns a conversation`);
   await launch(spec);
@@ -417,7 +563,10 @@ try {
   results.churnMemory = await memory("after 20 s of changes");
   assert.deepEqual(page.errors, [], "no page errors");
   await quit();
+}
 
+try {
+  await (scenario === "deep" ? deepRun() : listsRun());
   const file = opt("json");
   if (file) fs.writeFileSync(file, JSON.stringify({ load, results }, null, 2));
   console.log("\n✓ stress run complete");

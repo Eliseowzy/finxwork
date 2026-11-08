@@ -1,3 +1,4 @@
+import type { TaskScript } from "./script.ts";
 import type { Avatar, AvatarHue, AvatarShape, BotSummary, LastMessage, RoutineSummary, SessionState, SessionSummary, TranscriptItem, Usage } from "@finx/protocol";
 
 // A heavy owner for the mock (frontend stress tests): many bots, many
@@ -12,6 +13,10 @@ export interface StressOptions {
   sessions: number;
   /** Turns of each conversation, made when it is first opened (default 60). */
   turns?: number;
+  /** Messages of each conversation instead (user, assistant and tool results), in whole turns: at least this many. */
+  messages?: number;
+  /** Project folders the sessions are spread over (default one for each 25 sessions, at least 20). */
+  projects?: number;
   /** List changes pushed per second, bots and sessions together (default 0: none). */
   churn?: number;
   seed?: number;
@@ -25,7 +30,7 @@ export function parseStress(text: string | null | undefined): StressOptions | un
     const [k, v] = part.split(/[=:]/);
     if (k && v && Number.isFinite(Number(v))) o[k.trim()] = Number(v);
   }
-  return { bots: o.bots ?? 1000, sessions: o.sessions ?? 1000, turns: o.turns, churn: o.churn, seed: o.seed };
+  return { bots: o.bots ?? 1000, sessions: o.sessions ?? 1000, turns: o.turns, messages: o.messages, projects: o.projects, churn: o.churn, seed: o.seed };
 }
 
 /** A seeded generator (mulberry32). */
@@ -102,7 +107,7 @@ export function stressBots(o: StressOptions, now: number): BotSummary[] {
 /** The sessions of a heavy owner: across many projects and three months, a few running or waiting, some archived. */
 export function stressSessions(o: StressOptions, now: number): SessionSummary[] {
   const r = rng((o.seed ?? 7) * 31 + 1);
-  const folders = Array.from({ length: Math.max(20, Math.floor(o.sessions / 25)) }, (_, k) => `~/CodeSpace/${projects[k % projects.length]}${k >= projects.length ? `-${Math.floor(k / projects.length)}` : ""}`);
+  const folders = Array.from({ length: o.projects ?? Math.max(20, Math.floor(o.sessions / 25)) }, (_, k) => `~/CodeSpace/${projects[k % projects.length]}${k >= projects.length ? `-${Math.floor(k / projects.length)}` : ""}`);
   const out: SessionSummary[] = [];
   for (let i = 0; i < o.sessions; i++) {
     const updated = now - Math.floor(Math.pow(r(), 2) * 90 * day);
@@ -133,14 +138,19 @@ export function stressSessions(o: StressOptions, now: number): SessionSummary[] 
 
 const fence = "```";
 
-/** A long coding conversation: each turn a question, thinking, tool calls with their results, and a Markdown answer. */
-export function stressTranscript(seed: number, turns: number, start: number): TranscriptItem[] {
+/**
+ * A long coding conversation: each turn a question, thinking, tool calls with their results, and a Markdown answer.
+ * `messages`, when given, takes the place of `turns`: whole turns until there are at least that many messages.
+ */
+export function stressTranscript(seed: number, turns: number, start: number, messages?: number): TranscriptItem[] {
   const r = rng(seed);
   const items: TranscriptItem[] = [];
   let ts = start;
   let n = 0;
+  let said = 0;
   const id = () => `m${seed}_${n++}`;
-  for (let t = 0; t < turns; t++) {
+  for (let t = 0; messages ? said < messages : t < turns; t++) {
+    const before = items.length;
     const topic = pick(r, topics);
     items.push({ type: "message", message_id: id(), message: { role: "user", content: [{ type: "text", text: `${topic}。${pick(r, userLines)}` }], ts: (ts += 20_000) } });
     const calls = int(r, 1, 3);
@@ -175,9 +185,28 @@ export function stressTranscript(seed: number, turns: number, start: number): Tr
       "测试全部通过。",
     ].join("\n");
     items.push({ type: "message", message_id: id(), message: { role: "assistant", api: "openai-completions", provider: "deepseek", model: "deepseek-flash", stop_reason: "stop", usage, ts: (ts += 5000), content: [{ type: "text", text: answer }] } });
+    said += items.length - before;
     items.push({ type: "task_end", task_id: `t${seed}_${t}`, outcome: "completed", reason: "done", ts, usage: { per_model: { "deepseek/deepseek-flash": usage } } });
   }
   return items;
+}
+
+/** What a stress test's session answers: a long Markdown reply, written out over about 20 seconds, nothing to approve. */
+export function stressReply(prompt: string): TaskScript {
+  const rows = Array.from({ length: 8 }, (_, i) => `| 模块 ${i + 1} | ${120 + i * 7}ms | ${80 - i * 3}ms |`).join("\n");
+  const code = Array.from({ length: 12 }, (_, i) => `export function step${i}(input: number): number {\n  return input * ${i + 1};\n}`).join("\n");
+  return {
+    turns: [
+      { think: `用户说「${prompt.slice(0, 40)}」。先看相关模块，再给出改动和数据。`.repeat(3), tools: [{ name: "bash", args: { command: "rg -n cache src | head" }, output: "src/cache.ts:12: export const cache = new Map();", ms: 300 }] },
+      {
+        say: [
+          "## 分析结果", "", "改动分三步：", "", "1. 先把缓存的**失效时间**统一到一处", "2. 再给慢查询加索引", "3. 最后补测试", "",
+          "```ts", code, "```", "", "| 模块 | 改前 | 改后 |", "| --- | --- | --- |", rows, "",
+          "- 内存占用下降约 30%\n- 首屏时间下降约 40%\n- 测试全部通过", "", "> 注意：上线前要在预发环境跑一次完整回归。", "", "以上。",
+        ].join("\n"),
+      },
+    ],
+  };
 }
 
 /** A bot's long conversation: the owner asks, the bot answers through send_to_user. */
