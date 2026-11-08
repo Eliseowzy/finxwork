@@ -358,6 +358,7 @@ source = "git+https://github.com/Eliseowzy/betteroffice?rev=dcd4a36075ddc0c5a9af
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
+ "betteroffice-metafile",
  "betteroffice-opc",
  "indexmap 2.14.2",
  "libm",

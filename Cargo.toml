@@ -67,7 +67,7 @@ async-trait = "0.1"
 betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "dcd4a36075ddc0c5a9af679890d403f728470d79", default-features = false, features = ["raster", "fonts"] }
 # Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
 betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "dcd4a36075ddc0c5a9af679890d403f728470d79", default-features = false, features = ["raster", "fonts"] }
-docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "dcd4a36075ddc0c5a9af679890d403f728470d79" }
+docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "dcd4a36075ddc0c5a9af679890d403f728470d79", features = ["metafile", "tiff"] }
 ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "dcd4a36075ddc0c5a9af679890d403f728470d79", features = ["svg"] }
 # The .docx written from the session in Rust: the fork's port of the JS engine's saveYrsDocx.
 docx-native-save = { package = "betteroffice-docx-native-save", git = "https://github.com/Eliseowzy/betteroffice", rev = "dcd4a36075ddc0c5a9af679890d403f728470d79" }
