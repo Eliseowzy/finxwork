@@ -415,24 +415,29 @@ export function workSummary(items: WorkItem[]): { kind: ToolCategory | "denied" 
   return [...counts].map(([kind, count]) => ({ kind, count }));
 }
 
-const attached = "Attached files:\n";
-const attachedWithWorkbooks =
-  "Attached files. For XLSX and XLSM workbooks, use the deferred doc tools (doc_open, then doc_read) instead of unpacking them or parsing them with shell/Python:\n";
+const attached = "Attached files";
+const workbookHint = " For XLSX and XLSM workbooks, use the deferred doc tools (doc_open, then doc_read) instead of unpacking them or parsing them with shell/Python.";
+const bareHint =
+  " The user sent only these files, with no request. Do not open, read, render or screenshot them yet: reply in a sentence or two that you have them (name and type, from the path) and ask what they want done with them.";
 
 /**
  * Files and folders attached to a message, as the model is told of them: a
- * text block of absolute paths (finx's tools read them from there). The
- * window shows such a block as chips, not as text. Until the protocol has a
- * content kind of its own for them (desktop-design §7 P11).
+ * header line, then one absolute path per line (finx's tools read them from
+ * there). The window shows such a block as chips, not as text. bare: the
+ * message has no words of its own, so the model waits to be asked rather than
+ * reading what may be hundreds of pages. Until the protocol has a content kind
+ * of its own for them (desktop-design §7 P11).
  */
-export function attachedBlock(paths: string[]): UserContent {
-  const prefix = paths.some((path) => /\.(xlsx|xlsm)$/i.test(path)) ? attachedWithWorkbooks : attached;
-  return { type: "text", text: prefix + paths.join("\n") };
+export function attachedBlock(paths: string[], bare = false): UserContent {
+  const hints = (paths.some((path) => /\.(xlsx|xlsm)$/i.test(path)) ? workbookHint : "") + (bare ? bareHint : "");
+  return { type: "text", text: `${attached}${hints ? "." + hints : ":"}\n${paths.join("\n")}` };
 }
 
+/** The paths of an attachedBlock (any header written so far: "Attached files:" or one with hints), or null. */
 function attachedPaths(text: string): string[] | null {
-  const prefix = text.startsWith(attachedWithWorkbooks) ? attachedWithWorkbooks : text.startsWith(attached) ? attached : null;
-  return prefix ? text.slice(prefix.length).split("\n").filter(Boolean) : null;
+  if (!text.startsWith(attached)) return null;
+  const nl = text.indexOf("\n");
+  return nl < 0 ? [] : text.slice(nl + 1).split("\n").filter(Boolean);
 }
 
 /** A part of a web page the person added to the conversation from the embedded browser, with what they said about it. */

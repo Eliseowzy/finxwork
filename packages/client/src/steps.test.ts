@@ -192,3 +192,14 @@ test("the open presentation goes along with a message but is not shown", () => {
   assert.match((block as { text: string }).text, /deck\.pptx/);
   assert.equal(userText([{ type: "text", text: "当前打开的ppt内容是啥" }, block]).text, "当前打开的ppt内容是啥");
 });
+
+test("files sent with no words tell the model to wait to be asked, and still render as chips", () => {
+  const bare = attachedBlock(["/w/book.pdf", "/w/model.xlsx"], true);
+  assert.ok(bare.type === "text");
+  assert.match(bare.text, /Do not open, read, render or screenshot them yet/);
+  assert.match(bare.text, /doc_open, then doc_read/);
+  assert.deepEqual(userText([bare]), { text: "", files: ["/w/book.pdf", "/w/model.xlsx"], comments: [], quotes: [], tabs: [] });
+  const asked = attachedBlock(["/w/a.pdf"]);
+  assert.ok(asked.type === "text");
+  assert.doesNotMatch(asked.text, /Do not open/);
+});
