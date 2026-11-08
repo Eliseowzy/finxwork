@@ -119,7 +119,7 @@ export function toInput(text: string, atts: Attachment[]): UserContent[] {
   }
   const numbered = <T,>(a: Attachment, part: T) => (pictured.has(a) ? { ...part, image: pictured.get(a) } : part);
   const paths = atts.flatMap((a) => (a.kind === "file" ? [a.path] : a.kind === "folder" ? [/[\\/]$/.test(a.path) ? a.path : a.path + "/"] : []));
-  if (paths.length) out.push(attachedBlock(paths));
+  if (paths.length) out.push(attachedBlock(paths, out.length === 0 && atts.every((a) => a.kind === "file" || a.kind === "folder")));
   const web = atts.flatMap((a) => (a.kind === "web" ? [numbered(a, a.comment)] : []));
   if (web.length) out.push(webCommentBlock(web));
   const quotes = atts.flatMap((a) => (a.kind === "doc" ? [numbered(a, a.quote)] : []));

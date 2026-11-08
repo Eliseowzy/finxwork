@@ -64,13 +64,13 @@ async-trait = "0.1"
 # Back to upstream once all of these are merged there and a release carries them. No font packs
 # (fonts-latin, fonts-intl, fonts-cjk): every face comes from the machine (finx-slide's
 # SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
-betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "aac46417ba2f2e5a924d3427af28606ea932c408", default-features = false, features = ["raster", "fonts"] }
+betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "ee14ba190da79a84e75d056142d95030319d2a90", default-features = false, features = ["raster", "fonts"] }
 # Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
-betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "aac46417ba2f2e5a924d3427af28606ea932c408", default-features = false, features = ["raster", "fonts"] }
-docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "aac46417ba2f2e5a924d3427af28606ea932c408" }
-ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "aac46417ba2f2e5a924d3427af28606ea932c408", features = ["svg"] }
+betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "ee14ba190da79a84e75d056142d95030319d2a90", default-features = false, features = ["raster", "fonts"] }
+docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "ee14ba190da79a84e75d056142d95030319d2a90", features = ["metafile", "tiff"] }
+ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "ee14ba190da79a84e75d056142d95030319d2a90", features = ["svg"] }
 # The .docx written from the session in Rust: the fork's port of the JS engine's saveYrsDocx.
-docx-native-save = { package = "betteroffice-docx-native-save", git = "https://github.com/Eliseowzy/betteroffice", rev = "aac46417ba2f2e5a924d3427af28606ea932c408" }
+docx-native-save = { package = "betteroffice-docx-native-save", git = "https://github.com/Eliseowzy/betteroffice", rev = "ee14ba190da79a84e75d056142d95030319d2a90" }
 base64 = "0.22"
 bytes = "1"
 calamine = "0.38"
@@ -178,6 +178,77 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.zip]
+opt-level = 3
+
+# A Word save writes, then reopens, the whole document (BetterOffice and its CRDT and font
+# shaping); unoptimized, a 40-page thesis took about 3s to write.
+[profile.dev.package.finx-word]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-edit]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-layout]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-native-save]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-parse]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-raster]
+opt-level = 3
+
+[profile.dev.package.betteroffice-drawingml]
+opt-level = 3
+
+[profile.dev.package.betteroffice-fonts]
+opt-level = 3
+
+[profile.dev.package.betteroffice-ooxml-text]
+opt-level = 3
+
+[profile.dev.package.betteroffice-ooxml-diff]
+opt-level = 3
+
+[profile.dev.package.betteroffice-opc]
+opt-level = 3
+
+[profile.dev.package.yrs]
+opt-level = 3
+
+[profile.dev.package.rustybuzz]
+opt-level = 3
+
+[profile.dev.package.ttf-parser]
+opt-level = 3
+
+[profile.dev.package.skrifa]
+opt-level = 3
+
+[profile.dev.package.read-fonts]
+opt-level = 3
+
+[profile.dev.package.roxmltree]
+opt-level = 3
+
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.flate2]
+opt-level = 3
+
+[profile.dev.package.zopfli]
+opt-level = 3
+
+[profile.dev.package.hashbrown]
+opt-level = 3
+
+[profile.dev.package.smallvec]
 opt-level = 3
 
 [profile.release]

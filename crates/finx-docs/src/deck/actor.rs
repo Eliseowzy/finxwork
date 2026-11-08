@@ -383,7 +383,7 @@ fn handle(held: &mut Held, request: Request) -> Result<Value, String> {
         Request::WordCheck { path, .. } => {
             let bytes = std::fs::read(&path).map_err(|e| format!("read: {e}"))?;
             let summary = held.deck.word()?.check_saved(&bytes).map_err(|e| format!("{REFUSED}the written document does not open: {e}"))?;
-            to_value(WordChecked { paragraphs: summary.paragraphs, tables: summary.tables, pages: summary.pages, hash: super::sha256_hex(&bytes), size: bytes.len() as u64 })
+            to_value(WordChecked { paragraphs: summary.paragraphs, tables: summary.tables, hash: super::sha256_hex(&bytes), size: bytes.len() as u64 })
         }
         Request::Close { .. } => Ok(Value::Null),
         Request::Open { .. } | Request::Exit => Err("unexpected request".into()),

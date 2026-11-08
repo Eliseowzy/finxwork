@@ -508,7 +508,7 @@ fn renders_and_checks_saved_bytes() {
 
     let word = open();
     let summary = word.check_saved(FIXTURE).unwrap();
-    assert_eq!((summary.tables, summary.pages), (1, 1));
+    assert_eq!(summary.tables, 1);
     assert!(summary.paragraphs >= 6);
     assert!(word.check_saved(b"not a zip").is_err());
 }

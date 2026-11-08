@@ -47,7 +47,7 @@ export function botLine(b: BotSummary): BotLine {
 }
 
 /** The marker the composer puts before the files a message points at (attachedBlock). */
-const attached = "Attached files:\n";
+const attached = "Attached files";
 
 /**
  * A last message's line: the owner's own words without the blocks the composer adds, or the
@@ -58,8 +58,9 @@ export function lastText(last: LastMessage): { text: string; files: string[] } {
   let files: string[] = last.file ? [last.file] : [];
   if (last.from === "user") {
     const at = text.indexOf(attached);
-    if (at >= 0) {
-      files = text.slice(at + attached.length).split("\n").filter(Boolean).map((p) => p.split(/[\\/]/).at(-1) ?? p);
+    const nl = at >= 0 ? text.indexOf("\n", at) : -1;
+    if (nl >= 0) {
+      files = text.slice(nl + 1).split("\n").filter(Boolean).map((p) => p.split(/[\\/]/).at(-1) ?? p);
       text = text.slice(0, at);
     }
   }

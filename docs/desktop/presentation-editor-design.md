@@ -10,7 +10,7 @@ PPTX 在文件面板内直接编辑。主画布由浏览器 Canvas 按文稿对�
 
 ## EMF/WMF 和 OLE 预览
 
-从旧 PowerPoint 转换来的文稿可能把图表保存在 OLE 对象内，并提供 EMF/WMF 矢量预览。0.5.1 浏览器解码器无法直接显示这些资源。通过 pnpm 补丁为编辑器图像缓存增加每个编辑器独立的 `decodeImage` 回调，按字节签名识别元文件后调用 `pptx/metafile`，由 BetterOffice 的元文件解析器生成 SVG，再在前端画布绘制。普通图片继续使用原解码器。主画布和缩略图共用这条解码链路。
+从旧 PowerPoint 转换来的文稿可能把图表保存在 OLE 对象内，并提供 EMF/WMF 矢量预览。0.5.1 浏览器解码器无法直接显示这些资源。BetterOffice 编辑器提供 `decodeImage` 属性（每个编辑器独立），宿主传入解码回调，按字节签名识别元文件后调用 `pptx/metafile`，由 BetterOffice 的元文件解析器生成 SVG，再在前端画布绘制。普通图片继续使用原解码器。主画布和缩略图共用这条解码链路。
 
 转换只用于显示，原始 EMF/WMF、OLE 数据和文稿模型都保持原样。保存不会把 OLE 对象替换成 SVG 或 PNG。转换拒绝或存在遗漏时界面给出提示。这里提供的是嵌入对象的外观显示，不是 OLE 图表内部数据编辑器。补丁说明见 `patches/README.md`。
 

@@ -173,7 +173,6 @@ pub struct WordEdited {
 pub struct WordChecked {
     pub paragraphs: usize,
     pub tables: usize,
-    pub pages: u32,
     pub hash: String,
     pub size: u64,
 }
