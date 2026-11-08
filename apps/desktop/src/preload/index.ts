@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 import type { Bridge, BrowserPanel, BrowserStill, BrowserTab, BrowserTabCommand, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
 import type { Language } from "../shared/i18n";
 import type { UpdateInfo } from "../shared/update";
@@ -49,6 +49,7 @@ const bridge: Bridge = {
   onKernelState: (cb: (s: KernelStatusView) => void) => listen("kernel-state", cb),
   retryKernel: () => ipcRenderer.send("retry-kernel"),
   restartKernel: (now: boolean) => ipcRenderer.send("restart-kernel", now),
+  releaseMemory: () => webFrame.clearCache(),
   openSettings: (page?: string) => ipcRenderer.send("open-settings", page),
   systemBrowsers: () => ipcRenderer.invoke("system-browsers"),
   setUpSystemBrowser: () => ipcRenderer.invoke("system-browser-set-up"),

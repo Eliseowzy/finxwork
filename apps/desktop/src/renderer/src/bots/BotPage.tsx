@@ -36,6 +36,7 @@ import { ModelBlocked, ModelRows } from "./ModelRows";
 import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
 import { useVirtualRows, type VirtualRow } from "../session/useVirtualRows";
+import { HEAVY_ROWS, releaseAfterLeaving } from "../memory";
 
 /** Bot mode's pause before a time line (bot-mode-design §6.6). */
 const PAUSE = 10 * 60_000;
@@ -322,6 +323,10 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
   // row from the same side, no time line between). Only the rows near what is in sight are drawn.
   const rows = useMemo(() => botRows(items), [items]);
   const virtual = useVirtualRows({ scroller, list, rows, initial: botRowHeights });
+  // Leaving a conversation read far back: what it held goes back once the next page settles (memory.ts).
+  const held = useRef(0);
+  held.current = rows.length;
+  useEffect(() => () => void (held.current >= HEAVY_ROWS && releaseAfterLeaving()), []);
   const { scrollToKey } = virtual;
   useEffect(() => {
     const show = (run: string) => {

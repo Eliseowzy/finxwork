@@ -5,6 +5,7 @@ import { i18n } from "../../shared/i18n";
 import { App } from "./App";
 import { Tips } from "./tips";
 import { prepareAppearance } from "./appearance";
+import { releaseWhileHidden } from "./memory";
 import "./styles/fonts.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
@@ -22,6 +23,9 @@ document.addEventListener("scroll", (e) => {
   clearTimeout(settle.get(el));
   settle.set(el, window.setTimeout(() => el.classList.remove("scrolling"), 1000));
 }, { capture: true, passive: true });
+
+// Memory goes back while the window is hidden a while (memory.ts).
+releaseWhileHidden();
 
 void prepareAppearance().then(() => {
   createRoot(document.getElementById("root")!).render(

@@ -16,6 +16,7 @@ import { Markdown } from "./Markdown";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
 import { useBrowserStatus } from "./Yours";
 import { useVirtualRows, type VirtualRow } from "./useVirtualRows";
+import { HEAVY_ROWS, releaseAfterLeaving } from "../memory";
 
 /**
  * The conversation, newest at the bottom, ending with what the model is
@@ -162,6 +163,10 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   const failed = !!view.failure && !view.live;
   const rows = useMemo(() => rowsOf(steps, lastEnd, failed, working), [steps, lastEnd, failed, working]);
   const virtual = useVirtualRows({ scroller, list, rows, initial: rowHeights });
+  // Leaving a conversation read far back: what it held goes back once the next page settles (memory.ts).
+  const held = useRef(0);
+  held.current = rows.length;
+  useEffect(() => () => void (held.current >= HEAVY_ROWS && releaseAfterLeaving()), []);
   return (
     <>
       <div className="cscroll markdown-chat" ref={scrollRef} onScroll={onScroll} onWheel={touch} onTouchMove={touch} onKeyDown={touch} onPointerDown={hold}>

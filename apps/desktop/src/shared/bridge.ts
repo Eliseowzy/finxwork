@@ -251,6 +251,11 @@ export type Bridge = {
   retryKernel(): void;
   /** Starts finx again with a fresh login environment: now (running tasks are interrupted), or once no task runs. */
   restartKernel(now: boolean): void;
+  /**
+   * Gives back memory this page no longer uses (Electron's webFrame.clearCache: the renderer is told memory is short, so
+   * it drops caches and returns pages its allocators keep). After leaving a heavy page for a light one, or while hidden.
+   */
+  releaseMemory(): void;
   /** The settings window, on a page ("general", "models", "browser"). */
   openSettings(page?: string): void;
   /** The user's own browser: the ones here, setting finx up as the extension's host, opening one, the extension's folder. */
