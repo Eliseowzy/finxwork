@@ -180,6 +180,77 @@ opt-level = 3
 [profile.dev.package.zip]
 opt-level = 3
 
+# A Word save writes, then reopens, the whole document (BetterOffice and its CRDT and font
+# shaping); unoptimized, a 40-page thesis took about 3s to write.
+[profile.dev.package.finx-word]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-edit]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-layout]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-native-save]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-parse]
+opt-level = 3
+
+[profile.dev.package.betteroffice-docx-raster]
+opt-level = 3
+
+[profile.dev.package.betteroffice-drawingml]
+opt-level = 3
+
+[profile.dev.package.betteroffice-fonts]
+opt-level = 3
+
+[profile.dev.package.betteroffice-ooxml-text]
+opt-level = 3
+
+[profile.dev.package.betteroffice-ooxml-diff]
+opt-level = 3
+
+[profile.dev.package.betteroffice-opc]
+opt-level = 3
+
+[profile.dev.package.yrs]
+opt-level = 3
+
+[profile.dev.package.rustybuzz]
+opt-level = 3
+
+[profile.dev.package.ttf-parser]
+opt-level = 3
+
+[profile.dev.package.skrifa]
+opt-level = 3
+
+[profile.dev.package.read-fonts]
+opt-level = 3
+
+[profile.dev.package.roxmltree]
+opt-level = 3
+
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.flate2]
+opt-level = 3
+
+[profile.dev.package.zopfli]
+opt-level = 3
+
+[profile.dev.package.hashbrown]
+opt-level = 3
+
+[profile.dev.package.smallvec]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 4
