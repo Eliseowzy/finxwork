@@ -703,7 +703,9 @@ async function listsRun() {
     await sleep(100);
     const t = await time(
       `const rows = document.querySelectorAll('.srow:not(.sel)'); const r = rows[Math.min(rows.length - 1, 4)]; window.__picked = r.querySelector('.stitle').textContent; r.click();`,
-      `document.querySelector('.srow.sel .stitle')?.textContent === window.__picked && document.querySelectorAll('.tr .md, .tr .bub').length > 3`,
+      // Shown: the session's own page (it mounts again for each session) holds its rows and draws some. Not a count of
+      // replies drawn: with only the rows in sight drawn, a conversation ending in tall replies shows two or three.
+      `document.querySelector('.srow.sel .stitle')?.textContent === window.__picked && Number(document.querySelector('.tr')?.dataset.rows) > 3 && document.querySelectorAll('.tr [data-step-key]').length > 3`,
     );
     sessionOpens.push(t);
   }
