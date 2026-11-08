@@ -30,6 +30,8 @@ export const trackedChanges: TrackedChangesOptions = {
 
 /** Fitting the page: the room left beside it, and the zooms it keeps within. */
 const FIT_GUTTER = 24, FIT_MIN = 0.5, FIT_MAX = 1.25;
+/** The zooms a pinch keeps within. */
+const PINCH_MIN = 0.25, PINCH_MAX = 4;
 /** The comments sidebar's width and gap (@betteroffice/docx SIDEBAR_WIDTH + SIDEBAR_PAGE_GAP). */
 const SIDEBAR = 352;
 /** Below this panel width the outline button's gutter costs the page too much. */
@@ -130,6 +132,35 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
     seen.observe(box);
     refit();
     return () => { seen.disconnect(); cancelAnimationFrame(frame); fit.refit = () => {}; fit.zoomed = () => {}; };
+  }, [ready, fit]);
+
+  // Pinch to zoom: the trackpad's pinch arrives as a wheel with ctrl held (as does ctrl+wheel).
+  // It is the person's zoom, so fitting stops.
+  useEffect(() => {
+    const box = canvas.current;
+    const ref = editor.current;
+    if (!ready || !box || !ref) return;
+    let frame = 0, delta = 0;
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      delta += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const now = ref.getZoom() || 1;
+        const next = Math.round(Math.min(PINCH_MAX, Math.max(PINCH_MIN, now * Math.exp(-delta / 100))) * 100) / 100;
+        delta = 0;
+        if (Math.abs(next - now) < 0.001) return;
+        fit.auto = false;
+        fit.set = null;
+        ref.setZoom(next);
+        setZoom(ref.getZoom());
+      });
+    };
+    box.addEventListener("wheel", wheel, { passive: false, capture: true });
+    return () => { box.removeEventListener("wheel", wheel, { capture: true }); cancelAnimationFrame(frame); };
   }, [ready, fit]);
 
   // The pen takes the colour last picked from the toolbar's highlight menu.
