@@ -19,10 +19,16 @@ test("a save flushes pending input and serializes edits arriving during an in-fl
   const saving = doc.flush();
   await new Promise((r) => setImmediate(r));
   assert.equal(writes.length, 1);
+  // Typed during the write: unsaved at once, saved once the write in flight ends.
   doc.edit();
-  assert.equal(doc.flush(), saving);
+  assert.equal(doc.state, "dirty");
+  const next = doc.flush();
+  assert.notEqual(next, saving);
   release();
   await saving;
+  assert.equal(doc.state, "dirty");
+  await next;
+  assert.equal(doc.state, "clean");
   assert.deepEqual(writes.map((w) => [fromBase64(w.data)[0], w.base]), [[1, "base"], [2, "saved-1"]]);
   assert.equal(doc.dirty, false);
   doc.dispose();

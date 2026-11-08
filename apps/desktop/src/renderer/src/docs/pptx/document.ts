@@ -80,19 +80,22 @@ export class PresentationDoc {
   get stuck() { return ["conflict", "deleted", "refused"].includes(this.state); }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private emit() { this.changed(); this.listeners.forEach((f) => f()); }
+  /** A local edit: saved a moment later. During a save it shows as unsaved: the save in flight
+   *  covers what came before it; this edit waits for the next one. */
   edit() {
     if (this.disposed || !this.file.writable) return;
     this.revision++;
-    if (!this.stuck && this.state !== "saving") this.state = "dirty";
+    if (!this.stuck) this.state = "dirty";
     this.emit();
     clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.stuck) this.timer = setTimeout(() => void this.flush(), 1200);
   }
+  /** Saves now; during a save, once it ends, so a later edit is not lost. */
   flush(): Promise<void> {
     clearTimeout(this.timer);
     this.timer = undefined;
-    if (this.running) return this.running;
+    if (this.running) return this.running.then(() => (this.dirty ? this.flush() : undefined));
     if (this.disposed || this.stuck || !(this.serialize || this.kernel)) return Promise.resolve();
     this.running = this.save().finally(() => { this.running = null; });
     return this.running;
@@ -105,37 +108,31 @@ export class PresentationDoc {
       this.emit();
       return;
     }
-    let verify = true;
-    while ((this.dirty || verify) && !this.stuck && !this.disposed && this.file.writable && (this.serialize || this.kernel)) {
-      const revision = this.revision;
-      this.state = "saving";
-      this.message = null;
-      this.emit();
-      try {
-        if (this.kernel) {
-          // The kernel writes; it skips the write itself when nothing is unsaved.
-          verify = false;
-          this.settle(revision, await this.kernel.save(), null);
-          this.emit();
-          continue;
-        }
+    // One snapshot per save; edits made meanwhile leave it unsaved for the next one (edit()'s
+    // timer, or a flush waiting on this one), never a loop that shows "saving" while typing goes on.
+    if (this.stuck || this.disposed || !this.file.writable || !(this.serialize || this.kernel)) return;
+    const revision = this.revision;
+    this.state = "saving";
+    this.message = null;
+    this.emit();
+    try {
+      if (this.kernel) {
+        // The kernel writes; it skips the write itself when nothing is unsaved.
+        this.settle(revision, await this.kernel.save(), null);
+      } else {
         const bytes = await this.serialize!();
-        verify = false;
         if (bytes.length === this.savedBytes.length && bytes.every((value, index) => value === this.savedBytes[index])) {
           this.savedRevision = revision;
           this.state = this.dirty ? "dirty" : "clean";
-          this.emit();
-          continue;
+        } else {
+          this.settle(revision, await this.write(toBase64(bytes), this.file.hash), bytes);
         }
-        this.settle(revision, await this.write(toBase64(bytes), this.file.hash), bytes);
-      } catch (error) {
-        this.state = "failed";
-        this.message = error instanceof Error ? error.message : String(error);
-        this.emit();
-        return;
       }
-      this.emit();
+    } catch (error) {
+      this.state = "failed";
+      this.message = error instanceof Error ? error.message : String(error);
     }
+    this.emit();
   }
   private settle(revision: number, result: WriteResult, bytes: Uint8Array | null) {
     if (result.status === "saved" && result.hash) {

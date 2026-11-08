@@ -57,22 +57,23 @@ export class WordDoc {
     }
   }
 
-  /** A local edit: saved a moment later. */
+  /** A local edit: saved a moment later. During a save it shows as unsaved, as in Word: the
+   *  save in flight covers what was typed before it; this edit waits for the next one. */
   edit() {
     if (this.disposed || !this.file.writable) return;
     this.revision++;
-    if (!this.stuck && this.state !== "saving") this.state = "dirty";
+    if (!this.stuck) this.state = "dirty";
     this.emit();
     clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.stuck) this.timer = setTimeout(() => void this.flush(), 1200);
   }
 
-  /** Saves now (⌘S, the tab closing). */
+  /** Saves now (⌘S, the tab closing); during a save, once it ends, so a later edit is not lost. */
   flush(): Promise<void> {
     clearTimeout(this.timer);
     this.timer = undefined;
-    if (this.running) return this.running;
+    if (this.running) return this.running.then(() => (this.dirty ? this.flush() : undefined));
     if (this.disposed || this.stuck || !this.file.writable) return Promise.resolve();
     this.running = this.save({}).finally(() => { this.running = null; });
     return this.running;
@@ -92,25 +93,24 @@ export class WordDoc {
     return this.kernel.save({ path });
   }
 
+  /** One snapshot: what was typed up to now. Edits made meanwhile leave it unsaved, for edit()'s
+   *  timer (or a flush waiting on this one) to save next, never a save loop that shows "saving"
+   *  for as long as typing goes on. */
   private async save(options: { force?: boolean }) {
-    let first = true;
-    while ((this.dirty || first) && !this.stuck && !this.disposed) {
-      first = false;
+    if (this.stuck || this.disposed) return;
+    this.state = "saving";
+    this.message = null;
+    this.emit();
+    try {
+      await this.prepare?.();
+      // After prepare: the typed text it flushes counts as this snapshot's.
       const revision = this.revision;
-      this.state = "saving";
-      this.message = null;
-      this.emit();
-      try {
-        await this.prepare?.();
-        this.settle(revision, await this.kernel.save(options));
-      } catch (error) {
-        this.state = "failed";
-        this.message = error instanceof Error ? error.message : String(error);
-        this.emit();
-        return;
-      }
-      this.emit();
+      this.settle(revision, await this.kernel.save(options));
+    } catch (error) {
+      this.state = "failed";
+      this.message = error instanceof Error ? error.message : String(error);
     }
+    this.emit();
   }
 
   private settle(revision: number, result: WordWriteResult) {
