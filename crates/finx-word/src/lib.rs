@@ -78,7 +78,6 @@ pub struct SavedSummary {
     pub paragraphs: usize,
     pub tables: usize,
     pub sections: usize,
-    pub pages: u32,
 }
 
 /// The number the editor knows revision `id` by (`scrollToChange`): the id itself when it is
@@ -325,8 +324,8 @@ impl Word {
             .map_err(|e| WordError::Save(e.to_string()))
     }
 
-    /// Opens what the serializer wrote and says what is in it; bytes the engine cannot read or
-    /// lay out are an error.
+    /// Opens what the serializer wrote and says what is in it; bytes the engine cannot read are
+    /// an error. No page layout: a whole document laid out on every save took most of the save.
     pub fn check_saved(&self, bytes: &[u8]) -> Result<SavedSummary> {
         let document = render::open(bytes)?;
         let structure = document.structure();
@@ -334,7 +333,6 @@ impl Word {
             paragraphs: structure.body_paragraphs,
             tables: structure.body_tables,
             sections: structure.sections,
-            pages: render::count(&document)?,
         })
     }
 
