@@ -153,6 +153,13 @@ fn stream(req: WireRequest, strict: bool, decoder: Option<ChatEventDecoder>) -> 
                 yield StreamEvent::Failed(acc.fail(strict_error("missing_terminal_marker")));
                 return;
             }
+            if state.tool_blocks.values().any(|block| !block.started) {
+                yield StreamEvent::Failed(acc.fail(LlmError::new(
+                    ErrorKind::Protocol,
+                    "the stream ended before a tool call's function name arrived",
+                )));
+                return;
+            }
             if let Some(field) = &state.thinking_field {
                 acc.set_missing_thinking_signatures(field);
             }
@@ -200,12 +207,21 @@ enum BlockKind {
     Tool,
 }
 
+#[derive(Default)]
+struct ToolBlock {
+    index: usize,
+    id: String,
+    args: String,
+    data: Option<Value>,
+    started: bool,
+}
+
 /// Maps chunk deltas to block indexes.
 #[derive(Default)]
 pub(crate) struct ChatStreamState {
     next_index: usize,
     current: Option<(BlockKind, usize)>,
-    tool_blocks: HashMap<u64, usize>,
+    tool_blocks: HashMap<u64, ToolBlock>,
     pub(crate) thinking_field: Option<String>,
     pub(crate) finish_reason: Option<String>,
     pub(crate) done: bool,
@@ -257,30 +273,51 @@ impl ChatStreamState {
 
         for (position, call) in chunk.calls.iter().enumerate() {
             let key = call.index.unwrap_or(position as u64);
-            let args = call.arguments.unwrap_or("");
-            let index = match self.tool_blocks.get(&key) {
-                Some(index) => *index,
-                None => {
-                    let index = self.open(BlockKind::Tool);
-                    self.tool_blocks.insert(key, index);
-                    let id = call
-                        .id
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_string)
-                        .unwrap_or_else(|| format!("call_{index}_{:08x}", rand::random::<u32>()));
-                    let name = call.name.unwrap_or("").to_string();
-                    out.push(StreamEvent::ToolCallStart { index, id, name });
-                    index
+            if !self.tool_blocks.contains_key(&key) {
+                let index = self.open(BlockKind::Tool);
+                self.tool_blocks.insert(key, ToolBlock { index, ..Default::default() });
+            }
+            let block = self.tool_blocks.get_mut(&key).expect("tool block was inserted");
+            let index = block.index;
+            if block.started {
+                if let Some(args) = call.arguments.filter(|args| !args.is_empty()) {
+                    out.push(StreamEvent::ToolCallArgs { index, json: args.to_string() });
                 }
-            };
-            if !args.is_empty() {
-                out.push(StreamEvent::ToolCallArgs {
-                    index,
-                    json: args.to_string(),
-                });
+                if let Some(data) = call.extra {
+                    out.push(StreamEvent::ToolCallData { index, data: data.clone() });
+                }
+                continue;
+            }
+
+            // Compatible providers may send an id or arguments before the function name. Hold the
+            // whole call until it is named: an empty name would otherwise persist in the transcript
+            // and make the next request invalid. Sending a second Start would erase live arguments.
+            if block.id.is_empty()
+                && let Some(id) = call.id.filter(|id| !id.is_empty())
+            {
+                block.id = id.to_string();
+            }
+            if let Some(args) = call.arguments {
+                block.args.push_str(args);
             }
             if let Some(data) = call.extra {
-                out.push(StreamEvent::ToolCallData { index, data: data.clone() });
+                block.data = Some(data.clone());
+            }
+            let Some(name) = call.name.filter(|name| !name.is_empty()) else {
+                continue;
+            };
+            let id = if block.id.is_empty() {
+                format!("call_{index}_{:08x}", rand::random::<u32>())
+            } else {
+                std::mem::take(&mut block.id)
+            };
+            block.started = true;
+            out.push(StreamEvent::ToolCallStart { index, id, name: name.to_string() });
+            if !block.args.is_empty() {
+                out.push(StreamEvent::ToolCallArgs { index, json: std::mem::take(&mut block.args) });
+            }
+            if let Some(data) = block.data.take() {
+                out.push(StreamEvent::ToolCallData { index, data });
             }
         }
 
@@ -923,6 +960,40 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
         assert!(matches!(events[0], StreamEvent::ThinkingDelta { index: 0, .. }));
+    }
+
+    #[test]
+    fn holds_a_tool_call_until_its_name_arrives() {
+        let chunks = [
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"","arguments":"{\"path\":"}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read","arguments":"\"a.txt\"}"}}]}}]}"#,
+        ];
+        for typed in [false, true] {
+            let model = test_model(API_ID);
+            let mut state = ChatStreamState::default();
+            let mut acc = MessageAccumulator::for_model(&model);
+            for (position, raw) in chunks.iter().enumerate() {
+                let events = if typed {
+                    let wire: WireChunk = serde_json::from_str(raw).unwrap();
+                    state.on_chunk(&ChunkView::from_wire(&wire), &mut acc)
+                } else {
+                    let value: Value = serde_json::from_str(raw).unwrap();
+                    state.on_chunk(&ChunkView::from_value(&value), &mut acc)
+                };
+                if position == 0 {
+                    assert!(events.iter().all(|event| !matches!(event, StreamEvent::ToolCallStart { .. })));
+                }
+                for event in events {
+                    acc.apply(&event);
+                }
+            }
+            let message = acc.finish(StopReason::ToolUse);
+            let calls = message.tool_calls();
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].id, "call_1");
+            assert_eq!(calls[0].name, "read");
+            assert_eq!(calls[0].arguments.to_value(), json!({"path": "a.txt"}));
+        }
     }
 
     #[test]
