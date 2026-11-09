@@ -13,7 +13,7 @@ Token Plan 与账户订阅、API 服务是不同的集成方式，设置与首�
 | 产品 ID | Base URL | 独立环境变量 | 公共目录的行 | `thinking_format` |
 |---|---|---|---|---|
 | bailian-token-plan | `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` | `BAILIAN_TOKEN_PLAN_API_KEY` | `alibaba-token-plan-cn` | `qwen` |
-| tencent-token-plan | `https://tokenhub.tencentmaas.com/plan/v3` | `TENCENT_TOKEN_PLAN_API_KEY` | `tencent-token-plan`，其余查厂商 | 不写，官方文档没写开关 |
+| tencent-token-plan | `https://tokenhub.tencentmaas.com/v1` | `TENCENT_TOKEN_PLAN_API_KEY` | `tencent-token-plan`，其余查厂商 | 不写，官方文档没写开关 |
 | volcengine-agent-plan | `https://ark.cn-beijing.volces.com/api/plan/v3` | `VOLCENGINE_AGENT_PLAN_API_KEY` | 只查厂商 | `deepseek` |
 | volcengine-coding-plan | `https://ark.cn-beijing.volces.com/api/coding/v3` | `VOLCENGINE_CODING_PLAN_API_KEY` | `volcengine-coding-plan` | `deepseek` |
 | zai-coding-plan | `https://api.z.ai/api/coding/paas/v4` | `ZAI_CODING_PLAN_API_KEY` | `zai-coding-plan` | `zai` |
