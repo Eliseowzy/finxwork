@@ -27,7 +27,7 @@ export const demoTokenPlans: ProviderSummary[] = [
     ],
     "plan": {
       "key_url": "https://console.cloud.tencent.com/tokenhub",
-      "base_url": "https://tokenhub.tencentmaas.com/plan/v3",
+      "base_url": "https://tokenhub.tencentmaas.com/v1",
       "api": "openai-chat",
       "dynamic_models": false
     }

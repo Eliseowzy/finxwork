@@ -153,7 +153,7 @@ name = "Qwen3.8-Max"
 [providers.tencent-token-plan]
 name = "Tencent Cloud Token Plan"
 api = "openai-chat"
-base_url = "https://tokenhub.tencentmaas.com/plan/v3"
+base_url = "https://tokenhub.tencentmaas.com/v1"
 api_key_env = "TENCENT_TOKEN_PLAN_API_KEY"
 catalog_id = "tencent-token-plan"
 list_models = false
