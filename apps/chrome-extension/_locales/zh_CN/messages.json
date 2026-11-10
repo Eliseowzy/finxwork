@@ -93,7 +93,7 @@
     "message": "FinxWork 需要更新"
   },
   "hintStuck": {
-    "message": "打开 FinxWork 能修好连接，再重试。"
+    "message": "打开 FinxWork，它会修好连接，之后这里会自己连上。"
   },
   "hintUpdateExtension": {
     "message": "更新后会自动连上，标签页不受影响。"
@@ -115,5 +115,14 @@
   },
   "titleStuck": {
     "message": "FinxWork：连不上"
+  },
+  "statusNoAnswer": {
+    "message": "扩展没有响应"
+  },
+  "hintNoAnswer": {
+    "message": "重新加载扩展就能恢复，标签页不受影响。"
+  },
+  "reload": {
+    "message": "重新加载扩展"
   }
 }

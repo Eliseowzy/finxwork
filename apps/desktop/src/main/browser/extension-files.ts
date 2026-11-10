@@ -13,6 +13,34 @@ import path from "node:path";
  */
 export type ManifestState = "missing" | "ours" | "dead" | "other";
 
+/** One word of `sh` in single quotes, as `finx browser extension install` writes them: `'\''` is a quote. */
+const QUOTED = String.raw`'((?:[^']|'\\'')*)'`;
+const unquote = (word: string) => word.replaceAll(String.raw`'\''`, "'");
+
+/** The program and home a launcher script of `finx browser extension install` runs; null for another script. */
+export function launcherTarget(script: string): { program: string; home: string | null } | null {
+  const program = new RegExp(`exec ${QUOTED} browser native-host`).exec(script)?.[1];
+  if (program === undefined) return null;
+  const home = new RegExp(`FINX_HOME=${QUOTED}`).exec(script)?.[1];
+  return { program: unquote(program), home: home === undefined ? null : unquote(home) };
+}
+
+/**
+ * A launcher whose program or home is gone starts nothing: the script of a test's temporary
+ * home outlives the build it ran. Chrome would start it, and it exits at once.
+ */
+function launcherGone(launcher: string): boolean {
+  let script: string;
+  try {
+    script = fs.readFileSync(launcher, "utf8");
+  } catch {
+    return true;
+  }
+  const target = launcherTarget(script);
+  if (!target) return false; // Not one of ours to judge: a program of its own.
+  return !fs.existsSync(target.program) || (target.home !== null && !fs.existsSync(target.home));
+}
+
 export function manifestState(manifest: string, launcher: string): ManifestState {
   let text: string;
   try {
@@ -26,7 +54,7 @@ export function manifestState(manifest: string, launcher: string): ManifestState
   } catch {
     return "dead";
   }
-  if (typeof target !== "string" || !fs.existsSync(target)) return "dead";
+  if (typeof target !== "string" || !fs.existsSync(target) || launcherGone(target)) return "dead";
   return target === launcher ? "ours" : "other";
 }
 

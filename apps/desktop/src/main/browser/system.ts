@@ -5,7 +5,7 @@ import path from "node:path";
 import { app, nativeImage, shell } from "electron";
 import type { SystemBrowser, SystemBrowserDiagnosis, SystemBrowserId } from "../../shared/bridge";
 import { finxHome, kernelStatus } from "../kernel";
-import { heldBuild, manifestState, placeExtension } from "./extension-files";
+import { heldBuild, launcherTarget, manifestState, placeExtension } from "./extension-files";
 
 // The user's own browser (browser-design §8.4), set up from the settings: which browsers
 // this Mac has, registering finx as the extension's host, the extension's folder, and the
@@ -124,10 +124,22 @@ export async function setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; 
  * At start, and when a host is refused: where this home set the browser up, the files follow the
  * app, which may have moved or updated. A manifest that points at nothing is repaired; one of
  * another home's stays: another FinxWork, or a test with its own home, may be using it.
+ * `deadOnly`: each time the app comes to the front, only what starts nothing is repaired, as the
+ * extension asks the user to open FinxWork when its host will not start.
  */
-export async function refreshSystemBrowser() {
+let refreshing: Promise<void> = Promise.resolve();
+let pending = 0;
+export function refreshSystemBrowser(deadOnly = false): Promise<void> {
+  // One at a time; a look on focus while one runs or waits adds nothing.
+  if (deadOnly && pending > 0) return refreshing;
+  pending++;
+  refreshing = refreshing.then(() => refreshNow(deadOnly)).catch(() => {}).finally(() => pending--);
+  return refreshing;
+}
+
+async function refreshNow(deadOnly: boolean) {
   if (process.platform !== "darwin") return;
-  const mine = known.filter((k) => ["ours", "dead"].includes(manifestOf(k)));
+  const mine = known.filter((k) => (deadOnly ? ["dead"] : ["ours", "dead"]).includes(manifestOf(k)));
   const binary = serviceBinary();
   if (mine.length === 0 || !binary) return;
   try {
@@ -150,7 +162,7 @@ export async function diagnoseSystemBrowser(): Promise<SystemBrowserDiagnosis> {
   const launcher = launcherPath();
   let program: string | null = null;
   try {
-    program = /exec '([^']*)' browser native-host/.exec(fs.readFileSync(launcher, "utf8"))?.[1] ?? null;
+    program = launcherTarget(fs.readFileSync(launcher, "utf8"))?.program ?? null;
   } catch {
     // No script yet.
   }
