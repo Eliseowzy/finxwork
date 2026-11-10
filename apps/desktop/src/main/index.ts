@@ -100,6 +100,7 @@ app.whenReady().then(async () => {
     },
   });
   void refreshSystemBrowser();
+  app.on("browser-window-focus", () => void refreshSystemBrowser(true));
   startUpdater();
   setAppMenu();
   // Started at login for its routines: no window, until the person asks for one (routine-design §7.4).

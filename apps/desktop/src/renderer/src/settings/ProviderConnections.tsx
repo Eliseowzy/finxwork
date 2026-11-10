@@ -1,6 +1,8 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { ProviderSummary } from "@finx/protocol";
+import type { TFunction } from "i18next";
+import type { ProviderSummary, ProvidersAddResult } from "@finx/protocol";
+import { RpcError } from "@finx/client";
 import anthropic from "../assets/providers/anthropic.svg?raw";
 import deepseek from "../assets/providers/deepseek.svg?raw";
 import gemini from "../assets/providers/gemini.svg?raw";
@@ -65,14 +67,14 @@ function tokenPlans(providers: ProviderSummary[]): ProviderSummary[] {
     .sort((a, b) => planRank(a) - planRank(b) || a.name.localeCompare(b.name));
 }
 
-/** The providers that take a key, or with `plans` the Token Plans, as tiles; `skip` leaves out ones already set up. */
-export function ProviderTiles({ onPick, skip = [], plans }: { onPick: (p: ProviderSummary) => void; skip?: string[]; plans?: boolean }) {
+/** The providers that take a key, or with `plans` the Token Plans, as tiles; `skip` leaves out ones already set up. `onCustom` adds the tile of a service of one's own. */
+export function ProviderTiles({ onPick, onCustom, skip = [], plans }: { onPick: (p: ProviderSummary) => void; onCustom?: () => void; skip?: string[]; plans?: boolean }) {
   const { t } = useTranslation("session");
   const { t: settings } = useTranslation("settings");
   const st = useStore();
   const label = useTileName();
   // The Anthropic-compatible DeepSeek endpoint is the same account as DeepSeek: Settings has it.
-  const providers = (plans ? tokenPlans(st.models.providers) : keyProviders(st.models.providers).filter((p) => !p.plan && p.id !== "deepseek-anthropic")).filter((p) => !skip.includes(p.id));
+  const providers = (plans ? tokenPlans(st.models.providers) : keyProviders(st.models.providers).filter((p) => !p.plan && !p.custom && p.id !== "deepseek-anthropic")).filter((p) => !skip.includes(p.id));
   // The catalog lists models for some providers only; the others are found once the key is in.
   const count = (p: ProviderSummary) => st.models.models.filter((m) => m.provider === p.id).length;
   return (
@@ -105,7 +107,269 @@ export function ProviderTiles({ onPick, skip = [], plans }: { onPick: (p: Provid
         </button>
         );
       })}
+      {onCustom && !plans && (
+        <button className="provider-choice choice-custom" onClick={onCustom}>
+          <span className="provider-wordmark">
+            <Brand id="custom" />
+            <strong>{settings("models.custom.tile")}</strong>
+          </span>
+          <span className="provider-choice-meta">
+            <span>{settings("models.custom.tileNote")}</span>
+            <Icon name="chevR" />
+          </span>
+        </button>
+      )}
     </div>
+  );
+}
+
+/** The host of an address, for a custom endpoint's row. */
+function hostOf(url: string | undefined): string {
+  try {
+    return url ? new URL(url).host : "";
+  } catch {
+    return url ?? "";
+  }
+}
+
+const protocolNames: Record<string, string> = {
+  "openai-chat": "OpenAI Chat Completions",
+  "anthropic-messages": "Anthropic Messages",
+  "openai-responses": "OpenAI Responses",
+};
+
+/** What a failed probe says, in the person's words (custom-endpoint-design §3.3). */
+function probeErrorText(t: TFunction<"settings">, e: unknown): { text: string; reason?: string } {
+  if (e instanceof RpcError) {
+    if (e.kind === "key_rejected") return { text: t("models.custom.error.key_rejected", { message: e.message }), reason: "key_rejected" };
+    const reason = typeof (e.data as { reason?: unknown } | null)?.reason === "string" ? ((e.data as { reason: string }).reason) : undefined;
+    if (reason) return { text: t(`models.custom.error.${reason}`, { message: e.message, defaultValue: e.message }), reason };
+  }
+  return { text: errorText(e) };
+}
+
+/** What the probe found and what to know about it. */
+function ProbeNotes({ result }: { result: ProvidersAddResult }) {
+  const { t } = useTranslation("settings");
+  const st = useStore();
+  const probe = result.probe;
+  const builtin = probe.builtin ? st.models.providers.find((p) => p.id === probe.builtin)?.name ?? probe.builtin : "";
+  const both = probe.protocols.some((p) => p.api === "anthropic-messages") && probe.protocols.some((p) => p.api === "openai-chat");
+  return (
+    <div className="custom-result">
+      <p className="custom-found">{probe.no_list ? t("models.custom.foundManual") : t("models.custom.found", { count: probe.models, known: probe.known })}</p>
+      <p>{t("models.custom.protocols", { list: probe.protocols.map((p) => protocolNames[p.api] ?? p.api).join("、") })}</p>
+      {both && <p>{t("models.custom.claudeMessages")}</p>}
+      {probe.insecure && <p className="warn">{t("models.custom.insecure")}</p>}
+      {builtin && <p className="warn">{t("models.custom.builtin", { name: builtin })}</p>}
+      {probe.unsure?.includes("anthropic-messages") && <p className="warn">{t("models.custom.unsure")}</p>}
+      {probe.note && <p className="warn">{t(`models.custom.note.${probe.note}`, { defaultValue: "" })}</p>}
+    </div>
+  );
+}
+
+/**
+ * A service of one's own by its address (custom-endpoint-design §3.1): the kernel finds out what
+ * it speaks and saves it only when it can be used (providers/add). The page keeps no key.
+ */
+export function CustomEndpointEntry({ onBack, onDone }: { onBack: () => void; onDone?: () => void }) {
+  const { t } = useTranslation("settings");
+  const { t: session } = useTranslation("session");
+  const st = useStore();
+  const [url, setUrl] = useState("");
+  const [key, setKey] = useState("");
+  const [name, setName] = useState("");
+  const [api, setApi] = useState("");
+  const [models, setModels] = useState("");
+  const [needModels, setNeedModels] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [added, setAdded] = useState<ProvidersAddResult | null>(null);
+  const [managing, setManaging] = useState(false);
+  const card = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    void card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, []);
+  const connect = async () => {
+    if (busy || !url.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const named = needModels ? models.split(/[\s,，]+/).map((m) => m.trim()).filter(Boolean) : [];
+      const result = await st.call("providers/add", {
+        base_url: url.trim(),
+        api_key: key.trim() || undefined,
+        name: name.trim() || undefined,
+        api: api || undefined,
+        models: named.length ? named : undefined,
+      });
+      setKey("");
+      setAdded(result);
+      await st.refreshModels();
+    } catch (e) {
+      const failed = probeErrorText(t, e);
+      if (failed.reason === "no_models") setNeedModels(true);
+      setError(failed.text);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (added) {
+    const p = added.provider;
+    return (
+      <div ref={card as never} className="connection-card key-entry">
+        <div className="connection-provider">
+          <Brand id="custom" />
+          <div className="connection-provider-name">
+            <h4>{p.name}</h4>
+            <p>{hostOf(added.probe.base_url)}</p>
+          </div>
+        </div>
+        <div className="provider-form">
+          <ProbeNotes result={added} />
+        </div>
+        <div className="connection-card-footer">
+          <span />
+          <div className="key-actions">
+            <button type="button" className="btn" onClick={() => setManaging(true)}>
+              {t("models.custom.manage")}
+            </button>
+            <button type="button" className="btn primary" onClick={onDone ?? onBack}>
+              {t("models.custom.done")}
+            </button>
+          </div>
+        </div>
+        {managing && (
+          <ManageModels
+            source={{ id: p.id, name: p.name, mark: <Brand id="custom" />, custom: p.custom ?? undefined }}
+            footer={
+              <div className="mm-foot">
+                <ConnectionDetails provider={p} />
+              </div>
+            }
+            onClose={() => setManaging(false)}
+          />
+        )}
+      </div>
+    );
+  }
+  return (
+    <form
+      ref={card}
+      className="connection-card key-entry"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void connect();
+      }}
+    >
+      <div className="connection-provider">
+        <Brand id="custom" />
+        <div className="connection-provider-name">
+          <h4>{t("models.custom.title")}</h4>
+          <p>{t("models.custom.subtitle")}</p>
+        </div>
+      </div>
+      <div className="provider-form">
+        <label>
+          {t("models.custom.url")}
+          <input className="field" type="url" autoComplete="off" spellCheck={false} autoFocus value={url} placeholder={t("models.custom.urlPlaceholder")} onChange={(e) => setUrl(e.target.value)} />
+        </label>
+        <label>
+          {t("models.custom.key")}
+          <input className="field" type="password" autoComplete="off" spellCheck={false} value={key} placeholder={t("models.custom.keyOptional")} onChange={(e) => setKey(e.target.value)} />
+        </label>
+        <label>
+          {t("models.custom.name")}
+          <input className="field" type="text" autoComplete="off" spellCheck={false} value={name} placeholder={t("models.custom.namePlaceholder")} onChange={(e) => setName(e.target.value)} />
+        </label>
+        {needModels && (
+          <label>
+            {t("models.custom.models")}
+            <input className="field" type="text" autoComplete="off" spellCheck={false} autoFocus value={models} placeholder="model-a, model-b" onChange={(e) => setModels(e.target.value)} />
+            <span className="provider-form-note">{t("models.custom.modelsNote")}</span>
+          </label>
+        )}
+        <details className="plan-details">
+          <summary>
+            <Icon name="chevR" />
+            {t("models.custom.advanced")}
+          </summary>
+          <label className="custom-protocol">
+            {t("models.custom.protocol")}
+            <select className="field" value={api} onChange={(e) => setApi(e.target.value)}>
+              <option value="">{t("models.custom.protocolAuto")}</option>
+              <option value="openai-chat">OpenAI Chat Completions</option>
+              <option value="anthropic-messages">Anthropic Messages</option>
+            </select>
+          </label>
+        </details>
+        {error && (
+          <p className="err" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="connection-card-footer">
+        <span>
+          <Icon name="lock" />
+          {session("onboarding.key.where")}
+        </span>
+        <div className="key-actions">
+          <button type="button" className="btn" disabled={busy} onClick={onBack}>
+            {session("onboarding.key.back")}
+          </button>
+          <button type="submit" className="btn primary" disabled={busy || !url.trim() || (needModels && !models.trim())}>
+            {busy ? t("models.custom.detecting") : t("models.custom.connect")}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+/** A custom endpoint's address and protocols, and asking it again (custom-endpoint-design §11). */
+/** The header a key goes in, as a request carries it (models.toml's `auth_header` values). */
+const headerNames: Record<string, string> = { bearer: "Authorization: Bearer", x_api_key: "x-api-key", api_key: "api-key" };
+
+function ConnectionDetails({ provider: p }: { provider: ProviderSummary }) {
+  const { t } = useTranslation("settings");
+  const st = useStore();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const recheck = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await st.call("providers/update", { id: p.id, base_url: p.custom?.base_url });
+      await st.refreshModels();
+      st.show(t("models.custom.rechecked"));
+    } catch (e) {
+      setError(probeErrorText(t, e).text);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <details className="plan-details">
+      <summary>
+        <Icon name="chevR" />
+        {t("models.custom.details")}
+      </summary>
+      <dl>
+        <dt>{t("models.custom.address")}</dt>
+        <dd>{p.custom?.base_url}</dd>
+        {p.custom?.protocols.map((proto) => (
+          <Fragment key={proto.api}>
+            <dt>{protocolNames[proto.api] ?? proto.api}</dt>
+            <dd>{proto.auth_header ? `${proto.base_url} · ${headerNames[proto.auth_header] ?? proto.auth_header}` : proto.base_url}</dd>
+          </Fragment>
+        ))}
+      </dl>
+      <button type="button" className="btn" disabled={busy} onClick={() => void recheck()}>
+        {busy ? t("models.custom.detecting") : t("models.custom.recheck")}
+      </button>
+      {error && <p className="mrow-err">{error}</p>}
+    </details>
   );
 }
 
@@ -130,7 +394,10 @@ export function KeyEntry({ provider, onBack, onSaved }: { provider: ProviderSumm
     setBusy(true);
     setError("");
     try {
-      const verified = await saveKey(st, provider.id, key.trim(), plan ? settings("models.plans.unverified") : undefined);
+      // A service added by its address is probed again with the key: its list may be open to anyone.
+      const verified = provider.custom
+        ? (await st.call("providers/update", { id: provider.id, api_key: key.trim() }), true)
+        : await saveKey(st, provider.id, key.trim(), plan ? settings("models.plans.unverified") : undefined);
       setKey("");
       // Its models become available (the first-run page moves on to "ready").
       await st.refreshModels();
@@ -151,7 +418,7 @@ export function KeyEntry({ provider, onBack, onSaved }: { provider: ProviderSumm
       }}
     >
       <div className="connection-provider">
-        <Brand id={provider.id} name={label(provider)} />
+        <Brand id={provider.custom ? "custom" : provider.id} name={label(provider)} />
         <div className="connection-provider-name">
           <h4>{label(provider)}</h4>
           <p>{plan ? settings(`models.plans.products.${provider.id}.note`, { defaultValue: t("onboarding.key.subtitle") }) : t("onboarding.key.subtitle")}</p>
@@ -260,14 +527,17 @@ function ConnectSheet({ title, onClose, children }: { title: string; onClose: ()
 export function AddProvider({ skip, plans, onClose }: { skip?: string[]; plans?: boolean; onClose: () => void }) {
   const { t } = useTranslation("settings");
   const [provider, setProvider] = useState<ProviderSummary | null>(null);
+  const [custom, setCustom] = useState(false);
   return (
     <ConnectSheet title={t(plans ? "models.plans.connect" : "models.add")} onClose={onClose}>
-      {provider ? (
+      {custom ? (
+        <CustomEndpointEntry onBack={() => setCustom(false)} onDone={onClose} />
+      ) : provider ? (
         <KeyEntry provider={provider} onBack={() => setProvider(null)} onSaved={onClose} />
       ) : (
         <>
           {plans && <p className="sub">{t("models.plans.chooseNote")}</p>}
-          <ProviderTiles onPick={setProvider} skip={skip} plans={plans} />
+          <ProviderTiles onPick={setProvider} onCustom={plans ? undefined : () => setCustom(true)} skip={skip} plans={plans} />
         </>
       )}
     </ConnectSheet>
@@ -285,7 +555,7 @@ export function KeyRow({ p }: { p: ProviderSummary }) {
   const [sheet, setSheet] = useState<"models" | "key" | null>(null);
   const listing = p.listing;
   const known = useModelCounts(p.id);
-  const source = t(`models.source.${p.credential}`, { env: p.credential_source ?? "", defaultValue: "" });
+  const source = p.custom ? hostOf(p.custom.base_url) : t(`models.source.${p.credential}`, { env: p.credential_source ?? "", defaultValue: "" });
   const models = t("models.shownOf", { shown: listing?.shown ?? known.shown, count: listing?.models ?? known.count });
   const updated = listing?.refreshing
     ? t("models.manage.refreshing")
@@ -296,7 +566,8 @@ export function KeyRow({ p }: { p: ProviderSummary }) {
     setBusy(true);
     setError("");
     try {
-      await st.call("auth/delete", { provider: p.id });
+      if (p.custom) await st.call("providers/remove", { id: p.id });
+      else await st.call("auth/delete", { provider: p.id });
       await st.refreshModels();
     } catch (e) {
       setError(errorText(e));
@@ -307,13 +578,15 @@ export function KeyRow({ p }: { p: ProviderSummary }) {
   return (
     <>
       <div className="frow mrow">
-        <Brand id={p.id} name={label(p)} />
+        <Brand id={p.custom ? "custom" : p.id} name={label(p)} />
         <div className="ft">
           <div className="fn">
             {label(p)}
             {p.plan && <span className="badge ok">{t("models.plans.added")}</span>}
           </div>
-          <div className="fdesc">{confirming && p.plan ? t("models.plans.removeNote") : [source, models, updated].filter(Boolean).join(" · ")}</div>
+          <div className="fdesc">
+            {confirming && p.plan ? t("models.plans.removeNote") : confirming && p.custom ? t("models.custom.removeNote") : [source, models, updated].filter(Boolean).join(" · ")}
+          </div>
           {listing?.error && <div className="fdesc warn">{t("models.manage.failed", { message: listing.error.message })}</div>}
         </div>
         {!confirming && (
@@ -321,7 +594,7 @@ export function KeyRow({ p }: { p: ProviderSummary }) {
             {t("models.manage.open")}
           </button>
         )}
-        {p.credential === "stored" ? (
+        {p.credential === "stored" || p.custom ? (
           confirming ? (
             <>
               <button className="btn" disabled={busy} onClick={() => setConfirming(false)}>
@@ -349,7 +622,8 @@ export function KeyRow({ p }: { p: ProviderSummary }) {
           source={{
             id: p.id,
             name: label(p),
-            mark: <Brand id={p.id} name={label(p)} />,
+            mark: <Brand id={p.custom ? "custom" : p.id} name={label(p)} />,
+            custom: p.custom ?? undefined,
             origin: p.plan ? t(p.plan.dynamic_models ? "models.plans.dynamicCatalog" : "models.plans.seedCatalog") : listing ? t(`models.manage.source.${listing.source}`) : undefined,
             fetchedAt: listing?.fetched_at,
             refreshing: listing?.refreshing,
@@ -358,7 +632,15 @@ export function KeyRow({ p }: { p: ProviderSummary }) {
             refresh: !p.plan || p.plan.dynamic_models ? () => st.call("models/refresh", { provider: p.id }) : undefined,
           }}
           footer={
-            p.plan && (
+            p.custom ? (
+              <div className="mm-foot">
+                <ConnectionDetails provider={p} />
+                {/* Keys change, and a service that checks the body first takes none at first. */}
+                <button className="btn" onClick={() => setSheet("key")}>
+                  {p.credential === "stored" ? t("models.replaceKey") : t("models.setKey")}
+                </button>
+              </div>
+            ) : p.plan && (
               <div className="mm-foot">
                 <PlanDetails provider={p} />
                 {p.credential === "stored" && (
@@ -373,13 +655,13 @@ export function KeyRow({ p }: { p: ProviderSummary }) {
         />
       )}
       {sheet === "key" && (
-        <ConnectSheet title={t("models.plans.replaceTitle")} onClose={() => setSheet(null)}>
+        <ConnectSheet title={p.custom && p.credential !== "stored" ? t("models.custom.setKeyTitle") : t("models.plans.replaceTitle")} onClose={() => setSheet(null)}>
           <KeyEntry
             provider={p}
             onBack={() => setSheet("models")}
             onSaved={(verified) => {
               setSheet(null);
-              if (verified) st.show(t("models.plans.replaced"));
+              if (verified) st.show(p.custom && p.credential !== "stored" ? t("models.custom.keySaved") : t("models.plans.replaced"));
             }}
           />
         </ConnectSheet>

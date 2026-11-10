@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { folderBuild, heldBuild, manifestState, placeExtension } from "./extension-files.ts";
+import { folderBuild, heldBuild, launcherTarget, manifestState, placeExtension } from "./extension-files.ts";
 
 const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), "fx-ext-"));
 
@@ -24,6 +24,38 @@ test("a manifest is ours, gone, another home's, or not there", () => {
   assert.equal(manifestState(manifest, launcher), "dead");
   fs.writeFileSync(manifest, "not json");
   assert.equal(manifestState(manifest, launcher), "dead");
+});
+
+test("a launcher whose program or home is gone is dead, whoever wrote it", () => {
+  const dir = temp();
+  const program = path.join(dir, "it's finx");
+  const home = path.join(dir, "home");
+  fs.writeFileSync(program, "");
+  fs.mkdirSync(home);
+  const script = (exe: string, h: string) => {
+    const q = (p: string) => `'${p.replaceAll("'", String.raw`'\''`)}'`;
+    return `#!/bin/sh\n# Written by \`finx browser extension install\`\nFINX_HOME=${q(h)} exec ${q(exe)} browser native-host "$@"\n`;
+  };
+  assert.deepEqual(launcherTarget(script(program, home)), { program, home });
+  assert.equal(launcherTarget("#!/bin/sh\nexec /usr/bin/true\n"), null);
+
+  const launcher = path.join(dir, "native-host");
+  const other = path.join(dir, "other-host");
+  const manifest = path.join(dir, "m.json");
+  fs.writeFileSync(manifest, JSON.stringify({ path: other }));
+  fs.writeFileSync(other, script(program, home));
+  assert.equal(manifestState(manifest, launcher), "other", "another home that works stays");
+  // A test's temporary home: the script is left, the build it ran is gone.
+  fs.writeFileSync(other, script(path.join(dir, "gone/finx"), home));
+  assert.equal(manifestState(manifest, launcher), "dead");
+  fs.writeFileSync(other, script(program, path.join(dir, "gone-home")));
+  assert.equal(manifestState(manifest, launcher), "dead");
+  fs.writeFileSync(manifest, JSON.stringify({ path: launcher }));
+  fs.writeFileSync(launcher, script(path.join(dir, "gone/finx"), home));
+  assert.equal(manifestState(manifest, launcher), "dead", "this home's, after its app went");
+  fs.writeFileSync(other, "#!/bin/sh\nexec /some/other/host\n");
+  fs.writeFileSync(manifest, JSON.stringify({ path: other }));
+  assert.equal(manifestState(manifest, launcher), "other", "a script not of finx is not judged");
 });
 
 test("the extension's folder is replaced only when its files changed, and whole", () => {

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
 import { Icon, MarkMotion } from "../icons";
 import { SubscriptionConnections } from "../settings/LocalApplicationConnection";
-import { KeyEntry, ProviderTiles, TokenPlanSection } from "../settings/ProviderConnections";
+import { CustomEndpointEntry, KeyEntry, ProviderTiles, TokenPlanSection } from "../settings/ProviderConnections";
 import { useStore } from "../store";
 import "../styles/connections.css";
 import "../styles/providers.css";
@@ -65,6 +65,7 @@ function Connect() {
   const { t } = useTranslation("session");
   const { t: settings } = useTranslation("settings");
   const [provider, setProvider] = useState<ProviderSummary | null>(null);
+  const [custom, setCustom] = useState(false);
   return (
     <>
       <header className="connections-intro">
@@ -81,7 +82,13 @@ function Connect() {
             <p>{t("onboarding.connect.apiNote")}</p>
           </div>
         </div>
-        {provider ? <KeyEntry provider={provider} onBack={() => setProvider(null)} /> : <ProviderTiles onPick={setProvider} />}
+        {custom ? (
+          <CustomEndpointEntry onBack={() => setCustom(false)} />
+        ) : provider ? (
+          <KeyEntry provider={provider} onBack={() => setProvider(null)} />
+        ) : (
+          <ProviderTiles onPick={setProvider} onCustom={() => setCustom(true)} />
+        )}
       </section>
     </>
   );

@@ -93,7 +93,7 @@
     "message": "FinxWork needs an update"
   },
   "hintStuck": {
-    "message": "Opening FinxWork repairs the connection. Then retry."
+    "message": "Open FinxWork. It repairs the connection, and this reconnects by itself."
   },
   "hintUpdateExtension": {
     "message": "It reconnects by itself afterwards, and your tabs stay as they are."
@@ -115,5 +115,14 @@
   },
   "titleStuck": {
     "message": "FinxWork: can't connect"
+  },
+  "statusNoAnswer": {
+    "message": "The extension is not responding"
+  },
+  "hintNoAnswer": {
+    "message": "Reloading the extension brings it back. Your tabs stay as they are."
+  },
+  "reload": {
+    "message": "Reload extension"
   }
 }
