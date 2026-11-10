@@ -14,8 +14,9 @@ export function ModelConnections() {
   const { t } = useTranslation("settings");
   const st = useStore();
   const [adding, setAdding] = useState(false);
-  // Providers with a key from somewhere; local connections are listed above, keyless ones (Ollama) need nothing.
-  const keyed = st.models.providers.filter((p) => !p.plan && !p.id.startsWith("local-") && p.auth === "api_key" && p.credential !== "missing");
+  // Providers with a key from somewhere, and every service added by its address (a local one takes
+  // no key); local connections are listed above, the built-in keyless Ollama needs nothing.
+  const keyed = st.models.providers.filter((p) => p.custom || (!p.plan && !p.id.startsWith("local-") && p.auth === "api_key" && p.credential !== "missing"));
   return (
     <div className="form models">
       <section>

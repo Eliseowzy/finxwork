@@ -712,10 +712,10 @@ printf %s "$KEY" | finx login deepseek --key-stdin --model deepseek/deepseek-fla
 ```
 
 ```bash
-printf %s "$KEY" | finx login mygateway --base-url https://llm.example.com/v1 --api openai-chat --key-stdin
+printf %s "$KEY" | finx login mygateway --base-url https://llm.example.com/v1 --key-stdin
 ```
 
-`--base-url` 把服务商写进 `models.toml`（只写用户目录，D-17），用同一把文件锁，保留注释。`finx models login chatgpt-api` 改成 `finx login chatgpt`；还没有外部用户，不留别名。
+`--base-url` 把服务商写进 `models.toml`（只写用户目录，D-17），用同一把文件锁，保留注释。2026-11-10 起（custom-endpoint-design.md）`--api` 可选：不写时内核探测这个地址讲哪几种协议、各自的前缀和请求头、有哪些模型，只发列表请求和空请求体的 POST，不产生费用；写了就只用这种协议。它和桌面端调同一个内核方法 `providers/add`；同一个名字再登录一次是更新这个服务（`providers/update`）。本机服务用 `--no-key`；服务没有模型列表时用 `--model` 填模型名。`finx models set PROVIDER/MODEL --like MODEL`（或 `--context`、`--images`、`--reasoning`、`--clear`）给认不出的模型补参数，`finx logout NAME --remove` 删掉整个服务。`finx models login chatgpt-api` 改成 `finx login chatgpt`；还没有外部用户，不留别名。
 
 ### 7.4 密钥保存在哪
 

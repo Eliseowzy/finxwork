@@ -38,6 +38,7 @@ mod bots;
 mod browser_host;
 mod browser_status;
 mod connections;
+mod custom_endpoints;
 mod customize;
 mod db;
 mod decks;

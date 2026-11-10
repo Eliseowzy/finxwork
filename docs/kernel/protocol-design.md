@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.32 |
-| 日期 | 2026-11-06 |
+| 版本 | v0.33 |
+| 日期 | 2026-11-10 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
 
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.33 | 2026-11-10 | 自定义服务（custom-endpoint-design.md §9，已实现），版本 2 之内、由 capabilities 的 `custom_endpoints` 声明，方案评审前标为实验：新方法 `providers/add`（探测地址后接入）、`providers/update`、`providers/remove`、`models/configure`（给自定义服务的模型补参数）、`models/catalog`（按名字找规范模型）；ModelSummary 加 `canonical`（参数参照的模型），ProviderSummary 加 `custom`（地址和探到的协议）；新错误码 −32047 `endpoint_unusable` |
 | v0.32 | 2026-11-06 | Bot 的子智能体直接告诉主人（agent-messaging-design.md §17），版本 2 之内：`MailInfo.kind` 多一个 `to_user`，主会话没有任务时也会发这条 `message_completed`。桌面端和服务总是一起升级，其他客户端不认识这个值时当作普通信件处理即可 |
 | v0.31 | 2026-11-05 | `bots/create` 加可选的 `model`、`thinking`（bot-design.md D-459），版本 2 之内，老客户端不带时行为不变 |
 | v0.30 | 2026-11-05 | 独立发布（standalone-cli-design §9、§10）：Schema 加 `x-stability`，稳定、实验、内部三档，发版基线 `schema-released.json` 由测试比较；新方法 `tools/list`；事件 `approval_refused`；`ToolCall.provider_data`；`McpServerConfig` 不再拒绝未知字段，多了 `approval`；ACP 的 `authMethods`、`authenticate`，`finx acp --login`，没有凭据的模型和因凭据失败的 prompt 都答 `auth_required`（-32000） |
@@ -585,6 +586,11 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式；模型由内核按实际接入的服务商算出，什么都没设置时不出现（v0.28）。v0.14 起只列有凭据的服务商的模型，模型带 `shown`、`known`、`deprecated`，服务商带 `listing`（model-catalog-design §8.1） |
 | `models/refresh` | provider?、catalog? | providers | 立即刷新服务商的模型列表，`catalog: true` 时同时刷新公共目录（model-catalog-design §8.2） |
 | `models/show` | model、shown | `{}` | 在模型菜单里显示或隐藏一个模型（model-catalog-design §6.3） |
+| `models/configure` | model、canonical?、context_window?、images?、reasoning?、clear? | model | v0.33，实验：给自定义服务的一个模型补参数，写进 models.toml（custom-endpoint-design §7.3、§9） |
+| `models/catalog` | query、limit? | models | v0.33，实验：按名字找规范模型，给"像哪个模型"做候选；只查内置别名表，不发请求（custom-endpoint-design §9） |
+| `providers/add` | base_url、api_key?、name?、api?、models? | provider、probe | v0.33，实验：探测这个地址讲哪些协议、有哪些模型（只发列表请求和空请求体的 POST），成功才写 models.toml、保存密钥；失败返回 `endpoint_unusable` 或 `key_rejected`（custom-endpoint-design §4、§9） |
+| `providers/update` | id、name?、base_url?、api_key?、api? | provider、probe | v0.33，实验：只改名不探测；改地址、密钥或协议时重新探测，失败什么都不改 |
+| `providers/remove` | id | `{}` | v0.33，实验：删掉自定义服务的条目、密钥和列表缓存 |
 | `server/shutdown` | — | `{}` | 只用于常驻服务，优雅退出（§3.8） |
 | `sessions/subscribe` | 同 `session/list` | 同 `session/list` | 返回第一页，之后这个连接收到 `sessions/changed`。先返回列表、再发变化，客户端不会先看到变化后看到旧列表 |
 | `sessions/unsubscribe` | — | `{}` | 不再接收 `sessions/changed`；连接断开时自动取消 |
@@ -809,7 +815,7 @@ pub struct ResourceReadResult {
 | -32018 | unsupported_content | 不支持的输入内容，例如音频 |
 | -32019 | session_closed | 会话已关闭 |
 | -32020 | task_failed | ACP：任务失败，data 中带完整的 ErrorInfo |
-| -32021 | key_rejected | `auth/set`：服务商拒绝了密钥 |
+| -32021 | key_rejected | `auth/set`：服务商拒绝了密钥；`providers/add`、`providers/update` 同样用它（v0.33） |
 | -32022 | model_unavailable | 要的模型所属服务商不存在（本机连接已断开或删除），data 带 `provider` |
 | -32040 | bot_not_found | 没有这个 Bot（v0.20） |
 | -32041 | bot_default | 默认 Bot 不能删除；品牌标志只给默认 Bot 用作头像 |
@@ -818,6 +824,7 @@ pub struct ResourceReadResult {
 | -32044 | routine_busy | `bots/routine_run_now`：它已经在运行 |
 | -32045 | routines_unavailable | 定时任务的数据库打不开；消息写明原因。服务和聊天不受影响 |
 | -32046 | no_model | 没点名模型、没配置，也没有能用的服务商（v0.28）。客户端把人带到模型设置；接入后不用重启 |
+| -32047 | endpoint_unusable | `providers/add`、`providers/update`：这个地址接不上，`data.reason` 是 `invalid_url`、`unreachable`、`tls`、`not_a_model_service`、`key_required`、`no_models` 之一（v0.33，custom-endpoint-design §9） |
 
 ### 6.8 示例
 

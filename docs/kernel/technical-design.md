@@ -3303,6 +3303,20 @@ max_output_tokens = 32768
 reasoning = true
 input = ["text"]
 cost = { input = 0.0, output = 0.0 }
+
+# 填地址接入的自定义服务（custom-endpoint-design.md §8）：桌面端"自定义服务"或
+# `finx login acme --base-url URL` 探测后写成这样，也可以手写
+[providers.acme]
+name = "Acme 网关"
+api = "openai-chat"                                          # 默认协议
+base_url = "https://llm.acme.com/v1"                         # 默认协议的前缀
+endpoints = { anthropic-messages = "https://llm.acme.com" }  # 同一服务讲的其他协议：Claude 模型走这里
+compat = { auth_header = "bearer" }                          # bearer、x_api_key 或 api_key
+
+[[providers.acme.models]]
+id = "prod-gpt4o-eastus"
+canonical = "openai/gpt-4o"                                  # 名字认不出时，参数参照这个模型
+context_window = 64000
 ```
 
 ## 附录 D：基础系统提示词
