@@ -834,7 +834,7 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-view.regioning .textLayer{pointer-events:none}
 .dcp-wait,.dcp-error{position:absolute;inset:0;display:grid;place-items:center;font-size:13px;color:var(--l2);padding:24px;text-align:center}
 .dcp-bar .brp-annotate{width:28px;height:28px;margin:0 2px}
-.dcp-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:4;padding:5px 12px;border-radius:999px;background:#3294ff;color:#fff;font-size:12px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.2);pointer-events:none}
+.dcp-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:4;padding:5px 12px;border:0;border-radius:999px;background:#3294ff;color:#fff;font-size:12px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer}
 .dcp-band{position:absolute;border:1.5px solid var(--accent);background:var(--accent-bg);pointer-events:none;z-index:3}
 .dcp-flash{position:absolute;inset:0;pointer-events:none;z-index:5}
 .dcp-flash>div{position:absolute;border-radius:3px;background:rgba(255,196,0,.32);box-shadow:0 0 0 1.5px rgba(255,170,0,.8);animation:dcp-flash 2.4s ease-out forwards}

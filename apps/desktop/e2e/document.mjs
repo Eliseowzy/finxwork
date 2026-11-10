@@ -298,6 +298,16 @@ try {
   // 4. A region drawn on the page: a quote of what is inside, and its picture.
   await main.run(`document.querySelector('.dcp-bar button[aria-pressed]:not([aria-pressed="true"])') && [...document.querySelectorAll('.dcp-bar button')].find(b => b.getAttribute('aria-label') === '框选区域，添加到对话').click()`);
   await main.until("the region mode's hint", `!!document.querySelector('.dcp-hint')`);
+  await main.run(`document.querySelector('.cmp-in').focus()`);
+  await main.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await main.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await main.until("Escape exits region mode outside the document", `!document.querySelector('.dcp-hint')`);
+  await main.run(`document.querySelector('.dcp-bar .brp-annotate').click()`);
+  await main.until("region mode reopens", `!!document.querySelector('.dcp-hint')`);
+  await main.run(`document.querySelector('.dcp-hint').click()`);
+  await main.until("clicking the hint exits region mode", `!document.querySelector('.dcp-hint')`);
+  await main.run(`document.querySelector('.dcp-bar .brp-annotate').click()`);
+  await main.until("region mode opens again", `!!document.querySelector('.dcp-hint')`);
   await main.shot("3b-region-mode");
   const box = await main.run(`(() => { const r = document.querySelector('.page[data-page-number="1"] canvas').getBoundingClientRect(); const v = document.querySelector('.dcp-scroll').getBoundingClientRect(); const top = Math.max(r.top, v.top) + 40; return { x: r.left + r.width * 0.1, y: top, w: r.width * 0.5, h: Math.min(r.height * 0.15, Math.min(r.bottom, v.bottom) - top - 20) }; })()`);
   await main.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
@@ -315,6 +325,10 @@ try {
   check(await main.run(`!document.querySelector('.cmp .tile.img')`), "the region's picture is a tile of its own");
   await main.run(`[...document.querySelectorAll('.tile.quote')].at(-1).querySelector('.tile-open').click()`);
   await main.until("the region's details with its picture", `!!document.querySelector('.wdt-shot img') && document.querySelector('.wdt-shot img').naturalWidth > 0`);
+  await main.run(`document.querySelector('.wdt-go').click()`);
+  await main.until("the region is shown in the document", `!document.querySelector('.wdt') && !!document.querySelector('.dcp-flash')`);
+  await main.run(`[...document.querySelectorAll('.tile.quote')].at(-1).querySelector('.tile-open').click()`);
+  await main.until("the region's details reopen", `!!document.querySelector('.wdt-shot img')`);
   await main.shot("3d-region-details");
   await main.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await main.until("the details closed", `!document.querySelector('.wdt')`);
