@@ -887,7 +887,31 @@
     "conflict": "The file was changed outside FinxWork",
     "overwrite": "Overwrite",
     "reload": "Reload",
-    "legacy": "This is the old Word format. FinxWork supports only .docx."
+    "legacy": "This is the old Word format. FinxWork supports only .docx.",
+    "pdf": {
+      "title": "Export as PDF",
+      "pages": "Pages",
+      "allPages": "All",
+      "fromPage": "From",
+      "toPage": "to",
+      "fromLabel": "First page",
+      "toLabel": "Last page",
+      "badRange": "Enter a valid page range",
+      "content": "Content",
+      "final": "Document",
+      "markup": "Document showing markup",
+      "export": "Export…",
+      "exporting": "Exporting…",
+      "cancel": "Cancel",
+      "failed": "Could not export: {{message}}",
+      "doneAll": "Exported all {{count}} pages.",
+      "donePages": "Exported {{count}} of {{total}} pages.",
+      "outlined": "The license of {{fonts}} does not allow embedding, so that text is drawn as shapes: it prints the same but cannot be selected or searched.",
+      "reveal": "Show in Finder",
+      "open": "Open",
+      "close": "Done",
+      "button": "Export as PDF"
+    }
   },
   "deckEdit": {
     "show": "Show slide {{n}}",

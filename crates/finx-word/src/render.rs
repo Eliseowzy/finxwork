@@ -71,3 +71,58 @@ fn draw(document: &Document, ordinal: u32, scale: f32) -> Result<Option<Vec<u8>>
         Err(e) => Err(e.into()),
     }
 }
+
+/// What [`export_pdf`] writes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PdfRequest {
+    /// Pages from 1, inclusive; every page when `None`.
+    pub pages: Option<(u32, u32)>,
+    /// With tracked changes and their marks; otherwise as if they were accepted.
+    pub markup: bool,
+    pub title: Option<String>,
+}
+
+/// A written PDF.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PdfExported {
+    pub bytes: Vec<u8>,
+    pub pages: usize,
+    pub total_pages: usize,
+    /// Fonts drawn as outlines (not selectable text) because their license forbids embedding.
+    pub outlined_fonts: Vec<String>,
+}
+
+/// `docx` as a PDF, laid out and drawn as the pages are, with the machine's own fonts.
+pub fn export_pdf(docx: &[u8], request: &PdfRequest) -> Result<PdfExported> {
+    let document = open(docx)?;
+    let pages = match request.pages {
+        Some((from, to)) if from == 0 || to < from => {
+            return Err(WordError::Engine(format!("no pages {from}-{to}")));
+        }
+        Some((from, to)) => Some(from as usize - 1..=to as usize - 1),
+        None => None,
+    };
+    if let Some(range) = &pages {
+        let total = count(&document)? as usize;
+        if *range.start() >= total {
+            return Err(WordError::Engine(format!("页码超出范围：文档共 {total} 页")));
+        }
+    }
+    let export = document
+        .render_pdf(&betteroffice_docx::PdfExportOptions {
+            pages,
+            markup: request.markup,
+            title: request.title.clone(),
+            ..Default::default()
+        })
+        .map_err(|e| match e {
+            betteroffice_docx::Error::Render(message) => WordError::Engine(message),
+            other => other.into(),
+        })?;
+    Ok(PdfExported {
+        bytes: export.bytes,
+        pages: export.pages,
+        total_pages: export.total_pages,
+        outlined_fonts: export.outlined_fonts,
+    })
+}

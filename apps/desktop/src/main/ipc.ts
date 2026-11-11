@@ -415,13 +415,16 @@ export function registerIPC() {
     const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
     return r.canceled ? null : (r.filePaths[0] ?? null);
   });
+  // End-to-end tests (FINXWORK_E2E_SAVE_TO=<path>): a native save panel cannot be driven from the
+  // page, so it answers with that path at once.
   ipcMain.handle("pick-save-file", async (e, defaultPath: unknown) => {
     if (!trusted(e) || typeof defaultPath !== "string") return null;
+    if (process.env.FINXWORK_E2E_SAVE_TO) return process.env.FINXWORK_E2E_SAVE_TO;
     const win = BrowserWindow.fromWebContents(e.sender);
     const ext = path.extname(defaultPath).toLowerCase();
     const options = {
       defaultPath,
-      filters: [{ name: ext === ".csv" || ext === ".tsv" ? "Delimited text" : "Spreadsheet", extensions: [ext.slice(1) || "xlsx"] }],
+      filters: [{ name: ext === ".csv" || ext === ".tsv" ? "Delimited text" : ext === ".pdf" ? "PDF" : ext === ".docx" ? "Word" : "Spreadsheet", extensions: [ext.slice(1) || "xlsx"] }],
     };
     const r = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
     return r.canceled ? null : (r.filePath ?? null);

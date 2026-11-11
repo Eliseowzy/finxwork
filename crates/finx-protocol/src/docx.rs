@@ -142,6 +142,39 @@ pub struct DocxReviewParams {
     pub ids: Option<Vec<u64>>,
 }
 
+/// Writes the document as it is now, unsaved edits included, as a PDF (word-design §6).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DocxExportPdfParams {
+    pub session_id: String,
+    pub docx_id: String,
+    /// Where to write the .pdf (absolute, or relative to the session's directory).
+    pub path: String,
+    /// First page to export, from 1; the first page when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_page: Option<u32>,
+    /// Last page to export; the last page when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_page: Option<u32>,
+    /// With tracked changes and their marks ("显示标记的文档"); otherwise as if accepted.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub markup: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DocxExportPdfResult {
+    /// The .pdf written.
+    pub path: String,
+    /// Pages written.
+    pub pages: u32,
+    /// Pages the document has.
+    pub total_pages: u32,
+    /// Fonts drawn as shapes rather than text because their license forbids embedding them:
+    /// they print the same but cannot be selected or searched.
+    #[serde(default)]
+    pub outlined_fonts: Vec<String>,
+}
+
 /// Server notification to the other replicas: the kernel's update or another replica's.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DocxSyncNotice {

@@ -33,7 +33,7 @@ pub use read::{
     RevisionKind,
 };
 pub use compare::package_difference;
-pub use render::{page_count, render_page};
+pub use render::{PdfExported, PdfRequest, export_pdf, page_count, render_page};
 
 use read::Paragraph;
 

@@ -344,6 +344,12 @@
       "$ref": "#/definitions/DocxChangedParams"
     },
     {
+      "$ref": "#/definitions/DocxExportPdfParams"
+    },
+    {
+      "$ref": "#/definitions/DocxExportPdfResult"
+    },
+    {
       "$ref": "#/definitions/DocxIdParams"
     },
     {
@@ -9367,6 +9373,84 @@
         "dirty",
         "docx_id",
         "revision"
+      ],
+      "type": "object"
+    },
+    "DocxExportPdfParams": {
+      "additionalProperties": false,
+      "description": "Writes the document as it is now, unsaved edits included, as a PDF (word-design §6).",
+      "properties": {
+        "docx_id": {
+          "type": "string"
+        },
+        "from_page": {
+          "description": "First page to export, from 1; the first page when absent.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "markup": {
+          "description": "With tracked changes and their marks (\"显示标记的文档\"); otherwise as if accepted.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Where to write the .pdf (absolute, or relative to the session's directory).",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "to_page": {
+          "description": "Last page to export; the last page when absent.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "docx_id",
+        "path",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocxExportPdfResult": {
+      "properties": {
+        "outlined_fonts": {
+          "default": [],
+          "description": "Fonts drawn as shapes rather than text because their license forbids embedding them: they print the same but cannot be selected or searched.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pages": {
+          "description": "Pages written.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "The .pdf written.",
+          "type": "string"
+        },
+        "total_pages": {
+          "description": "Pages the document has.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pages",
+        "path",
+        "total_pages"
       ],
       "type": "object"
     },
@@ -20769,6 +20853,10 @@
       "params": "DocxIdParams",
       "result": "Empty"
     },
+    "docx/export_pdf": {
+      "params": "DocxExportPdfParams",
+      "result": "DocxExportPdfResult"
+    },
     "docx/host": {
       "result": "Empty"
     },
@@ -21110,6 +21198,7 @@
       "doc/undo": "experimental",
       "doc/view": "experimental",
       "docx/close": "experimental",
+      "docx/export_pdf": "experimental",
       "docx/host": "internal",
       "docx/open": "experimental",
       "docx/review": "experimental",
