@@ -142,7 +142,7 @@ function ModelSection({ view, session }: { view: SessionView; session: string })
   return (
     <section>
       <h3 className="fhead">{t("panel.model")}</h3>
-      <ModelRows below model={model} thinking={thinking} onModel={(ref) => void st.op(session, { type: "set_model", model: ref })} onThinking={(l) => void st.op(session, { type: "set_model", model, thinking: l })} />
+      <ModelRows below model={model} thinking={thinking} onModel={(ref) => void st.op(session, { type: "set_model", model: ref })} onThinking={(l, shown) => void (shown && st.op(session, { type: "set_model", model: shown, thinking: l }))} />
       <p className="set-note">{t("panel.modelNote")}</p>
     </section>
   );

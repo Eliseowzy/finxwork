@@ -14,7 +14,8 @@ export function ModelRows({ model, thinking, below, onModel, onThinking }: {
   /** Menus open under the rows (near the top of the window), not over them. */
   below?: boolean;
   onModel: (ref: string) => ThinkingLevel | void;
-  onThinking: (l: ThinkingLevel) => void;
+  /** With the model shown: the bot's own, else the one it starts with (the kernel needs one). */
+  onThinking: (l: ThinkingLevel, model: string | null) => void;
 }) {
   const { t } = useTranslation("session");
   const st = useStore();
@@ -34,7 +35,7 @@ export function ModelRows({ model, thinking, below, onModel, onThinking }: {
           <span className="fl">{t("composer.thinking")}</span>
           <div className="fv">
             <MenuButton className="mb" align="right" below={below} title={t("composer.thinking")} label={<><span className="lbl strong">{thinkingTitle(thinking)}</span><Icon name="chevD" /></>}>
-              {(close) => <ThinkingItems thinking={thinking} levels={levels} onThinking={onThinking} close={close} />}
+              {(close) => <ThinkingItems thinking={thinking} levels={levels} onThinking={(l) => onThinking(l, current)} close={close} />}
             </MenuButton>
           </div>
         </div>
