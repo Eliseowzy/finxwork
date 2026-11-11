@@ -221,6 +221,11 @@ await flipFuses(path.join(contents, "MacOS/FinxWork"), {
 step(`signing with: ${identity === "-" ? "ad-hoc" : identity}`);
 // The helper tools beside the app's executable, which run without Electron's entitlements.
 const helpers = [embedded, ...desktopTools].map((f) => `/${path.relative(app, f)}`);
+// osx-sign signs Contents/MacOS in directory order, so FinxWork comes before finx and agent-desktop, and
+// codesign refuses a main executable whose neighbours carry no signature at all. arm64 binaries always carry
+// one (the linker's, or the release's); x64 ones may not. An ad-hoc signature first puts both architectures
+// in the same state; osx-sign then replaces it with the real one.
+for (const f of [embedded, ...desktopTools]) sh("codesign", ["--sign", "-", "--force", f]);
 await sign({
   app,
   identity,
