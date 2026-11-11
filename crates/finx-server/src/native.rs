@@ -517,6 +517,7 @@ impl NativeProtocol {
             method::DOCX_CLOSE => self.call(id, params, conn, |server, p: finx_protocol::docx::DocxIdParams| async move { server.docx_close(p).await }),
             method::DOCX_UNDO => self.call(id, params, conn, |server, p: finx_protocol::docx::DocxUndoParams| async move { server.docx_undo(p).await }),
             method::DOCX_REVIEW => self.call(id, params, conn, |server, p: finx_protocol::docx::DocxReviewParams| async move { server.docx_review(p).await }),
+            method::DOCX_EXPORT_PDF => self.call(id, params, conn, |server, p: finx_protocol::docx::DocxExportPdfParams| async move { server.docx_export_pdf(p).await }),
             method::PPTX_METAFILE => self.call(id, params, conn, |server, p: finx_protocol::pptx::PptxMetafileParams| async move { server.pptx_metafile(p).await }),
             method::FILES_WRITE => self.call(id, params, conn, |server, p: FilesWriteParams| async move { server.files_write(p).await }),
             method::FILES_WATCH => {

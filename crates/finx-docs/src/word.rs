@@ -179,6 +179,20 @@ impl WordStore {
         bytes
     }
 
+    /// Writes the document as it is now, unsaved edits included, to `out` as a PDF. The file
+    /// appears whole or not at all.
+    pub async fn export_pdf(&self, docx_id: &str, out: &Path, request: finx_word::PdfRequest) -> Result<finx_word::PdfExported, DeckError> {
+        let bytes = self.current_bytes(docx_id).await?;
+        let mut exported = tokio::task::spawn_blocking(move || finx_word::export_pdf(&bytes, &request))
+            .await
+            .map_err(|e| DeckError::Worker(format!("the PDF export stopped: {e}")))?
+            .map_err(|e| DeckError::Protocol(e.to_string()))?;
+        let pdf = std::mem::take(&mut exported.bytes);
+        let out = out.to_owned();
+        tokio::task::spawn_blocking(move || crate::atomic::write(&out, &pdf)).await.map_err(|e| DeckError::Worker(e.to_string()))??;
+        Ok(exported)
+    }
+
     /// Writes the document now to `out` and checks it: the revision written.
     async fn stage(&self, entry: &DeckEntry, out: &Path) -> Result<(u64, WordChecked), DeckError> {
         let revision = match self.engine {

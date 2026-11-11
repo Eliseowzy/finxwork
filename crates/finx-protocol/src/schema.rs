@@ -304,6 +304,7 @@ pub fn document() -> Value {
         (method::DOCX_CLOSE, Some(name::<docx::DocxIdParams>(g)), name::<api::Empty>(g)),
         (method::DOCX_UNDO, Some(name::<docx::DocxUndoParams>(g)), name::<docx::DocxRevisionResult>(g)),
         (method::DOCX_REVIEW, Some(name::<docx::DocxReviewParams>(g)), name::<docx::DocxRevisionResult>(g)),
+        (method::DOCX_EXPORT_PDF, Some(name::<docx::DocxExportPdfParams>(g)), name::<docx::DocxExportPdfResult>(g)),
         (method::FILES_WRITE, Some(name::<files::FilesWriteParams>(g)), name::<files::FilesWriteResult>(g)),
         (method::FILES_WATCH, Some(name::<files::FilesWatchParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_SUBSCRIBE, None, name::<bot::BotsResult>(g)),

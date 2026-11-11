@@ -198,7 +198,7 @@ function ModelSetup({ bot, view, session, onDone }: { bot: BotSummary; view: Ses
         <b>{t("setup.title", { name: bot.name })}</b>
       </div>
       <p className="knote-b">{t("setup.body")}</p>
-      <ModelRows model={model} thinking={thinking} onModel={(ref) => void st.op(session, { type: "set_model", model: ref })} onThinking={(l) => void st.op(session, { type: "set_model", model, thinking: l })} />
+      <ModelRows model={model} thinking={thinking} onModel={(ref) => void st.op(session, { type: "set_model", model: ref })} onThinking={(l, shown) => void (shown && st.op(session, { type: "set_model", model: shown, thinking: l }))} />
       <ModelBlocked model={model} />
       <div className="appr-f">
         <span className="appr-sp" />

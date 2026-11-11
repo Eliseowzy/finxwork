@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 pub(crate) const GROUP: &str = "word";
 pub(crate) const GROUP_SUMMARY: &str = "Word documents (DOCX): an outline with paragraph ids, paragraphs' text, styles, comments and \
      tracked changes, search, page images, changes as tracked changes the user reviews (or directly), accepting or rejecting \
-     tracked changes, and saving";
+     tracked changes, saving, and exporting as PDF";
 
 /// Paragraphs `docx_read` gives at most in one call.
 const MAX_READ: usize = 60;
@@ -55,6 +55,7 @@ pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
                 Arc::new(Typed::new(DocxEdit)),
                 Arc::new(Typed::new(DocxReview)),
                 Arc::new(Typed::new(DocxSave)),
+                Arc::new(Typed::new(DocxExportPdf)),
             ]
         })
         .clone()
@@ -536,6 +537,94 @@ impl TypedTool for DocxSave {
         let target = to.clone().unwrap_or_else(|| info.path.clone());
         let text = if to.is_none() && !unsaved { format!("{} has nothing unsaved; the file is as it was.", file_name(&target)) } else { format!("Saved {}.", target.display()) };
         Ok(ToolOutput::text(text).with_details(json!({ "docx_id": info.deck_id, "path": target, "revision": info.revision })))
+    }
+}
+
+// ---- docx_export_pdf ----
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct ExportPdfArgs {
+    /// Path of the document (.docx), or the docx_id of one already open.
+    docx: String,
+    /// The .pdf to write (absolute, or relative to the working directory). Defaults to the
+    /// document's own path with a .pdf extension.
+    #[serde(default)]
+    path: Option<String>,
+    /// First page to export, from 1. Defaults to the first.
+    #[serde(default)]
+    #[schemars(range(min = 1))]
+    from_page: Option<u32>,
+    /// Last page to export. Defaults to the last.
+    #[serde(default)]
+    #[schemars(range(min = 1))]
+    to_page: Option<u32>,
+    /// Show tracked changes and their marks. Default false: the document as if every change
+    /// were accepted, which is what people normally want to send.
+    #[serde(default)]
+    markup: bool,
+}
+
+pub(crate) struct DocxExportPdf;
+
+#[async_trait]
+impl TypedTool for DocxExportPdf {
+    type Args = ExportPdfArgs;
+    const NAME: &'static str = "docx_export_pdf";
+    const DESCRIPTION: &'static str = "Export a Word document (.docx) as a PDF, unsaved edits included, laid out as its pages \
+        are: text stays selectable, links and the table of contents stay clickable, headings become bookmarks. Optionally a \
+        page range, and with tracked changes shown (markup). Does not change the .docx.";
+
+    fn guidelines(&self) -> &[&'static str] {
+        GUIDELINES
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Mutating
+    }
+
+    fn describe(&self, args: &Value, env: &dyn Environment) -> ToolDescription {
+        let mut d = describe(args, env, "export", ToolCategory::Edit);
+        if let Some(p) = args.get("path").and_then(Value::as_str) {
+            d.title = format!("{} as {p}", d.title);
+            d.locations = vec![(env.resolve(p), None)];
+        }
+        d
+    }
+
+    async fn run(&self, args: ExportPdfArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let (words, path, entry) = open(&args.docx, &ctx).await?;
+        let to = match args.path.as_deref() {
+            Some(p) => ctx.env.resolve(p),
+            None => path.with_extension("pdf"),
+        };
+        if !to.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) {
+            return Err(ToolError::InvalidArgs(format!("{} is not a .pdf path.", to.display())));
+        }
+        let pages = match (args.from_page, args.to_page) {
+            (None, None) => None,
+            (from, to) => Some((from.unwrap_or(1), to.unwrap_or(u32::MAX))),
+        };
+        let request = finx_word::PdfRequest { pages, markup: args.markup, title: None };
+        let exported = words.store.export_pdf(&entry.deck_id, &to, request).await.map_err(|e| failed(&path, e))?;
+        let mut text = if exported.pages == exported.total_pages {
+            format!("Exported {} ({} pages) to {}.", file_name(&path), exported.pages, to.display())
+        } else {
+            format!("Exported {} of {} pages of {} to {}.", exported.pages, exported.total_pages, file_name(&path), to.display())
+        };
+        if !exported.outlined_fonts.is_empty() {
+            let _ = write!(
+                text,
+                " Text in {} is drawn as shapes, since the font's license forbids embedding it: it prints the same but cannot be selected or searched.",
+                exported.outlined_fonts.join(", ")
+            );
+        }
+        Ok(ToolOutput::text(text).with_details(json!({
+            "docx_id": entry.deck_id,
+            "path": to,
+            "pages": exported.pages,
+            "total_pages": exported.total_pages,
+            "outlined_fonts": exported.outlined_fonts,
+        })))
     }
 }
 

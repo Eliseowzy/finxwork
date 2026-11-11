@@ -204,6 +204,8 @@ pub mod method {
     pub const DOCX_CLOSE: &str = "docx/close";
     pub const DOCX_UNDO: &str = "docx/undo";
     pub const DOCX_REVIEW: &str = "docx/review";
+    /// Writes the document as it is now as a PDF.
+    pub const DOCX_EXPORT_PDF: &str = "docx/export_pdf";
     /// Server notification to connections that opened the document.
     pub const DOCX_CHANGED: &str = "docx/changed";
     // Bots (docs/kernel/bot-design.md §4).

@@ -13,10 +13,10 @@ function penSwatch(color: string): string {
  * Fit-to-width zoom: on until the person picks a zoom of their own. `set` is the last zoom this set,
  * so a different zoom in the editor means the person chose it.
  */
-export interface WordFit { auto: boolean; set: number | null; refit: () => void; zoomed: (zoom: number) => void; sidebar: boolean; pen: boolean; penColor: string; listeners: Set<() => void> }
+export interface WordFit { auto: boolean; set: number | null; refit: () => void; zoomed: (zoom: number) => void; sidebar: boolean; pen: boolean; penColor: string; listeners: Set<() => void>; exportPdf: () => void }
 
 export function createFit(): WordFit {
-  return { auto: true, set: null, refit: () => {}, zoomed: () => {}, sidebar: false, pen: false, penColor: "yellow", listeners: new Set() };
+  return { auto: true, set: null, refit: () => {}, zoomed: () => {}, sidebar: false, pen: false, penColor: "yellow", listeners: new Set(), exportPdf: () => {} };
 }
 
 /**
@@ -49,6 +49,9 @@ export function WordToolbar({ fit }: { fit: WordFit }) {
         <ToolbarCommand id="undo" />
         <ToolbarCommand id="redo" />
       </ToolbarGroup>
+      <ToolbarButton title={app("word.pdf.button")} onClick={() => fit.exportPdf()}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /><path d="M9.5 1.5V5H13" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /><text x="8.5" y="12.2" textAnchor="middle" fontSize="4.6" fontWeight="700" fill="currentColor">PDF</text></svg>
+      </ToolbarButton>
       <ToolbarGroup label={t("formattingBar.groups.styles")}>
         <ToolbarCommand id="paragraphStyle" />
       </ToolbarGroup>

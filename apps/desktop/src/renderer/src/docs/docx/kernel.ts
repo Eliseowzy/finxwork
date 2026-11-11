@@ -10,6 +10,9 @@ import { fromBase64, toBase64 } from "../pptx/document.ts";
 import { replicaClientId } from "../pptx/kernel.ts";
 
 export type WordKernelState = { dirty: boolean; revision: number; author: string | null };
+/** How `docx/export_pdf` writes: pages from 1, inclusive; `markup` shows tracked changes. */
+export type WordPdfOptions = { path: string; from_page?: number; to_page?: number; markup?: boolean };
+export type WordPdfResult = { path: string; pages: number; total_pages: number; outlined_fonts: string[] };
 export type WordWriteResult = { status: "saved" | "conflict" | "refused"; hash?: string | null; message?: string | null };
 
 /** What `docx/open` hands the editor: the file it opened and the kernel's document as a replica state. */
@@ -32,6 +35,7 @@ type DocxRpc = {
   request(method: "docx/sync", params: { session_id: string; docx_id: string; update?: string; state_vector?: string }): Promise<{ revision?: number; update?: string }>;
   request(method: "docx/save", params: { session_id: string; docx_id: string; path?: string; force?: boolean }): Promise<WordWriteResult>;
   request(method: "docx/close", params: { session_id: string; docx_id: string }): Promise<unknown>;
+  request(method: "docx/export_pdf", params: { session_id: string; docx_id: string } & WordPdfOptions): Promise<WordPdfResult>;
   on(method: "docx/sync", cb: (p: { docx_id: string; update: string }) => void): () => void;
   on(method: "docx/changed", cb: (p: { docx_id: string; revision: number; dirty: boolean; author?: string | null }) => void): () => void;
 };
@@ -174,6 +178,12 @@ export class DocxKernelLink {
       if (kind === "doc_refused") return { status: "refused", message: (e as Error).message };
       throw e;
     }
+  }
+
+  /** `docx/export_pdf` after every local edit is in: the document as it is now, as a PDF. */
+  async exportPdf(options: WordPdfOptions): Promise<WordPdfResult> {
+    await this.drained();
+    return this.rpc.request("docx/export_pdf", { session_id: this.session, docx_id: this.docxId, ...options });
   }
 
   /** `keep`: the kernel's entry stays open, as when a link on the same document replaces this one. */

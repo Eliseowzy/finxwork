@@ -146,3 +146,19 @@ test("reloading keeps the kernel's entry open: the new link has the same documen
   moved.takeDisk({ data: "", hash: "h3", writable: true, font_families: [], kernel: new DocxKernelLink(rpc, "s", "v", Uint8Array.of()), recoveredDirty: false });
   assert.deepEqual(calls.filter((c) => c.method === "docx/close").map((c) => c.params.docx_id), ["w"]);
 });
+
+test("docx/export_pdf waits for every local edit, then asks the kernel", async () => {
+  const { rpc, calls } = fakeRpc((call) => call.method === "docx/export_pdf"
+    ? { path: "/a/r.pdf", pages: 2, total_pages: 3, outlined_fonts: [] }
+    : { revision: 1 });
+  const link = new DocxKernelLink(rpc, "s", "w", Uint8Array.of());
+  const r = fakeReplica();
+  link.attach(r.replica as never);
+  await tick();
+  r.local(5);
+  const result = await link.exportPdf({ path: "/a/r.pdf", from_page: 2, to_page: 3, markup: true });
+  const methods = calls.map((c) => c.method);
+  assert.ok(methods.lastIndexOf("docx/sync") < methods.indexOf("docx/export_pdf"), methods.join());
+  assert.deepEqual(calls.at(-1), { method: "docx/export_pdf", params: { session_id: "s", docx_id: "w", path: "/a/r.pdf", from_page: 2, to_page: 3, markup: true } });
+  assert.equal(result.pages, 2);
+});

@@ -861,7 +861,31 @@
     "conflict": "文件在外部被修改",
     "overwrite": "覆盖",
     "reload": "重新载入",
-    "legacy": "这是旧版 Word 格式，FinxWork 只支持 .docx。"
+    "legacy": "这是旧版 Word 格式，FinxWork 只支持 .docx。",
+    "pdf": {
+      "title": "导出为 PDF",
+      "pages": "页面范围",
+      "allPages": "全部",
+      "fromPage": "从",
+      "toPage": "到",
+      "fromLabel": "起始页",
+      "toLabel": "结束页",
+      "badRange": "请填写有效的页码范围",
+      "content": "内容",
+      "final": "文档",
+      "markup": "显示标记的文档",
+      "export": "导出…",
+      "exporting": "正在导出…",
+      "cancel": "取消",
+      "failed": "导出失败：{{message}}",
+      "doneAll": "已导出全部 {{count}} 页。",
+      "donePages": "已导出 {{count}} 页（共 {{total}} 页）。",
+      "outlined": "字体 {{fonts}} 的授权不允许嵌入，这部分文字已转为图形：打印效果相同，但无法选中或搜索。",
+      "reveal": "在访达中显示",
+      "open": "打开",
+      "close": "完成",
+      "button": "导出为 PDF"
+    }
   },
   "deckEdit": {
     "show": "查看第 {{n}} 页",

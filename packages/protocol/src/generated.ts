@@ -2064,6 +2064,31 @@ export type DocxChangedParams = {
   revision: number;
 };
 
+/** Writes the document as it is now, unsaved edits included, as a PDF (word-design §6). */
+export type DocxExportPdfParams = {
+  docx_id: string;
+  /** First page to export, from 1; the first page when absent. */
+  from_page?: number | null;
+  /** With tracked changes and their marks ("显示标记的文档"); otherwise as if accepted. */
+  markup?: boolean;
+  /** Where to write the .pdf (absolute, or relative to the session's directory). */
+  path: string;
+  session_id: string;
+  /** Last page to export; the last page when absent. */
+  to_page?: number | null;
+};
+
+export type DocxExportPdfResult = {
+  /** Fonts drawn as shapes rather than text because their license forbids embedding them: they print the same but cannot be selected or searched. */
+  outlined_fonts: string[];
+  /** Pages written. */
+  pages: number;
+  /** The .pdf written. */
+  path: string;
+  /** Pages the document has. */
+  total_pages: number;
+};
+
 export type DocxIdParams = {
   docx_id: string;
   session_id: string;
@@ -4795,6 +4820,7 @@ export interface Methods {
   "doc/undo": [DocIdParams, DocApplyResult];
   "doc/view": [DocViewParams, Empty];
   "docx/close": [DocxIdParams, Empty];
+  "docx/export_pdf": [DocxExportPdfParams, DocxExportPdfResult];
   "docx/host": [Record<string, never>, Empty];
   "docx/open": [DocxOpenParams, DocxOpenResult];
   "docx/review": [DocxReviewParams, DocxRevisionResult];

@@ -12,7 +12,7 @@ use finx_docs::word::WordEvent;
 use finx_protocol::api::{Empty, method};
 use finx_protocol::docx::{
     DocxChangedParams, DocxIdParams, DocxOpenParams, DocxOpenResult, DocxReviewAction, DocxReviewParams, DocxRevisionResult, DocxSaveParams, DocxSaveResult,
-    DocxSaveStatus, DocxSyncNotice, DocxSyncParams, DocxSyncResult, DocxUndoParams,
+    DocxExportPdfParams, DocxExportPdfResult, DocxSaveStatus, DocxSyncNotice, DocxSyncParams, DocxSyncResult, DocxUndoParams,
 };
 use finx_rpc::RpcError;
 
@@ -141,6 +141,30 @@ impl Server {
         };
         let revision = self.0.words.review(&p.docx_id, action, p.ids, None).await.map_err(rpc_error)?;
         Ok(DocxRevisionResult { revision })
+    }
+
+    /// `docx/export_pdf`: writes the document as it is now as a PDF.
+    pub(crate) async fn docx_export_pdf(&self, p: DocxExportPdfParams) -> Result<DocxExportPdfResult, RpcError> {
+        self.0.words.get(&p.docx_id).map_err(rpc_error)?;
+        let to = self.file_scope(&p.session_id).await?.env.resolve(&p.path);
+        if !to.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) {
+            return Err(RpcError::invalid_params(format!("{} is not a .pdf", to.display())));
+        }
+        if finx_core::files::refused(&self.0.home, &to) {
+            return Err(RpcError::invalid_params("finx's own data is not written from here"));
+        }
+        let pages = match (p.from_page, p.to_page) {
+            (None, None) => None,
+            (from, to) => Some((from.unwrap_or(1), to.unwrap_or(u32::MAX))),
+        };
+        let request = finx_word::PdfRequest { pages, markup: p.markup, title: None };
+        let exported = self.0.words.export_pdf(&p.docx_id, &to, request).await.map_err(rpc_error)?;
+        Ok(DocxExportPdfResult {
+            path: to.display().to_string(),
+            pages: exported.pages as u32,
+            total_pages: exported.total_pages as u32,
+            outlined_fonts: exported.outlined_fonts,
+        })
     }
 
     pub(crate) async fn docx_close(&self, p: DocxIdParams) -> Result<Empty, RpcError> {

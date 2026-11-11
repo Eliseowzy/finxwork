@@ -1,4 +1,4 @@
-import type { WordFile, WordKernelState, WordWriteResult } from "./kernel.ts";
+import type { WordFile, WordKernelState, WordPdfOptions, WordPdfResult, WordWriteResult } from "./kernel.ts";
 
 // A Word document in a tab: the kernel's, with the editor as its replica (word-design §6). The
 // kernel writes the file; this tracks how the tab's edits stand (the unsaved dot, saving, a
@@ -91,6 +91,12 @@ export class WordDoc {
   async saveAs(path: string): Promise<WordWriteResult> {
     await this.prepare?.();
     return this.kernel.save({ path });
+  }
+
+  /** The document as it is now, typing held back included, as a PDF; the .docx is left as it is. */
+  async exportPdf(options: WordPdfOptions): Promise<WordPdfResult> {
+    await this.prepare?.();
+    return this.kernel.exportPdf(options);
   }
 
   /** One snapshot: what was typed up to now. Edits made meanwhile leave it unsaved, for edit()'s

@@ -14,6 +14,7 @@ import { registerWordHandle } from "./handle";
 import { wordZhCN } from "./i18n";
 import { WordLoading } from "./WordLoading";
 import { createFit, WordToolbar } from "./WordToolbar";
+import { ExportPdfDialog } from "./ExportPdf";
 import { askFromComment, WordAi } from "./WordAi";
 import "../pptx/theme.css";
 import "./word.css";
@@ -54,6 +55,8 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
   const fit = useMemo(createFit, [doc]);
   const [zoom, setZoom] = useState(1);
   const [wide, setWide] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => { fit.exportPdf = () => setExporting(true); return () => { fit.exportPdf = () => {}; }; }, [fit]);
   // The font menu: the document's families, then every family installed on the machine (as the PPT
   // editor's), which the font provider draws face by face as they are picked.
   const [fontFamilies, setFontFamilies] = useState<string[] | undefined>(undefined);
@@ -242,6 +245,7 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
       onError={(e) => setError(e.message)}
     />{ready && editor.current && <WordAi editor={editor.current} where={where} readOnly={!doc.file.writable} />}</div>
     {!ready && !error && <div className="word-opening-overlay">{loading}</div>}
+    {exporting && <ExportPdfDialog doc={doc} path={path} onClose={() => setExporting(false)} />}
   </div>;
 }
 
