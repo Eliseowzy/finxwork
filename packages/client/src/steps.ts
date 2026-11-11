@@ -1,5 +1,5 @@
 import type { AgentView, NoteEntry, SessionView } from "./session.ts";
-import type { AgentStatus, AssistantContent, MailInfo, TaskEndItem, ToolCategory, ToolResultMessage, UsageTotals, UserContent } from "@finx/protocol";
+import type { AgentStatus, Anchor, AssistantContent, MailInfo, TaskEndItem, ToolCategory, ToolResultMessage, UsageTotals, UserContent } from "@finx/protocol";
 import { argsOf, callTarget, type ToolDescription } from "./session.ts";
 import { addTotals } from "./text.ts";
 
@@ -472,6 +472,7 @@ export type DocQuote = {
   text: string;
   page?: number;
   block?: string;
+  anchor?: Anchor;
   region?: boolean;
   to_page?: number;
   /** A workbook quote uses its sheet and A1 range instead of a page. */

@@ -5,14 +5,14 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@betteroffice/fonts-latin': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-latin-0.5.1-finx.g4cfcd68d.tgz
-  '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz
-  '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-0.5.1-finx.g4cfcd68d.tgz
-  '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-i18n-0.5.1-finx.g4cfcd68d.tgz
-  '@betteroffice/pptx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-react-0.5.1-finx.g4cfcd68d.tgz
-  '@betteroffice/docx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-0.5.1-finx.g4cfcd68d.tgz
-  '@betteroffice/docx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-i18n-0.5.1-finx.g4cfcd68d.tgz
-  '@betteroffice/docx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-react-0.5.1-finx.g4cfcd68d.tgz
+  '@betteroffice/fonts-latin': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-latin-0.5.1-finx.g2d359b30.tgz
+  '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz
+  '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-0.5.1-finx.g2d359b30.tgz
+  '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-i18n-0.5.1-finx.g2d359b30.tgz
+  '@betteroffice/pptx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-react-0.5.1-finx.g2d359b30.tgz
+  '@betteroffice/docx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-0.5.1-finx.g2d359b30.tgz
+  '@betteroffice/docx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-i18n-0.5.1-finx.g2d359b30.tgz
+  '@betteroffice/docx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-react-0.5.1-finx.g2d359b30.tgz
 
 importers:
 
@@ -23,26 +23,26 @@ importers:
   apps/desktop:
     dependencies:
       '@betteroffice/docx':
-        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-0.5.1-finx.g4cfcd68d.tgz
-        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-0.5.1-finx.g4cfcd68d.tgz
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-0.5.1-finx.g2d359b30.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-0.5.1-finx.g2d359b30.tgz
       '@betteroffice/docx-i18n':
-        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-i18n-0.5.1-finx.g4cfcd68d.tgz
-        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-i18n-0.5.1-finx.g4cfcd68d.tgz
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-i18n-0.5.1-finx.g2d359b30.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-i18n-0.5.1-finx.g2d359b30.tgz
       '@betteroffice/docx-react':
-        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-react-0.5.1-finx.g4cfcd68d.tgz
-        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-react-0.5.1-finx.g4cfcd68d.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-react-0.5.1-finx.g2d359b30.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-react-0.5.1-finx.g2d359b30.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@betteroffice/fonts':
-        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz
-        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz
       '@betteroffice/pptx':
-        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-0.5.1-finx.g4cfcd68d.tgz
-        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-0.5.1-finx.g4cfcd68d.tgz
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-0.5.1-finx.g2d359b30.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-0.5.1-finx.g2d359b30.tgz
       '@betteroffice/pptx-i18n':
-        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-i18n-0.5.1-finx.g4cfcd68d.tgz
-        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-i18n-0.5.1-finx.g4cfcd68d.tgz
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-i18n-0.5.1-finx.g2d359b30.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-i18n-0.5.1-finx.g2d359b30.tgz
       '@betteroffice/pptx-react':
-        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-react-0.5.1-finx.g4cfcd68d.tgz
-        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-react-0.5.1-finx.g4cfcd68d.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-react-0.5.1-finx.g2d359b30.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-react-0.5.1-finx.g2d359b30.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@codemirror/autocomplete':
         specifier: 6.20.4
         version: 6.20.4
@@ -291,13 +291,13 @@ packages:
     resolution: {integrity: sha512-WCsemW40Cpc6gouC1SrY6PBaZ+oLRlEVY9XBvZBI7il/HyUrb2nJ505wE1MHEFyDZNnrWDEuy4jL50WVHfTTSQ==}
     engines: {node: '>=6.9.0'}
 
-  '@betteroffice/docx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-i18n-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-PDmxH4wCAPfmQgmS+A9bxtjgQi8BUoPyMxKY6xRDUfHJRfjfMS4NenpSu+A941HPwfSPD1NpIjq+bN+xKG0NBQ==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-i18n-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/docx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-i18n-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-XQ7ELUeJT/NJEIdqIsgB17lCozJ/nCpb+HDehiVnf9cwbOj+F1XZ4UDLMyqE4h3ywnr1YYQlhsPSkroV0rx8ow==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-i18n-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
 
-  '@betteroffice/docx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-react-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-vvqwY30lBwkJody1OSMSgIY3NqpMQUwl7pay9BYVrzb+s/jLYjh1y95r8F+JF+phD7Fw7euQu3baN9wVUISYBA==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-react-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/docx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-react-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-4NeC6kdQzR7yxY2c/yMcl5w08v7RxSXyiRGvPHo2VZnK4Ba7+r8Xz9i52/3+gP3QLFwaEbg5kmT3khGgdV6OWQ==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-react-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -307,17 +307,17 @@ packages:
       react-dom:
         optional: true
 
-  '@betteroffice/docx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-jfzljkAGh6WBMZI3RpNru8AZvntaol1amwKKy9o0kUbGmvBlGvWLoH3OW1XAcUE0C6Z56bpmo35LtbZpwJ8UFQ==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/docx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-9C+JhNuRyGsrSFo8rwajY6H0N6m4rjCm3M1tGuz/mpNRpdPh16qfZhzeuV2/o6vyFj2RuS2MU5VYrspTJVdqag==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
 
-  '@betteroffice/fonts-latin@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-latin-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-HvyvLtv37znJdx4BkrknPOTDCT8TapiAHIKqwCph8/4EP++x9JJmqNZRA0FsPKwKNCX7raORtUwjs+8/uSUk6w==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-latin-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/fonts-latin@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-latin-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-MjXRds7HDzK2UbW0od0mwkEYQYw8bCZaYk9p26rmWBoBKltuhWs9xTVLsjegUZ/D3dU8pgoc5oatwFgFDwfaKg==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-latin-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
 
-  '@betteroffice/fonts@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-Ki1432KNR+kTnvVCFMUiSjY0PLG7y2fdrEa/XNdbVI03L5Ue4OcZMCBHFHMb/IxLeHy4bwCOl7gjZ2sd3msrxw==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/fonts@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-L8ImgaxabjyGcma1SFYp4EMMrJS58JAFGvJDt5ckACVMDEGdP1Gbzn9uPK7mhIf9dGptNqIjnpIlwusjFwNxIg==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
     peerDependencies:
       '@betteroffice/fonts-cjk': 0.4.2
       '@betteroffice/fonts-intl': ^0
@@ -327,20 +327,20 @@ packages:
       '@betteroffice/fonts-intl':
         optional: true
 
-  '@betteroffice/pptx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-i18n-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-x8/yEYyr2SMsOrPWta9vQ/kNtzrb+A0NXWd3AhokTAF+9JwsVFi9RAFLhPBB8hUGR007ICUl19I/pGLb1n5tuQ==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-i18n-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/pptx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-i18n-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-yBNfxAjRGbmEmVuDVvxa2RQw6QZwvWzBjySrV6Rxe5asuL/b5uuy6ljZtzfzZ4snjRvQb4b7Wa4VQaGmHBoYzw==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-i18n-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
 
-  '@betteroffice/pptx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-react-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-x6gybQe1i2t9VJGx+qP2rJ4n47uhQCsqwx8Wqi1hBGAFJCI91yTibLBX+t+3GCWZpNxsoRH4iuLjNMyg5OuW8A==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-react-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/pptx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-react-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-eq9XNfQc4iB3W3seEOK6oEHss59jnmOCrw5l+nIcLIniS6FRJ4bpO5XpPYDGzzOBeJcwMqhppiWxnpUHoGmtCw==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-react-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  '@betteroffice/pptx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-0.5.1-finx.g4cfcd68d.tgz':
-    resolution: {integrity: sha512-i8uwynXn85IKtXJzgzJngS1YCTcZ5KH2rTr1aRCh8VgWBdydb2A4QXUjNb8IyJiRkAFRSgYocFsq23LUxMB5tQ==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-0.5.1-finx.g4cfcd68d.tgz}
-    version: 0.5.1-finx.g4cfcd68d
+  '@betteroffice/pptx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-0.5.1-finx.g2d359b30.tgz':
+    resolution: {integrity: sha512-p8HvTaQqmLkMRQApJK6BZUuc1poryg20rdlgLkayOxtJfgxU3EiGld+kZhdSOMKfaXtpOvI/3/fJ/d2Si+9FRA==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-0.5.1-finx.g2d359b30.tgz}
+    version: 0.5.1-finx.g2d359b30
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
@@ -2753,12 +2753,12 @@ snapshots:
       '@babel/helper-string-parser': 7.29.11
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@betteroffice/docx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-i18n-0.5.1-finx.g4cfcd68d.tgz': {}
+  '@betteroffice/docx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-i18n-0.5.1-finx.g2d359b30.tgz': {}
 
-  '@betteroffice/docx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-react-0.5.1-finx.g4cfcd68d.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@betteroffice/docx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-react-0.5.1-finx.g2d359b30.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@betteroffice/docx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-0.5.1-finx.g4cfcd68d.tgz
-      '@betteroffice/docx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-i18n-0.5.1-finx.g4cfcd68d.tgz
+      '@betteroffice/docx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-0.5.1-finx.g2d359b30.tgz
+      '@betteroffice/docx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-i18n-0.5.1-finx.g2d359b30.tgz
       '@radix-ui/react-select': 2.4.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       clsx: 2.1.1
       sonner: 2.0.8(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -2771,35 +2771,35 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  '@betteroffice/docx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-docx-0.5.1-finx.g4cfcd68d.tgz':
+  '@betteroffice/docx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-docx-0.5.1-finx.g2d359b30.tgz':
     dependencies:
-      '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz
+      '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz
     transitivePeerDependencies:
       - '@betteroffice/fonts-cjk'
       - '@betteroffice/fonts-intl'
 
-  '@betteroffice/fonts-latin@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-latin-0.5.1-finx.g4cfcd68d.tgz': {}
+  '@betteroffice/fonts-latin@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-latin-0.5.1-finx.g2d359b30.tgz': {}
 
-  '@betteroffice/fonts@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz':
+  '@betteroffice/fonts@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz':
     dependencies:
-      '@betteroffice/fonts-latin': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-latin-0.5.1-finx.g4cfcd68d.tgz
+      '@betteroffice/fonts-latin': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-latin-0.5.1-finx.g2d359b30.tgz
 
-  '@betteroffice/pptx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-i18n-0.5.1-finx.g4cfcd68d.tgz': {}
+  '@betteroffice/pptx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-i18n-0.5.1-finx.g2d359b30.tgz': {}
 
-  '@betteroffice/pptx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-react-0.5.1-finx.g4cfcd68d.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@betteroffice/pptx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-react-0.5.1-finx.g2d359b30.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz
-      '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-0.5.1-finx.g4cfcd68d.tgz
-      '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-i18n-0.5.1-finx.g4cfcd68d.tgz
+      '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz
+      '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-0.5.1-finx.g2d359b30.tgz
+      '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-i18n-0.5.1-finx.g2d359b30.tgz
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
     transitivePeerDependencies:
       - '@betteroffice/fonts-cjk'
       - '@betteroffice/fonts-intl'
 
-  '@betteroffice/pptx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-pptx-0.5.1-finx.g4cfcd68d.tgz':
+  '@betteroffice/pptx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-pptx-0.5.1-finx.g2d359b30.tgz':
     dependencies:
-      '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g4cfcd68d/betteroffice-fonts-0.5.1-finx.g4cfcd68d.tgz
+      '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g2d359b30/betteroffice-fonts-0.5.1-finx.g2d359b30.tgz
     transitivePeerDependencies:
       - '@betteroffice/fonts-cjk'
       - '@betteroffice/fonts-intl'

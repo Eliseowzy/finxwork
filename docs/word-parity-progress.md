@@ -72,3 +72,50 @@
 3. **r2 / r4 工作区的未提交工作**：两个 claude 会话各留了一批未提交改动（r4 的页面默认值含新测试和 fixtures，r4b 全量 42.73% 为全场最高）。要么续作完成，要么按交接要求逐个写清做到了哪里。
 4. 之后发版、在 FinxWork 里升级、构建应用并截图验证；统一用新版探针重量一次基线；扩充真实中文语料到 1000 份。
 5. 阶段目标：页数一致率 ≥ 95%，逐行完全一致的文档超过一半。
+
+## 2026-11-10 下午：行边界带模型 + 页锚定拆分浮动表（b31f3147、eeb1226f）
+
+两条已拍板的"容差悬崖"残差已修，均在 `finx/word-parity`：
+
+1. **连续边界带模型（浮动表）**：Word 把行边界带画在下一行区域顶部、与单元格上边距取
+   max（fnh 实测：sz12 表头带压在 108twip padding 上，首行基线 = padding + winAscent 分毫不差）；
+   表底边框带画在末行之下（片段底 = 外缘，zone 实验规则）。内联表保留旧的半分摊模型
+   （tbl-border4 系列 Word 实测钉死）。
+2. **页锚定拆分浮动表**：行整行填充到**页脚线**（不是正文底；RE 到 CF_69
+   "DelayableFloatingTable" 兼容开关印证），装不下整行就整行搬走，超页长的行仍在正文底
+   行内拆分。文本锚定保持原行为（rowsplit/widow fixture 钉死）。
+
+全量（497 份，v3-fix 缓存）：页数一致 **93.6%**（基线 93.61%），**页数零回归**，行级退化仅
+4 份小的（footer-2rows、header、fdo48718、move-master 86→62）；两份目标文档
+avoid-last-manip-ofst **1.30% → 42.86%**、negative-height **2.08% → 10.42%**，均 100% 页数。
+zone 的 ignored 验收测试已 unignore 且绿。
+
+两文档剩余残差（后续单独修）：
+- avoid-last-manip：均匀 -0.3pt —— 单元格首行基线（Word ≈10.8 vs 引擎 10.47@11pt Calibri）
+  + 行高 twips 取整（Word 269tw=13.45 vs 引擎 13.4275）。全局字体度量级，需独立门禁。
+- negative-height：窄列长词换行点差 1 字符（v2 老类）+ p1 有 2 行刃口级 clip 伪行。
+
+Ghidra 逆向佐证记录在 /tmp/wp-check/FACTS.md（会随 /tmp 清理丢失，要点已写入两个提交的
+commit message）：CF_40_LayoutTableRowsApart / CF_42_DontBreakWrappedTables / CF_69。
+
+## 2026-11-10 晚间续：边界带精化三连（08f696e4、acf42ef0）
+
+在 b31f3147/eeb1226f 基础上把两份"容差悬崖"文档推到极限：
+
+1. **边界带是行级量**（08f696e4）：每行所有单元格的内容都从该行边界最宽的带下起排
+   （manip 实测：709twip 窄列的 sz6 带同样抬升宽列的内容顶——首行基线 = rowTop + 0.72 + winAscent）；
+2. **行 top 不取整**：paint 的 row_y_positions 之前逐行 round 到整像素，一页四行累计漂移 1px；
+3. **续接片段重画切边带**（acf42ef0）：行中截断后，下一页片段在切边重画该行边界带，
+   内容从带下起排（move-master 实测）。
+
+结果：
+- **floattable-avoid-last-manip-ofst：identical（100%）**——第一条"容差悬崖"清零；
+- floattable-move-master：62% → **69%**（86% 基线的缺口是既有 bug：行盒 top 落在片段
+  clip 底内就整行画出、超出部分未被裁——已记录为下一步，Word 只画盒完整落在 clip 内的行）；
+- floattable-negative-height：10.42%（剩余是窄列长词换行点差 1 字符，v2 老类）；
+- 全量：页数一致 93.6%、页数零回归；行级回归仅 [32]3C2N（本就 break 类）、
+  fdo48718（本就 +6pt 级）、footer-2rows（本就 +466pt 级）3 份既有损坏。
+
+字号度量模型（本会话确立，供后续）：单倍行距 = winAsc+winDesc（Calibri@11pt = 13.4277pt）；
+首行基线 = 内容顶 + winAscent；Word PDF 导出把 y 量化到 0.24pt 网格——±0.12 内的差异
+都是网格伪影，不要追。实验文档生成器模式见 /tmp/wp-check/gen-linespacing.py（会随 /tmp 丢失）。

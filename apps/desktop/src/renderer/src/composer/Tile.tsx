@@ -146,7 +146,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
           comment={quote.comment}
           rows={[[t("composer.webDetails.file"), baseName(quote.path)], ...(quote.text ? [[t("composer.webDetails.text"), quote.text] as Row] : [])]}
           more={[]}
-          action={quote.paragraphs && quote.page === undefined ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openFile(quote.path)) } : docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }, quote.block)) } : undefined}
+          action={quote.paragraphs && quote.page === undefined ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openFile(quote.path)) } : docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.anchor ?? (quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }), quote.anchor ? undefined : quote.block)) } : undefined}
         />
       )}
     </div>

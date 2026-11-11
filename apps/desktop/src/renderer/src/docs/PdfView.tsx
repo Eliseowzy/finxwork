@@ -333,7 +333,7 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
       const block = r.anchor.kind === "text" ? (r.anchor.block ?? undefined) : undefined;
       const toPage = p.more.at(-1)?.page;
       const comment = note.trim() || undefined;
-      quoteToComposer(session, { quote: { path: tab.info.path, doc_id: docId, page: p.page, text: r.text, block, region: p.rect ? true : undefined, to_page: toPage, comment }, image: p.image });
+      quoteToComposer(session, { quote: { path: tab.info.path, doc_id: docId, page: p.page, text: r.text, block, anchor: r.anchor, region: p.rect ? true : undefined, to_page: toPage, comment }, image: p.image });
       // Over the window (a preview), the composer it went to is out of sight.
       scope?.leave?.();
       const parts = [{ page: p.page, rects: r.boxes.length ? r.boxes : p.rect ? [p.rect] : [] }, ...(r.more ?? []).map((m) => ({ page: m.anchor.page, rects: m.boxes }))];
@@ -372,6 +372,18 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
     if (viewer.current && pdf) viewer.current.currentPageNumber = Math.min(pdf.numPages, Math.max(1, n));
   };
 
+  useEffect(() => {
+    if (!region) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      if (pending) setPending(null);
+      else setRegion(false);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [region, pending]);
+
   // Keys while the column has focus: ⌘F search, ⌘L quote, ⌘+ ⌘- ⌘0 zoom, Esc lets go.
   const onKeyDown = (e: React.KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
@@ -389,8 +401,8 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
       e.preventDefault();
       zoom("fit");
     } else if (e.key === "Escape") {
-      if (pending) setPending(null);
-      else if (region) setRegion(false);
+      if (pending) { e.preventDefault(); e.stopPropagation(); setPending(null); }
+      else if (region) { e.preventDefault(); e.stopPropagation(); setRegion(false); }
       else if (query !== null) closeSearch();
     }
   };
@@ -451,7 +463,7 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
           <button className={`tb no-drag ${side ? "on" : ""}`} title={t("doc.sidebar")} aria-label={t("doc.sidebar")} aria-pressed={side !== null} onClick={() => setSide(side ? null : info.outline?.length ? "outline" : "pages")}>
             <Icon name="list" />
           </button>
-          <button className={`brp-annotate no-drag ${region ? "on" : ""}`} title={t("doc.regionTool")} aria-label={t("doc.regionTool")} aria-pressed={region} disabled={!pdf} onClick={() => (setRegion(!region), setPending(null))}>
+          <button className={`brp-annotate no-drag ${region ? "on" : ""}`} title={t("doc.regionTool")} aria-label={t("doc.regionTool")} aria-pressed={region} disabled={!pdf} onClick={() => (setRegion(!region), setPending(null), scroller.current?.focus({ preventScroll: true }))}>
             <Icon name="edit" />
           </button>
           <span className="dcp-sep" />
@@ -535,7 +547,7 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
               />
             </div>
           )}
-          {region && !band && !pending && <div className="dcp-hint">{t("doc.regionHint")}</div>}
+          {region && !band && !pending && <button type="button" className="dcp-hint" onClick={() => setRegion(false)}>{t("doc.regionHint")}</button>}
           {band && (
             <div
               className="dcp-band"
