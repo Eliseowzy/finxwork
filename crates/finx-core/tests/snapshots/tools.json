@@ -1475,7 +1475,7 @@
     }
   },
   {
-    "description": "Read a Word document (.docx) as it is now, unsaved edits included. Without `from`: the outline, one line a paragraph with its id, heading level and first words, and the counts of comments and tracked changes. With `from`: paragraphs in full (text with tracked changes applied, style, list, table cell), the comments anchored in them and the tracked changes in them, each with its number.",
+    "description": "Read the body of a Word document (.docx) as it is now, unsaved edits included. Without `from`: the outline, one line a paragraph with its id in square brackets, heading level and first words, and the counts of comments and tracked changes; at most 400 lines, then continue with `from` and `outline: true`. With `from`: paragraphs in full (text with pending insertions in and pending deletions out, style, list, table cell), the comments anchored in them with their ids, and the tracked changes in them, each with its number. A ￼ in the text stands for a picture or other inline object. Headers, footers and footnotes are not read; docx_view shows them.",
     "group": "word",
     "kind": "read_only",
     "loaded": false,
@@ -1485,18 +1485,23 @@
       "properties": {
         "count": {
           "default": null,
-          "description": "How many paragraphs from `from`; default 20, at most 60.",
+          "description": "How many paragraphs from `from`; default 20, at most 60 (more is cut to 60: read on from the next id).",
           "minimum": 0.0,
           "type": "integer"
         },
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "from": {
           "default": null,
           "description": "Read paragraphs in full from this paragraph id (from the outline or docx_find). Without it: the outline.",
           "type": "string"
+        },
+        "outline": {
+          "default": false,
+          "description": "With `from`: give outline lines from that paragraph on instead of full paragraphs, to continue a long outline.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1506,7 +1511,7 @@
     }
   },
   {
-    "description": "Find text in a Word document (.docx) as it is now: each match with its paragraph id and the words around it.",
+    "description": "Find text in the body of a Word document (.docx) as it is now: each match with its paragraph id and the words around it, at most 50. The match is exact: when nothing is found, try fewer words, and mind that the document may use full-width or half-width punctuation, other quotation marks or spaces than you typed.",
     "group": "word",
     "kind": "read_only",
     "loaded": false,
@@ -1515,11 +1520,11 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "query": {
-          "description": "Exact, case-sensitive text; a match lies within one paragraph.",
+          "description": "Exact, case-sensitive text, punctuation and spaces included; a match lies within one paragraph. A few distinctive words find more reliably than a long sentence.",
           "type": "string"
         }
       },
@@ -1531,7 +1536,7 @@
     }
   },
   {
-    "description": "Look at a page of a Word document (.docx) as an image, unsaved edits included: its layout, tables, pictures and tracked changes as Word shows them. Needs the FinxWork desktop app when there are unsaved edits.",
+    "description": "Look at a page of a Word document (.docx) as an image, unsaved edits included: its layout, tables, pictures, headers, footers and tracked changes as Word shows them. Use it for what the text does not tell: how a page looks, what a picture or chart shows, or whether a change to a table, a style or alignment came out right. For the words themselves docx_read is cheaper and exact. The result says how many pages there are; start at page 1 when you do not know where something is.",
     "group": "word",
     "kind": "read_only",
     "loaded": false,
@@ -1540,7 +1545,7 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "page": {
@@ -1557,7 +1562,7 @@
     }
   },
   {
-    "description": "Change a Word document (.docx): replace, insert, delete or format words in a paragraph, insert or delete paragraphs, set a paragraph's style or alignment, add, reply to or resolve comments, insert or delete table rows and set a cell's text. Paragraphs are addressed by their id (docx_read, docx_find); `find` must occur exactly once in that paragraph. By default (mode suggest) text changes are tracked changes by FinxWork AI, already in the document the user sees, for them to accept or reject there. All edits are made at once, or none: a failing step is named with why. The file is not written until docx_save.",
+    "description": "Change a Word document (.docx): replace, insert, delete or format words in a paragraph, insert or delete paragraphs, set a paragraph's style or alignment, add, reply to or resolve comments, insert or delete table rows and set a cell's text. Each edit is an object with `op` and that op's fields only; an unknown field fails the call. Example: {\"docx\": \"report.docx\", \"note\": \"tighten the summary\", \"edits\": [{\"op\": \"replace_text\", \"paragraph\": \"10000002\", \"find\": \"grew by ten percent\", \"replace\": \"grew 10%\"}, {\"op\": \"format_text\", \"paragraph\": \"10000004\", \"find\": \"Outlook\", \"bold\": true}]}. Paragraphs are addressed by their id (docx_read, docx_find), which stays the same across edits; `find` must occur exactly once in that paragraph. Edits run in order, each on the result of the ones before, and all are made or none: a failing step is named with why, so fix that step and send the whole call again. By default (mode suggest) changes to words, formatting, alignment and table rows are tracked changes by FinxWork AI, already in the document the user sees, for them to accept or reject there; paragraph styles and comments apply at once in either mode. Whole paragraphs cannot be tracked: insert_paragraphs and delete_paragraph work only in mode direct, so send them in a docx_edit of their own with mode direct, apart from the changes you suggest. The result lists the ids of the paragraphs changed or made. The file is not written until docx_save.",
     "group": "word",
     "kind": "mutating",
     "loaded": false,
@@ -1566,18 +1571,20 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "edits": {
           "description": "The changes, made together as one step or not at all. At most 256.",
           "items": {
-            "description": "One edit. Paragraphs are addressed by their id (from `outline`, `read` or `find`); `find` must occur exactly once in that paragraph's text as it reads now.",
+            "description": "One edit, named by `op`. A paragraph is addressed by its id, the text in square brackets that docx_read and docx_find give. Ids stay the same when the document is edited. Edits run in order, each on the document as the ones before it left it. `find` is exact and case-sensitive and must occur exactly once in that paragraph's text as docx_read gives it (pending insertions in, pending deletions out); quote more of the text when it occurs more than once.",
             "oneOf": [
               {
                 "additionalProperties": false,
+                "description": "Replace words in a paragraph.",
                 "properties": {
                   "find": {
+                    "description": "The words to replace, as they stand in the paragraph; exactly one occurrence.",
                     "type": "string"
                   },
                   "op": {
@@ -1587,9 +1594,11 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   },
                   "replace": {
+                    "description": "The words to put there. Plain text, no line breaks.",
                     "type": "string"
                   }
                 },
@@ -1603,15 +1612,16 @@
               },
               {
                 "additionalProperties": false,
-                "description": "After `after` when given, otherwise at `at` (default the end).",
+                "description": "Add words to a paragraph: right after the words `after`, or else at the edge `at` (default the end). Not both.",
                 "properties": {
                   "after": {
                     "default": null,
+                    "description": "Words in the paragraph (exactly one occurrence) to insert right after. This is text, not a paragraph id.",
                     "type": "string"
                   },
                   "at": {
                     "default": null,
-                    "description": "Which end of a paragraph `insert_text` writes at.",
+                    "description": "`start` or `end` of the paragraph, when `after` is not given.",
                     "enum": [
                       "start",
                       "end"
@@ -1625,9 +1635,11 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   },
                   "text": {
+                    "description": "The words to add. Plain text; for a new paragraph use insert_paragraphs.",
                     "type": "string"
                   }
                 },
@@ -1640,8 +1652,10 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Delete words from a paragraph.",
                 "properties": {
                   "find": {
+                    "description": "The words to delete; exactly one occurrence.",
                     "type": "string"
                   },
                   "op": {
@@ -1651,6 +1665,7 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   }
                 },
@@ -1663,26 +1678,31 @@
               },
               {
                 "additionalProperties": false,
-                "description": "The whole paragraph without `find`. `color` is hex (`FF0000`); `highlight` a Word highlight name or hex. `false` clears a flag.",
+                "description": "Format words in a paragraph, or the whole paragraph without `find`. Give at least one of the formats; those left out stay as they are.",
                 "properties": {
                   "bold": {
                     "default": null,
+                    "description": "true sets bold, false clears it.",
                     "type": "boolean"
                   },
                   "color": {
                     "default": null,
+                    "description": "Text colour as six hex digits, e.g. `FF0000` (a leading `#` is fine).",
                     "type": "string"
                   },
                   "find": {
                     "default": null,
+                    "description": "The words to format (exactly one occurrence); the whole paragraph when absent.",
                     "type": "string"
                   },
                   "highlight": {
                     "default": null,
+                    "description": "Highlight colour by Word's name: yellow, green, cyan, magenta, blue, red, darkBlue, darkCyan, darkGreen, darkMagenta, darkRed, darkYellow, darkGray, lightGray, black.",
                     "type": "string"
                   },
                   "italic": {
                     "default": null,
+                    "description": "true sets italic, false clears it.",
                     "type": "boolean"
                   },
                   "op": {
@@ -1692,14 +1712,17 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   },
                   "strike": {
                     "default": null,
+                    "description": "true sets strikethrough, false clears it.",
                     "type": "boolean"
                   },
                   "underline": {
                     "default": null,
+                    "description": "true sets a single underline, false clears it.",
                     "type": "boolean"
                   }
                 },
@@ -1711,14 +1734,16 @@
               },
               {
                 "additionalProperties": false,
-                "description": "Exactly one of `after` and `before`.",
+                "description": "Insert new paragraphs after or before an existing one. Give exactly one of `after` and `before`. Cannot be a tracked change: it needs mode direct. The new paragraphs' ids come back in the result; address them in a later docx_edit, not in this one.",
                 "properties": {
                   "after": {
                     "default": null,
+                    "description": "Id of the paragraph to insert after. This is a paragraph id, not text.",
                     "type": "string"
                   },
                   "before": {
                     "default": null,
+                    "description": "Id of the paragraph to insert before.",
                     "type": "string"
                   },
                   "op": {
@@ -1728,14 +1753,16 @@
                     "type": "string"
                   },
                   "paragraphs": {
+                    "description": "The new paragraphs, in order; at least one.",
                     "items": {
                       "additionalProperties": false,
                       "properties": {
                         "style": {
-                          "description": "A paragraph style id of the document; without one, the anchor paragraph's style.",
+                          "description": "A paragraph style id of this document, as docx_read shows after \"style\" (e.g. `Heading2`); without one, the style of the paragraph it is inserted next to.",
                           "type": "string"
                         },
                         "text": {
+                          "description": "The paragraph's text. Plain text, no line breaks: one entry for each paragraph.",
                           "type": "string"
                         }
                       },
@@ -1755,6 +1782,7 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Delete a whole paragraph. Cannot be a tracked change: it needs mode direct. To suggest removing its words instead, use delete_text in mode suggest.",
                 "properties": {
                   "op": {
                     "enum": [
@@ -1763,6 +1791,7 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   }
                 },
@@ -1774,6 +1803,7 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Give a paragraph one of the document's paragraph styles. Applied at once in either mode: it is not a tracked change.",
                 "properties": {
                   "op": {
                     "enum": [
@@ -1782,9 +1812,11 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   },
                   "style": {
+                    "description": "A style id of this document, as docx_read shows after \"style\" on a paragraph that has it (e.g. `Heading1`, `Heading2`, `Title`). Take it from a paragraph that already looks the way you want.",
                     "type": "string"
                   }
                 },
@@ -1797,8 +1829,10 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Align a paragraph.",
                 "properties": {
                   "align": {
+                    "description": "`left`, `center`, `right` or `justify`.",
                     "enum": [
                       "left",
                       "center",
@@ -1814,6 +1848,7 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   }
                 },
@@ -1826,9 +1861,11 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Add a comment by FinxWork AI on words of a paragraph, or on the whole paragraph without `find`. Comments are added at once in either mode.",
                 "properties": {
                   "find": {
                     "default": null,
+                    "description": "The words the comment is about (exactly one occurrence); the whole paragraph when absent.",
                     "type": "string"
                   },
                   "op": {
@@ -1838,9 +1875,11 @@
                     "type": "string"
                   },
                   "paragraph": {
+                    "description": "Id of the paragraph.",
                     "type": "string"
                   },
                   "text": {
+                    "description": "The comment. Line breaks make paragraphs.",
                     "type": "string"
                   }
                 },
@@ -1853,8 +1892,10 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Reply in a comment's thread.",
                 "properties": {
                   "comment": {
+                    "description": "Id of the comment, as docx_read shows after \"comment\" or \"reply\".",
                     "type": "string"
                   },
                   "op": {
@@ -1864,6 +1905,7 @@
                     "type": "string"
                   },
                   "text": {
+                    "description": "The reply.",
                     "type": "string"
                   }
                 },
@@ -1876,8 +1918,10 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Mark a comment's thread as resolved.",
                 "properties": {
                   "comment": {
+                    "description": "Id of the comment, as docx_read shows after \"comment\" or \"reply\".",
                     "type": "string"
                   },
                   "op": {
@@ -1895,9 +1939,10 @@
               },
               {
                 "additionalProperties": false,
-                "description": "One text per column of the row.",
+                "description": "Insert a table row above or below an existing row.",
                 "properties": {
                   "cells": {
+                    "description": "The new row's texts, one for each column of the row, left to right; \"\" for an empty cell.",
                     "items": {
                       "type": "string"
                     },
@@ -1910,6 +1955,7 @@
                     "type": "string"
                   },
                   "position": {
+                    "description": "`before` (above) or `after` (below) that row.",
                     "enum": [
                       "before",
                       "after"
@@ -1917,6 +1963,7 @@
                     "type": "string"
                   },
                   "row_of": {
+                    "description": "Id of any paragraph in a cell of the existing row (docx_read marks such paragraphs \"table N row R col C\").",
                     "type": "string"
                   }
                 },
@@ -1930,6 +1977,7 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Delete a table row. A table keeps at least one row.",
                 "properties": {
                   "op": {
                     "enum": [
@@ -1938,6 +1986,7 @@
                     "type": "string"
                   },
                   "row_of": {
+                    "description": "Id of any paragraph in a cell of the row.",
                     "type": "string"
                   }
                 },
@@ -1949,9 +1998,10 @@
               },
               {
                 "additionalProperties": false,
-                "description": "Replaces the text of the cell holding `cell_of`; the cell keeps one paragraph.",
+                "description": "Replace everything in a table cell with one paragraph of text. A cell that holds several paragraphs needs mode direct.",
                 "properties": {
                   "cell_of": {
+                    "description": "Id of any paragraph in the cell.",
                     "type": "string"
                   },
                   "op": {
@@ -1961,6 +2011,7 @@
                     "type": "string"
                   },
                   "text": {
+                    "description": "The cell's new text; \"\" empties it.",
                     "type": "string"
                   }
                 },
@@ -1980,14 +2031,14 @@
           "description": "`suggest` (default): as tracked changes by FinxWork AI, which the user accepts or rejects in the document. `direct`: straight into the text; only when the user asked for that.",
           "oneOf": [
             {
-              "description": "As Word revisions (`w:ins`/`w:del`, formatting as `w:rPrChange`) by the batch's author.",
+              "description": "As tracked changes by FinxWork AI, which the user accepts or rejects in the document.",
               "enum": [
                 "suggest"
               ],
               "type": "string"
             },
             {
-              "description": "Straight into the text.",
+              "description": "Straight into the document, with no tracked change.",
               "enum": [
                 "direct"
               ],
@@ -2009,7 +2060,7 @@
     }
   },
   {
-    "description": "Accept or reject tracked changes in a Word document (.docx): those numbered, or all pending ones. Only when the user asks for it.",
+    "description": "Accept or reject tracked changes in a Word document (.docx): those numbered (the numbers docx_read shows after \"tracked change\"), or all pending ones, the user's and other authors' included. Only when the user asks for it: reviewing is theirs to do. Accepting makes a change part of the text; rejecting takes it out. The user can undo either.",
     "group": "word",
     "kind": "mutating",
     "loaded": false,
@@ -2025,7 +2076,7 @@
           "type": "string"
         },
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "ids": {
@@ -2046,7 +2097,7 @@
     }
   },
   {
-    "description": "Write a Word document's unsaved changes, yours and the user's, tracked changes included, to its file (or, with `path`, to another .docx). Needs the FinxWork desktop app.",
+    "description": "Write a Word document's unsaved changes, yours and the user's, tracked changes included, to its file (or, with `path`, to another .docx, leaving the original file as it was). Only when the user asks for the file to be saved or the task is to produce the file. Pending tracked changes stay pending in the saved file.",
     "group": "word",
     "kind": "mutating",
     "loaded": false,
@@ -2055,7 +2106,7 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "force": {
@@ -2067,6 +2118,48 @@
           "default": null,
           "description": "Save as another .docx instead (absolute, or relative to the working directory).",
           "type": "string"
+        }
+      },
+      "required": [
+        "docx"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Export a Word document (.docx) as a PDF, unsaved edits included, laid out as its pages are: text stays selectable, links and the table of contents stay clickable, headings become bookmarks. Optionally a page range, and with tracked changes shown (markup); without markup the PDF reads as if every pending change were accepted. Writes over a PDF already at that path. Does not change or save the .docx.",
+    "group": "word",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "docx_export_pdf",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "docx": {
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
+          "type": "string"
+        },
+        "from_page": {
+          "default": null,
+          "description": "First page to export, from 1. Defaults to the first.",
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "markup": {
+          "default": false,
+          "description": "Show tracked changes and their marks. Default false: the document as if every change were accepted, which is what people normally want to send.",
+          "type": "boolean"
+        },
+        "path": {
+          "default": null,
+          "description": "The .pdf to write (absolute, or relative to the working directory). Defaults to the document's own path with a .pdf extension.",
+          "type": "string"
+        },
+        "to_page": {
+          "default": null,
+          "description": "Last page to export. Defaults to the last.",
+          "minimum": 1.0,
+          "type": "integer"
         }
       },
       "required": [
