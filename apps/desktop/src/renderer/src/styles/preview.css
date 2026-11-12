@@ -10,6 +10,8 @@
 .fpv-col{max-width:var(--md-prose-width);margin:0 auto}
 .fpv-text{font:14px/1.7 var(--font);color:var(--msg);white-space:pre-wrap;overflow-wrap:anywhere}
 .fpv-code{flex:1;min-height:0;overflow:auto;padding:0 var(--sp-1) var(--sp-1)}
-.fpv-code.md .cblock pre{max-height:none}
+/* The block is as tall as its text here, so the wheel over it must reach .fpv-code: a pre that holds
+   its vertical overscroll would swallow it. Sideways it still keeps its own. */
+.fpv-code.md .cblock pre{max-height:none;overscroll-behavior:contain auto}
 /* The page's view sits here, with this corner. */
 .fpv-page{flex:1;min-height:0;margin:0 var(--sp-1) var(--sp-1);border-radius:var(--r-md);background:#fff}
