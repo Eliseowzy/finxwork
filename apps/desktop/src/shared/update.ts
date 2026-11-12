@@ -5,10 +5,9 @@
 
 /**
  * The public repository whose GitHub releases carry the app: its disk images,
- * the zips installed apps update from, and their feeds (desktop-release DD-20).
- * The source repository is private, and an app cannot carry a token to read it.
+ * the zips installed apps update from, and their feeds.
  */
-export const releaseRepo = "finxwork/finxwork-releases";
+export const releaseRepo = "finxwork/finxwork";
 
 /** Where the app is with its next version. */
 export type Update =

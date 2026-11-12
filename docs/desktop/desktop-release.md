@@ -26,7 +26,7 @@
 
 | 术语 | 含义 |
 |---|---|
-| 发布仓库 | 只放 GitHub Release、不放源码的公开仓库，默认 `finxwork/finxwork-releases`（§6.1） |
+| 发布仓库 | 只放 GitHub Release、不放源码的公开仓库，默认 `finxwork/finxwork`（§6.1） |
 | 更新源 | 每个架构一个 JSON 文件 `RELEASES-darwin-<arch>.json`：这一版的版本号和它的 zip 的地址 |
 | 最新发布 | GitHub 的 latest release：最近发布的、不是草稿也不是预发布的那一个 |
 | Squirrel | Electron 自带的 macOS 更新器（Squirrel.Mac）。负责下载 zip、校验签名，并在应用退出后替换整个 bundle |
@@ -115,8 +115,8 @@
     "version": "0.1.1",
     "updateTo": {
       "version": "0.1.1", "name": "0.1.1", "pub_date": "2026-10-29T08:00:00Z",
-      "notes": "https://github.com/finxwork/finxwork-releases/releases/tag/v0.1.1",
-      "url": "https://github.com/finxwork/finxwork-releases/releases/download/v0.1.1/FinxWork-macos-arm64.zip"
+      "notes": "https://github.com/finxwork/finxwork/releases/tag/v0.1.1",
+      "url": "https://github.com/finxwork/finxwork/releases/download/v0.1.1/FinxWork-macos-arm64.zip"
     }
   }]
 }
@@ -137,7 +137,7 @@
 
 ### 4.1 地址（DD-19）
 
-记发布仓库的 Release 地址为 B，即 `https://github.com/finxwork/finxwork-releases/releases`：
+记发布仓库的 Release 地址为 B，即 `https://github.com/finxwork/finxwork/releases`：
 
 | 用途 | 地址 |
 |---|---|
@@ -207,7 +207,7 @@ Squirrel 替换的是整个 bundle，新内核一定是新的 inode；文件没�
 
 ### 6.1 发布仓库
 
-- `finxwork/finxwork-releases`：公开仓库，只有 Release 和一个说明安装方法的 README，不放源码。仓库名是 `src/shared/update.ts` 里的常量 `releaseRepo`，构建脚本、发版脚本和应用都从这里读。
+- `finxwork/finxwork`：公开仓库，只有 Release 和一个说明安装方法的 README，不放源码。仓库名是 `src/shared/update.ts` 里的常量 `releaseRepo`，构建脚本、发版脚本和应用都从这里读。
 - 建议打开 GitHub 的 Release 不可变设置（immutable releases）：发布之后，附件和标签都不能再改。这样即使令牌泄露，也改不了已经发布的版本。
 - 只有维护者有写权限，账号开两步验证。
 
@@ -314,7 +314,7 @@ pnpm release --dry-run       # 构建、公证、检查，但不上传
 |---|---|---|---|
 | DD-18 | 更新引擎用 Electron 自带的 autoUpdater（Squirrel.Mac），JSON 更新源，按架构分开 | 内置、零依赖；校验签名；整体替换 bundle；基线已经验证过 | §2.1 |
 | DD-19 | 检查和下载只依赖 GitHub Release 的固定地址，不调用 GitHub API | 满足“只依赖 GitHub”；没有匿名限额；草稿和预发布不会被当成最新 | §2.3 §4.1 |
-| DD-20 | 产物放在公开的发布仓库 `finxwork/finxwork-releases`；源码仓库保持私有；应用不带令牌 | 匿名可下载；令牌放进应用就等于公开 | §2.2 §6.1 |
+| DD-20 | 产物放在公开的发布仓库 `finxwork/finxwork`；源码仓库保持私有；应用不带令牌 | 匿名可下载；令牌放进应用就等于公开 | §2.2 §6.1 |
 | DD-21 | 应用自己比较版本，只把更高的版本交给 Squirrel，并把 Squirrel 钉在那个版本的更新源上 | 只升不降；最新发布在两次读取之间变化时也不会装错版本 | §4.2 |
 | DD-22 | 信任根是 Developer ID 签名；临时签名的构建不检查更新；更新地址是构建时常量，只有测试构建能改 | GitHub 只负责分发，不负责信任 | §3 §8 |
 | DD-23 | 后台检查和下载，提示放在侧栏底部、应用菜单和设置里；从不自动重启；“稍后”让同一版本 24 小时内不再提醒 | 同类应用的共同做法；任务不受重启影响 | §4.3–§4.5 |
@@ -327,7 +327,7 @@ pnpm release --dry-run       # 构建、公证、检查，但不上传
 
 | 编号 | 问题 | 当前假设 | 章节 |
 |---|---|---|---|
-| DQ-14 | 发布仓库叫什么；源码仓库以后是否公开 | `finxwork/finxwork-releases`。源码公开后可以直接用源码仓库的 Release，只需改 `releaseRepo` 一处，但已安装的应用仍会读旧仓库，所以旧仓库要再发布一个指向新仓库的版本 | §2.2 §6.1 |
+| DQ-14 | 发布仓库叫什么；源码仓库以后是否公开 | `finxwork/finxwork`。源码公开后可以直接用源码仓库的 Release，只需改 `releaseRepo` 一处，但已安装的应用仍会读旧仓库，所以旧仓库要再发布一个指向新仓库的版本 | §2.2 §6.1 |
 | DQ-15 | 是否同时发布 x64（Intel） | 发：正式发布兼容 Intel，`pnpm release` 默认两个架构都出，缺少的 Rust 目标自动安装 | §3 §6.2 |
 | DQ-16 | 是否在 CI 里发版 | 暂不。CI 发版需要把 Developer ID 证书（p12）和 API 密钥放进 GitHub Secrets，现在私钥只在本机 | §6.5 |
 | DQ-17 | 发布渠道（beta）与分批推送 | 暂不。静态更新源做不了按比例推送；预发布已经可以发给手动下载的人 | §6.2 |
