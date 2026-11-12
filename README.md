@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="assets/brand/github/finxwork-social-preview-en.png" alt="FinxWork — Countless strands of data, condensed into one α. The AI workbench for finance professionals" width="100%" />
+<img src="assets/brand/github/finxwork-social-preview-zh.png" alt="FinxWork — 专为金融行业人士提供的智能工作台" width="100%" />
 
 <br /><br />
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/brand/motion/finxwork-mark-flow-dark.gif" />
-  <img src="assets/brand/motion/finxwork-mark-flow-light.gif" alt="FinxWork animated α mark" width="88" height="88" />
+  <img src="assets/brand/motion/finxwork-mark-flow-light.gif" alt="FinxWork 动态标识" width="88" height="88" />
 </picture>
 
 <br />
@@ -17,12 +17,11 @@
 </picture>
 
 <p>
-  <strong>Countless strands of data, condensed into one α.</strong><br />
-  An AI agent kernel, CLI, and desktop workbench for code, terminals, spreadsheets, documents, slides, and the browser.
+  <strong>专为金融行业人士提供的智能工作台</strong>
 </p>
 
 <p>
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+  <strong>简体中文</strong> · <a href="README.en.md">English</a>
 </p>
 
 <p>
@@ -36,141 +35,135 @@
 </p>
 
 <p>
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="#three-ways-in">Three Ways In</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#documentation">Documentation</a> ·
-  <a href="#citation">Citation</a>
+  <a href="#模型接入零门槛byok--现有订阅直连">模型接入与订阅直连</a> ·
+  <a href="#核心功能">核心功能</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#项目架构">项目架构</a> ·
+  <a href="#star-趋势与引用">Star 趋势与引用</a>
 </p>
 
 </div>
 
 ---
 
-## Overview
+## 模型接入零门槛：BYOK & 现有订阅直连
 
-**FinxWork** combines a high-performance Rust agent kernel (`finx`) with an Electron + React 19 desktop workbench (`@finx/desktop`) and browser companion (`apps/chrome-extension`). It reads and edits code, runs terminal commands, searches the web, automates browser workflows, and natively opens, computes, and edits spreadsheets, Word documents, slides, and PDFs—using the model provider you choose.
+**FinxWork 不绑定任何单一厂商，也不强制额外购买 API 额度。** 无论是企业自带密钥（BYOK）、各大云厂商包月 Token Plan，还是你日常已经在付费使用的 **ChatGPT、千问办公、Qoder** 等桌面/网页订阅，都可以直接连入工作台统一调度：
 
-| Capability | Highlights |
+| 接入方式 | 支持平台与能力说明 |
 | --- | --- |
-| **Agent Kernel & CLI (`finx`)** | Interactive terminal sessions, one-shot `finx exec --json` scripting, subagents, MCP servers, and zero telemetry |
-| **Office & Document Native Engine** | Built-in support for `.xlsx`/`.csv`/`.tsv` recalculation, `.docx`, `.pptx`, and PDF inspection via `finx-docs` / `finx-sheet` / `finx-word` / `finx-slide` |
-| **Desktop Workbench (`@finx/desktop`)** | Rich visual editor, Markdown/KaTeX/Mermaid rendering, model connections, and side-by-side document workspace |
-| **Browser Automation** | Companion Chrome extension + `finx-browser` native host for live web inspection and workflows |
-| **Open Protocols** | Agent Client Protocol (`finx acp`) for editors and JSON-RPC (`finx serve`) for programmatic integrations |
-| **Model Flexibility** | API keys, Token Plans, ChatGPT subscription, local Ollama, or custom OpenAI-compatible endpoints |
+| **个人订阅直连（复用现有额度）** | <ul><li><strong>ChatGPT</strong>：通过浏览器 OAuth 登录，直接使用现有 ChatGPT 订阅额度，无需单独申请 API Key</li><li><strong>千问办公（QwenWork）</strong>：自动发现并连接本机千问办公已登录账户，建立独立模型会话、按需续期</li><li><strong>Qoder</strong>：直连本机已登录的 Qoder 账户，将现有编码/推理模型能力引入 FinxWork 工作流</li></ul> |
+| **Token Plan / Coding Plan 套餐** | 原生适配 **阿里云百炼 Token Plan**、**腾讯云 Token Plan**、**火山方舟 Agent Plan / Coding Plan**、**智谱 GLM Coding Plan（中国站 / Z.ai 国际站）**，支持套餐目录动态刷新与多模型切换 |
+| **标准 BYOK（自带 API Key）** | 内置 **OpenAI、Anthropic、Google、DeepSeek、通义千问、Moonshot（Kimi）、MiniMax、智谱 AI、xAI、OpenRouter** 官方接入，预设上下文长度、思考强度与价格参数 |
+| **企业网关与本地私有模型** | 支持任意 **OpenAI / Anthropic 兼容自定义端点**（公司内部网关、中转站，或 **Ollama** 等本地推理服务），支持协议自动探测，满足金融内网合规与数据不出域需求 |
+
+> 所有密钥与授权凭证仅保存在本地，支持工作台可视化切换默认模型与思考深度，也可通过 `finx login` 在命令行中一键接入。
 
 ---
 
-## Quick Start
+## 核心功能
 
-### Install CLI
+围绕投研分析、财务建模、报告撰写与汇报路演等高频金融工作流，**FinxWork** 将 Rust 智能体内核与桌面工作台深度融合，让人与 AI 在同一份真实文件与工作空间中高效协作：
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📊 财务建模与表格重算</h3>
+      <p>原生支持 <code>.xlsx</code>、<code>.csv</code>、<code>.tsv</code> 编辑与 <code>.xls</code> 只读解析。内置公式计算引擎支持结构化引用展开、全表重算、循环引用检测与关键指标影响面分析，不篡改原始公式文本，每一笔改动均可追溯与撤销。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>📄 研报阅读与文档精编</h3>
+      <p>在对话旁直接并排打开 PDF 公告、招股书与 <code>.docx</code> 报告，支持页面区域框选或划词一键引用提问；Word 编辑采用外科式局部保存并支持高保真 PDF 导出，完整保留原有排版、页眉页脚与表格结构。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📽️ 路演与汇报幻灯片协同</h3>
+      <p>支持 <code>.pptx</code> 幻灯片高清渲染预览与文本/数据精准替换，在保留原有母版风格、图表与中文字体版式的前提下完成页面内容更新，兼顾合规校对与制作效率。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🌐 浏览器协同与信息核验</h3>
+      <p>配套 Chrome 扩展与原生浏览器控制桥接（<code>finx-browser</code>），让智能体在受控会话中复用你已登录的网站状态检索公告与网页数据，并直接在工作台右侧预览与核验引用来源。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🤖 专属 Bot、子智能体与技能扩展</h3>
+      <p>支持创建面向固定投研任务的专属 Bot 与定时例行任务（Routine），可按需编排多子智能体并行拆解分析，并通过标准化 MCP（Model Context Protocol）与自定义 Skills 接入内部数据与工具。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔒 本地优先与严格审批控制</h3>
+      <p>全链路零遥测数据上传；所有文档编辑先落工作副本、确认后再写回原文件，敏感系统操作需经明确权限审批确认，保障金融资料与本地工作区安全。</p>
+    </td>
+  </tr>
+</table>
+
+---
+
+## 快速开始
+
+### 从源码启动工作台
 
 ```bash
-curl -fsSL https://github.com/finxwork/finx-releases/releases/latest/download/install.sh | sh
-```
-
-Supports **macOS** and **Linux** (`x86_64` and `arm64`), installing the `finx` binary to `~/.local/bin`. See [docs/cli/quickstart.md](docs/cli/quickstart.md) for alternative installation methods.
-
-### Thirty Seconds to Run
-
-```bash
-finx login
-finx "explain what this repository does"
-```
-
-`finx login` connects a model: an API key, a Token Plan, a ChatGPT subscription, a local Ollama instance, or a compatible custom service. Nothing is assumed—until you configure a provider, `finx` tells you explicitly.
-
-### Build from Source
-
-```bash
-# 1. Build the Rust workspace (requires Rust 1.89+, edition 2024)
+# 1. 构建 Rust 智能体内核与工具引擎（需 Rust 1.89+）
 cargo build
 
-# 2. Run the Desktop app (requires Node.js + pnpm)
+# 2. 安装前端依赖并启动 FinxWork 桌面端（需 Node.js + pnpm）
 pnpm install
 pnpm dev
 ```
 
----
+### 命令行与自动化集成
 
-## Three Ways In
+除了桌面端工作台，FinxWork 也可通过 `finx` CLI 运行在终端或自动化脚本中：
 
-- **In the terminal.** `finx` starts an interactive conversation that stays in your terminal's own scrollback and asks before changing anything until you tell it otherwise.
-- **In scripts.** Run one task and get structured output:
+```bash
+# 连接模型（支持 ChatGPT 订阅、Token Plan、BYOK 或自定义本地服务）
+finx login
 
-  ```bash
-  finx exec --json "summarize the changes on this branch" | jq -r .final_output
-  ```
+# 启动交互式工作会话
+finx
 
-  Exit codes report the exact outcome: `0` done, `1` failed, `2` bad usage or no model, `3` completed with an action refused for lack of approval, `130` interrupted. See [docs/cli/scripting.md](docs/cli/scripting.md).
+# 单次任务执行并输出结构化 JSON（适用于流水线与脚本调度）
+finx exec --json "核对当前目录下的财报模型并汇总关键指标变化"
+```
 
-- **From other programs.** `finx acp` serves editors over the Agent Client Protocol ([acp.md](docs/cli/acp.md)). `finx serve` speaks JSON-RPC ([json-rpc.md](docs/cli/json-rpc.md)); [examples/rpc](examples/rpc) provides a complete client in a single page of Python.
-
----
-
-## Security & Privacy
-
-- **Permission boundaries instead of hidden assumptions.** There is no OS-level sandbox; protection is enforced via permission modes, rules, workspace boundaries, and protected paths ([permissions.md](docs/cli/permissions.md)). Use `bypass-permissions` only inside a container or disposable environment.
-- **Repository prompt awareness.** `AGENTS.md` and project-level Skills are always read when entering a workspace.
-- **Zero telemetry.** Every network call is documented in [privacy.md](docs/cli/privacy.md).
-
-<details>
-<summary><strong>For Coding Agents</strong> — automation flags, JSON contracts, and environment rules</summary>
-
-If you are a coding agent setting `finx` up or invoking it:
-
-- Run a task with `finx exec --json "TASK"`. The answer is in `final_output`; `exit_code`, `error`, `tool_calls`, and `refused` describe the run. `finx exec --resume last "NEXT"` continues the previous session.
-- `finx status --json`, `finx doctor --json`, `finx models --json`, and `finx tools --json` inspect the environment without mutating state.
-- Failures under `--json` emit JSON to stdout: `{"error": {"kind", "message", "help"}, "exit_code": 2}`.
-- Exit code `3` indicates an action was refused because no interactive approval was available—configure a permission mode or rule rather than retrying blindly.
-- Pass `--dangerously-skip-permissions` only when explicitly instructed by the user or inside an isolated container for that run.
-- Pass API keys via stdin, never as CLI arguments: `printf %s "$KEY" | finx login deepseek --key-stdin --model deepseek/deepseek-flash`.
-- `finx config set` refuses permission changes while `AI_AGENT` is set; permission settings belong to the human operator.
-- Full LLM-friendly documentation index: [docs/cli/llms.txt](docs/cli/llms.txt).
-
-</details>
+如需接入编辑器或外部系统，可使用 `finx acp`（Agent Client Protocol）与 `finx serve`（JSON-RPC）。更多细节见 [docs/cli/quickstart.md](docs/cli/quickstart.md) 与 [docs/cli/llms.txt](docs/cli/llms.txt)。
 
 ---
 
-## Architecture
+## 项目架构
 
 ```text
 finxwork/
 ├── apps/
-│   ├── desktop/              # Electron + React 19 workbench (@finx/desktop)
-│   └── chrome-extension/     # Browser companion extension
+│   ├── desktop/              # Electron + React 19 桌面端工作台 (@finx/desktop)
+│   └── chrome-extension/     # 浏览器控制伴侣扩展
 ├── crates/
-│   ├── finx-core/            # Agent kernel, session loop, subagents, prompts
-│   ├── finx-cli/             # CLI binary (`finx`, `exec`, `acp`, `serve`)
-│   ├── finx-llm/             # Model providers, catalogs, credentials
-│   ├── finx-tools/           # Built-in workspace, shell, and web tools
-│   ├── finx-docs/            # Unified document store & indexing
-│   ├── finx-sheet/           # Spreadsheet formulas, recalculation, CSV/XLS/XLSX
-│   ├── finx-word/            # Word (.docx) editing & layout support
-│   ├── finx-slide/           # PowerPoint (.pptx) rendering & surgical editing
-│   ├── finx-browser/         # Browser automation & native-host bridge
-│   ├── finx-mcp/             # Model Context Protocol (MCP) integration
-│   ├── finx-acp/             # Agent Client Protocol server
-│   ├── finx-rpc/             # JSON-RPC transport
-│   ├── finx-server/          # Local backend server
-│   ├── finx-protocol/        # Shared Rust/TS protocol schema
-│   └── finx-connections/     # Provider & Token Plan connections
+│   ├── finx-core/            # 智能体内核、会话循环、子智能体调度与提示词系统
+│   ├── finx-cli/             # 命令行入口 (finx / exec / acp / serve)
+│   ├── finx-docs/            # 统一文档工作副本、修订记录与 PDFium 后端
+│   ├── finx-sheet/           # 电子表格公式重算、循环引用与 CSV/XLS/XLSX 引擎
+│   ├── finx-word/            # Word (.docx) 协同编辑与版式渲染引擎
+│   ├── finx-slide/           # PowerPoint (.pptx) 渲染与局部精准编辑引擎
+│   ├── finx-browser/         # 浏览器自动化与原生宿主桥接
+│   ├── finx-llm/             # 多模型适配、模型目录与凭证管理
+│   ├── finx-mcp/             # MCP (Model Context Protocol) 扩展集成
+│   ├── finx-tools/           # 文件、终端命令与网页检索工具集
+│   ├── finx-connections/     # ChatGPT / 千问办公 / Qoder 等订阅与连接适配器
+│   ├── finx-acp/             # ACP 协议服务
+│   ├── finx-rpc/             # JSON-RPC 传输层
+│   ├── finx-server/          # 本地后端服务
+│   └── finx-protocol/        # Rust / TypeScript 共享协议定义
 ├── packages/
-│   ├── client/               # TypeScript client SDK
-│   └── protocol/             # Generated TypeScript protocol types
-└── assets/brand/             # Brand mark, lockups, and motion assets
+│   ├── client/               # TypeScript 客户端 SDK
+│   └── protocol/             # 自动生成的 TypeScript 协议类型
+└── assets/brand/             # 品牌标志、横版/竖版组合与动态视觉资产
 ```
 
 ---
 
-## Documentation
-
-[Quickstart](docs/cli/quickstart.md) · [Models](docs/cli/models.md) · [Tools](docs/cli/tools.md) · [Permissions](docs/cli/permissions.md) · [Scripting](docs/cli/scripting.md) · [ACP](docs/cli/acp.md) · [JSON-RPC](docs/cli/json-rpc.md) · [Privacy](docs/cli/privacy.md) · [Troubleshooting](docs/cli/troubleshooting.md) · [LLM Index](docs/cli/llms.txt)
-
----
-
-## Star History
+## Star 趋势与引用
 
 <div align="center">
 
@@ -184,15 +177,11 @@ finxwork/
 
 </div>
 
----
-
-## Citation
-
-If you use **FinxWork** in your research, workflow, or engineering benchmarks, feel free to cite it:
+如果 **FinxWork** 对你的研究、投研自动化工作流或工程实践有所帮助，欢迎引用：
 
 ```bibtex
 @software{finxwork2026,
-  title  = {FinxWork: The AI Agent Kernel and Workbench for Finance and Engineering},
+  title  = {FinxWork: The Intelligent Workbench Built for Finance Professionals},
   author = {FinxWork Contributors},
   year   = {2026},
   url    = {https://github.com/finxwork/finxwork}

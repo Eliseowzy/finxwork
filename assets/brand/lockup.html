@@ -26,8 +26,8 @@
 const q = new URLSearchParams(location.search), type = q.get("type") || "h", bg = q.get("bg") || "light";
 const mark = `<div class="mark"><img src="mark/finxwork-mark-on-${bg}.png"></div>`, word = `<div class="word">FinxWork</div>`;
 const tag = q.get("lang") === "en"
-  ? "Countless strands of data, condensed into one α<br>The AI workbench for finance professionals"
-  : "千丝万缕的数据，汇成一个 α · 为金融专业人士打造的 AI 工作台";
+  ? "The intelligent workbench built for finance professionals"
+  : "专为金融行业人士提供的智能工作台";
 document.body.innerHTML = type === "og" || type === "gh"
   ? `<div class="lk og ${type} ${bg} ${q.get("lang") || ""}"><div class="row">${mark}${word}</div><p>${tag}</p></div>`
   : `<div class="lk ${type} ${bg}">${mark}${word}</div>`;
