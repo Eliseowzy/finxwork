@@ -464,7 +464,10 @@
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "citeLocked": "「{{name}}」有密码保护，点开后输入密码",
-    "paragraphs_other": "{{count}} 段"
+    "paragraphs_other": "{{count}} 段",
+    "lineN": "第 {{line}} 行",
+    "lineRange": "第 {{from}}–{{to}} 行",
+    "addToChat": "添加到对话（⌘L）"
   },
   "content": {
     "open": "打开",
@@ -500,10 +503,6 @@
     "notFound": "找不到这个文件",
     "hidden": "含隐藏字符",
     "hiddenTip": "这段代码里有看不见的字符，粘贴前请检查"
-  },
-  "preview": {
-    "toPanel": "在侧边栏打开",
-    "close": "关闭预览"
   },
   "files": {
     "title": "文件",

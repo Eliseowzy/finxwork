@@ -75,7 +75,9 @@
 .fpt-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
 
 /* Markdown as a reply shows it, in a page of its own. */
-.fpn-md{flex:1;min-height:0;overflow:auto;padding:var(--sp-3) var(--sp-4);font-size:14.5px;line-height:1.7;color:var(--msg)}
+.fpn-quote{position:absolute;z-index:5;font:500 12px var(--font);padding:3px 9px;border-radius:var(--r-xs);border:.5px solid var(--sep);background:var(--win2);color:var(--l1);box-shadow:var(--btn-sh);cursor:pointer;white-space:nowrap}
+.fpn-quote:hover{background:var(--fill2)}
+.fpn-md{position:relative;outline:none;flex:1;min-height:0;overflow:auto;padding:var(--sp-3) var(--sp-4);font-size:14.5px;line-height:1.7;color:var(--msg)}
 .fpn-img{flex:1;min-height:0;overflow:auto;background:var(--fill)}
 .fpn-img.zoomed{cursor:grab}
 .fpn-img.dragging{cursor:grabbing}

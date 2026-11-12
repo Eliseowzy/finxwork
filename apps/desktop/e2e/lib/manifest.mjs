@@ -47,7 +47,7 @@ export const scripts = {
   notifications: { covers: [`${main}notify`, `${main}notifier`, `${client}alerts`] },
   "paste-drop": { foreground: "uses the system clipboard", covers: [`${renderer}composer/`, `${main}clipboard`] },
   "pptx-editor": { foreground: "opens a window of its own, which the background mode does not reach", covers: [`${renderer}docs/pptx/`] },
-  "pptx-panel": { covers: [`${renderer}docs/pptx/`, `${renderer}preview/`] },
+  "pptx-panel": { covers: [`${renderer}docs/pptx/`] },
   resend: { covers: [`${renderer}composer/`, `${renderer}session/Dock`, `${renderer}session/Queue`, `${core}history.rs`] },
   "send-modes": { covers: [`${renderer}composer/`, `${renderer}session/Dock`, `${renderer}session/Queue`, `${core}kernel.rs`, `${core}task.rs`] },
   "session-browser": { covers: [`${renderer}session/Browser`, `${renderer}session/browserPanel`, `${renderer}session/SidePanels`, `${main}browser/pages`] },

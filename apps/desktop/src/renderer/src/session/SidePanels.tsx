@@ -15,6 +15,32 @@ import { recheckFiles } from "./scope";
 
 export type SidePanels = ReturnType<typeof useSidePanels>;
 
+/** At least this wide, the window keeps the sidebar beside the conversation and the file panel. */
+const roomForAll = 1600;
+/** The sidebar was put away for the file panel, to come back with it; or the person brought it back while a file was open, and it stays from then on. */
+let tucked = false;
+let keptOut = false;
+
+/**
+ * A file opened beside the conversation puts the sidebar away, when the window has no room for all
+ * three, and the last file closed brings it back; the person bringing it back meanwhile is final.
+ */
+function useSidebarForFiles(files: boolean) {
+  const st = useStore();
+  useEffect(() => {
+    if (files && st.sidebar && !keptOut && st.width < roomForAll) {
+      tucked = true;
+      st.set({ sidebar: false });
+    } else if (!files && tucked) {
+      tucked = false;
+      st.set({ sidebar: true });
+    }
+  }, [files]);
+  useEffect(() => {
+    if (files && tucked && st.sidebar) (tucked = false), (keptOut = true);
+  }, [st.sidebar]);
+}
+
 /** `held`: another panel of the page (a session's background panel) has the place now. */
 export function useSidePanels(session: string, view: SessionView | null, held = false) {
   const st = useStore();
@@ -26,6 +52,7 @@ export function useSidePanels(session: string, view: SessionView | null, held = 
   const browser = st.browser && tabs.length > 0 && !held && !files;
   // Taking the window, the panel leaves the conversation mounted but out of sight, where it was.
   const max = (browser && st.browserMax) || (files && st.filesMax);
+  useSidebarForFiles(files);
   const rpc = st.rpc;
   const opener = useMemo<DocOpener | null>(() => {
     if (!rpc || !cwd) return null;

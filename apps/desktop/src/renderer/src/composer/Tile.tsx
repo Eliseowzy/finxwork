@@ -5,8 +5,9 @@ import { baseName, type DocQuote, type WebComment } from "@finx/client";
 import { useDocOpener } from "../docs/state";
 import { isLegacyWord, isPresentation, isWord, opensAsDoc, opensInOwnApp } from "../files/kind";
 import { Icon } from "../icons";
-import { useFilePreview } from "../preview/context";
 import { opensAsPage, showPage } from "../session/contentMenus";
+import { useScope } from "../session/scope";
+import { showFile } from "../files/state";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
 import { quoteName, webName } from "./attachments";
@@ -59,6 +60,10 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
   const label = name ?? (web ? webName(web) : quote ? quoteName(quote) : t("chat.image"));
   const docs = useDocOpener();
   const openFile = useOpenFile();
+  const scope = useScope();
+  const st = useStore();
+  /** A text file's quote opens at its lines in the file panel. */
+  const openLines = (file: string, [line, endLine]: [number, number]) => (scope ? showFile(st, scope.session, scope.cwd, file, { line, endLine }) : openFile(file));
   // A folder opens in the file manager, a file as openFile does; ⌥ shows it in the file manager.
   const open = (e: React.MouseEvent) => {
     if (src) return setLarge(true);
@@ -68,7 +73,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
     if (kind === "folder") return window.finx?.openFolder(path);
     openFile(path);
   };
-  const pages = !quote ? "" : quote.paragraphs && quote.page === undefined ? t("doc.paragraphs", { count: quote.paragraphs.length }) : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
+  const pages = !quote ? "" : quote.lines ? (quote.lines[0] === quote.lines[1] ? t("doc.lineN", { line: quote.lines[0] }) : t("doc.lineRange", { from: quote.lines[0], to: quote.lines[1] })) : quote.paragraphs && quote.page === undefined ? t("doc.paragraphs", { count: quote.paragraphs.length }) : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
   const where = !quote ? "" : `${baseName(quote.path)} · ${pages}`;
   const type = web ? hostOf(web.url) : quote ? pages : kind === "tabs" ? t("composer.tabKind") : kindOf(name ?? "", kind === "folder", t("composer.folder"));
   const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
@@ -146,7 +151,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
           comment={quote.comment}
           rows={[[t("composer.webDetails.file"), baseName(quote.path)], ...(quote.text ? [[t("composer.webDetails.text"), quote.text] as Row] : [])]}
           more={[]}
-          action={quote.paragraphs && quote.page === undefined ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openFile(quote.path)) } : docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.anchor ?? (quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }), quote.anchor ? undefined : quote.block)) } : undefined}
+          action={quote.lines ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openLines(quote.path, quote.lines!)) } : quote.paragraphs && quote.page === undefined ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openFile(quote.path)) } : docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.anchor ?? (quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }), quote.anchor ? undefined : quote.block)) } : undefined}
         />
       )}
     </div>
@@ -309,16 +314,13 @@ export function Lightbox({ src, caption, onStep, onClose }: { src: string; capti
 }
 
 /**
- * Opens a file: over the window where the page offers that for it (preview/FilePreview), else beside the
- * conversation (a PDF as a document, Markdown previewed, an HTML file as its page); one that
+ * Opens a file beside the conversation (a PDF as a document, Markdown previewed, an HTML file as its page); one that
  * shows only as "binary" in its own app.
  */
 export function useOpenFile() {
   const docs = useDocOpener();
-  const preview = useFilePreview();
   const st = useStore();
   return (path: string) => {
-    if (preview?.takes(path)) return preview.open(path);
     if (docs && opensAsPage(path)) return showPage(st, docs.session, path);
     if (docs && (opensAsDoc(path) || isPresentation(path) || isWord(path) || isLegacyWord(path))) return docs.open({ path });
     if (!docs || opensInOwnApp(path)) return void window.finx?.openFile(path, { app: "system" });

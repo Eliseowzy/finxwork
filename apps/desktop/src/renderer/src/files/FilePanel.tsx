@@ -1,4 +1,7 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { docAttachment, fileQuote } from "../composer/attachments";
+import { toComposer } from "../composer/inbox";
+import { quoteLines, sourceLines } from "./quote";
 import { useTranslation } from "react-i18next";
 import { SidebarToggle } from "../components";
 import { PresentationLoading } from "../docs/pptx/PresentationLoading";
@@ -275,17 +278,72 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
     // Its links and paths are the file's own: relative to its folder.
     return (
       <ContentScope value={{ session: s.session, cwd: dirOf(tab.path) }}>
-        <div className="fpn-md">
+        <MarkdownQuote session={s.session} path={tab.path} source={text}>
           <Markdown text={text} mode="document" />
-        </div>
+        </MarkdownQuote>
       </ContentScope>
     );
   }
   const editable = !!read.writable && tab.doc?.state !== "refused";
   return (
     <Suspense fallback={<Loading />}>
-      <Editor tab={tab} editable={editable} onSave={(x) => void x.doc?.flush().then(() => x.doc?.state === "failed" && st.show(t("files.failed", { message: x.doc.message ?? "" }), undefined, true))} />
+      <Editor tab={tab} editable={editable} onQuote={(from, to, quoted) => quoteLines(s.session, tab.path, from, to, quoted)} onSave={(x) => void x.doc?.flush().then(() => x.doc?.state === "failed" && st.show(t("files.failed", { message: x.doc.message ?? "" }), undefined, true))} />
     </Suspense>
+  );
+}
+
+/**
+ * A Markdown file's preview, a part of which can be added to the conversation: by the button over
+ * the selection, or ⌘L. It goes with the source lines it came from when they can be found.
+ */
+function MarkdownQuote({ session, path, source, children }: { session: string; path: string; source: string; children: ReactNode }) {
+  const { t } = useTranslation("session");
+  const box = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const selected = () => {
+    const sel = window.getSelection();
+    const el = box.current;
+    if (!sel || sel.isCollapsed || !el || !el.contains(sel.anchorNode) || !el.contains(sel.focusNode)) return null;
+    return sel;
+  };
+  const quote = () => {
+    const sel = selected();
+    const text = sel?.toString().trim();
+    if (!sel || !text) return false;
+    const lines = sourceLines(source, text);
+    toComposer(session, [docAttachment(lines ? fileQuote(path, lines[0], lines[1], text) : { ...fileQuote(path, 0, 0, text), lines: undefined })]);
+    sel.removeAllRanges();
+    setAt(null);
+    return true;
+  };
+  useEffect(() => {
+    const changed = () => {
+      const sel = selected();
+      const el = box.current;
+      if (!sel || !el) return setAt(null);
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      const b = el.getBoundingClientRect();
+      setAt({ x: Math.min(r.right - b.left, b.width - 120), y: r.bottom - b.top + el.scrollTop + 6 });
+    };
+    document.addEventListener("selectionchange", changed);
+    return () => document.removeEventListener("selectionchange", changed);
+  }, []);
+  return (
+    <div
+      ref={box}
+      className="fpn-md"
+      onKeyDown={(e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l" && quote()) e.preventDefault();
+      }}
+      tabIndex={-1}
+    >
+      {children}
+      {at && (
+        <button className="fpn-quote" style={{ left: at.x, top: at.y }} onMouseDown={(e) => e.preventDefault()} onClick={quote}>
+          {t("doc.addToChat")}
+        </button>
+      )}
+    </div>
   );
 }
 
