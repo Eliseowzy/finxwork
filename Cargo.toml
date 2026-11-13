@@ -20,6 +20,7 @@ members = [
     "crates/finx-eval",
     "crates/finx-slide",
     "crates/finx-word",
+    "crates/finx-spatial",
 ]
 
 [workspace.package]
@@ -182,6 +183,10 @@ opt-level = 3
 
 # A Word save writes, then reopens, the whole document (BetterOffice and its CRDT and font
 # shaping); unoptimized, a 40-page thesis took about 3s to write.
+# finx-spatial's tests build surfaces and run recipes over a whole synthetic CT.
+[profile.dev.package.finx-spatial]
+opt-level = 3
+
 [profile.dev.package.finx-word]
 opt-level = 3
 

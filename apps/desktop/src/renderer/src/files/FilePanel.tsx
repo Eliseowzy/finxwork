@@ -17,7 +17,8 @@ import { usePanelWidth } from "../panelWidth";
 import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, takePresentationDisk, takeWordDisk, useFiles, type SessionFiles, type Tab } from "./state";
 import { FileCard, FileLoading as Loading } from "./FileCard";
 import { ImageView } from "./ImageView";
-import { isGrid, isLegacyWord, isMarkdown, isPresentation, isSvg, isWord, previewable } from "./kind";
+import { isGrid, isLegacyWord, isMarkdown, isPresentation, isSpatial, isSvg, isWord, previewable } from "./kind";
+import { SpatialFile } from "../spatial/SpatialFile";
 import { WordLoading } from "../docs/docx/WordLoading";
 import { setWordAiHost } from "../docs/docx/ai";
 import { isRunning } from "@finx/client";
@@ -254,6 +255,8 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   // A .doc: the old binary format is not opened here (word-design §0); the card offers its own app.
   if (isLegacyWord(tab.path)) return <Card tab={tab} text={t("word.legacy")} />;
   if (tab.error && !tab.doc) return <Card tab={tab} text={tab.error} />;
+  // A 3D model: the spatial view reads its bytes itself (spatial-design §7).
+  if (isSpatial(tab.path)) return <SpatialFile key={tab.path} session={s.session} path={tab.path} rel={tab.rel} name={tab.name} />;
   if (tab.opened) return tab.opened.locked ? <Unlock s={s} tab={tab} /> : <Loading />;
   if (!read && isWord(tab.path)) return <WordLoading name={tab.name} stage="reading" />;
   if (!read) return isPresentation(tab.path)

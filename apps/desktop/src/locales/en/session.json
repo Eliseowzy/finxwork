@@ -954,5 +954,25 @@
     "accepted": "Accepted",
     "rejected": "Rejected",
     "failed": "Failed: {{message}}"
+  },
+  "spatial": {
+    "loading": "Reading the model…",
+    "failed": "This model can't be shown: {{message}}",
+    "front": "Front",
+    "side": "Side",
+    "top": "Top",
+    "reset": "Reset",
+    "clip": "Section",
+    "clipHint": "Cut the model along an axis to see inside",
+    "clipAxis": "Section axis",
+    "clipAt": "Section position",
+    "parts": "Parts",
+    "show": "Show {{name}}",
+    "opacity": "Opacity of {{name}}",
+    "deselect": "Deselect",
+    "addToChat": "Add to chat",
+    "quotePrefix": "3D",
+    "disclaimer": "Some marks come from AI. They are for reference only and do not replace a professional's judgment.",
+    "readFailed": "Couldn't read this file"
   }
 }

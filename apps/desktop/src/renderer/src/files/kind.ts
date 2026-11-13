@@ -7,6 +7,7 @@ const doc = /\.(pdf|xlsx|xlsm|xls|csv|tsv)$/i;
 const markdown = /\.(md|markdown)$/i;
 const svg = /\.svg$/i;
 const prose = /\.(md|markdown|txt|text|log)$/i;
+const spatial = /\.(stl|obj|ply|glb)$/i;
 const image = /\.(png|jpe?g|gif|webp|svg|bmp|ico|heic|tiff?)$/i;
 
 /** Opens as finx's document (pdf.js, or the workbook grid), not read as text. */
@@ -17,6 +18,9 @@ export const isPresentation = (path: string) => /\.pptx$/i.test(path);
 
 /** A Word document, opened as the kernel's document with the editor as its replica (word-design §6). */
 export const isWord = (path: string) => /\.docx$/i.test(path);
+
+/** A 3D model the spatial view shows (spatial-design §7). */
+export const isSpatial = (path: string) => spatial.test(path);
 
 /** The old binary Word format: the panel says it is not supported and offers the default app. */
 export const isLegacyWord = (path: string) => /\.doc$/i.test(path);
@@ -35,7 +39,7 @@ export const showsInApp = (path: string) => opensAsDoc(path) || !opensInOwnApp(p
  * A file a conversation hands over to be looked at, rather than one being worked on: a report, a
  * picture, a PDF, a table, a page (content-actions-design §4.2, DD-161). Code and plain text are the other kind.
  */
-export const readsAsResult = (path: string) => markdown.test(path) || image.test(path) || opensAsDoc(path) || isPageFile(path);
+export const readsAsResult = (path: string) => markdown.test(path) || image.test(path) || spatial.test(path) || opensAsDoc(path) || isPageFile(path);
 
 export const isMarkdown = (path: string) => markdown.test(path);
 export const isSvg = (path: string) => svg.test(path);

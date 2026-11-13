@@ -927,5 +927,25 @@
     "accepted": "已接受",
     "rejected": "已拒绝",
     "failed": "未成功：{{message}}"
+  },
+  "spatial": {
+    "loading": "正在读取模型…",
+    "failed": "无法显示这个模型：{{message}}",
+    "front": "正面",
+    "side": "侧面",
+    "top": "顶面",
+    "reset": "复位",
+    "clip": "剖切",
+    "clipHint": "沿一个轴切开模型，看里面",
+    "clipAxis": "剖切方向",
+    "clipAt": "剖切位置",
+    "parts": "部件",
+    "show": "显示 {{name}}",
+    "opacity": "{{name}} 的透明度",
+    "deselect": "取消选中",
+    "addToChat": "添加到对话",
+    "quotePrefix": "三维",
+    "disclaimer": "标记中有 AI 给出的结果，仅供参考，不能代替专业人员的判断。",
+    "readFailed": "读不到这个文件"
   }
 }

@@ -374,6 +374,17 @@ export function registerIPC() {
     if (trusted(e) && folder(p)) openFolder(p);
   });
   ipcMain.on("open-terminal", (e, p: unknown) => trusted(e) && folder(p) && openTerminal(p));
+  // A 3D model's bytes for the spatial view (spatial-design §7): only a model file, by its absolute path, and not past 512 MB.
+  ipcMain.handle("read-model", async (e, p: unknown) => {
+    if (!trusted(e) || typeof p !== "string" || !path.isAbsolute(p) || !/\.(stl|obj|ply|glb)$/i.test(p)) return null;
+    try {
+      const st = await fs.promises.stat(p);
+      if (!st.isFile() || st.size > 512 * 1024 * 1024) return null;
+      return new Uint8Array(await fs.promises.readFile(p));
+    } catch {
+      return null;
+    }
+  });
   // A reply's files (content-actions-design §4): looked up under the session's folder, opened the person's way.
   ipcMain.handle("path-info", (e, base: unknown, paths: unknown) => {
     if (!trusted(e) || typeof base !== "string" || !path.isAbsolute(base) || !Array.isArray(paths)) return [];

@@ -1,0 +1,26 @@
+/* The spatial view (spatial-design §4.2): a dark canvas in a frame that follows the app's theme. */
+.spv { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--win); color: var(--l1); }
+.spv-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--sep); }
+.spv-gap { flex: 1; }
+.spv-cut { display: inline-flex; align-items: center; gap: 6px; color: var(--l2); font-size: 12.5px; }
+.spv-cut input[type="range"] { width: 120px; }
+.spv-cut select { font: inherit; color: inherit; background: var(--fill); border: 1px solid var(--sep); border-radius: var(--r-xs); }
+.spv-body { flex: 1; display: flex; min-height: 0; }
+.spv-parts { list-style: none; margin: 0; padding: 6px; width: 200px; flex: none; overflow: auto; border-right: 1px solid var(--sep); }
+.spv-parts li { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 6px; padding: 4px 6px; border-radius: var(--r-sm); }
+.spv-parts li.hover { background: var(--fill); }
+.spv-parts li.on { background: var(--sel); }
+.spv-parts input[type="range"] { grid-column: 2; width: 100%; margin: 2px 0 0; }
+.spv-name { all: unset; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.spv-parts li.on .spv-name { color: var(--sel-fg); font-weight: var(--font-weight-medium); }
+.spv-canvas { position: relative; flex: 1; min-width: 0; background: #16181d; overflow: hidden; }
+.spv-canvas canvas { display: block; position: absolute; inset: 0; outline: none; }
+.spv-msg { position: absolute; inset: 0; display: grid; place-items: center; color: #b9bdc7; font-size: 13px; pointer-events: none; }
+.spv-msg.bad { color: #ff8f8f; padding: 20px; text-align: center; }
+.spv-hover { position: absolute; top: 10px; left: 10px; padding: 3px 8px; border-radius: var(--r-xs); background: rgba(0, 0, 0, .55); color: #e6e8ee; font-size: 12px; pointer-events: none; }
+.spv-card { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; max-width: 260px; padding: 10px 12px; border-radius: var(--r-md); background: rgba(24, 26, 32, .88); color: #e6e8ee; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0, 0, 0, .35); }
+.spv-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-weight-semibold); }
+.spv-card span { color: #aab0bc; font-variant-numeric: tabular-nums; }
+.spv-card-actions { display: flex; gap: 6px; margin-top: 4px; }
+.spv-disclaimer { padding: 8px 12px; border-top: 1px solid var(--sep); background: var(--orange-bg); color: var(--l1); font-size: 12.5px; }
+@media (max-width: 520px) { .spv-parts { width: 140px; } }

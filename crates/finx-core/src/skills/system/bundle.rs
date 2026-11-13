@@ -14,4 +14,11 @@ pub(crate) const FILES: &[(&str, &str)] = &[
     ("skill-creator/scripts/aggregate_benchmark.py", include_str!("skill-creator/scripts/aggregate_benchmark.py")),
     ("skill-creator/scripts/package_skill.py", include_str!("skill-creator/scripts/package_skill.py")),
     ("skill-creator/scripts/quick_validate.py", include_str!("skill-creator/scripts/quick_validate.py")),
+    ("medical-imaging/SKILL.md", include_str!("medical-imaging/SKILL.md")),
+    ("medical-imaging/pyproject.toml", include_str!("medical-imaging/pyproject.toml")),
+    ("medical-imaging/recipes/chest.json", include_str!("medical-imaging/recipes/chest.json")),
+    ("medical-imaging/references/glossary.md", include_str!("medical-imaging/references/glossary.md")),
+    ("medical-imaging/references/guidelines.md", include_str!("medical-imaging/references/guidelines.md")),
+    ("medical-imaging/scripts/locate_report_item.py", include_str!("medical-imaging/scripts/locate_report_item.py")),
+    ("medical-imaging/scripts/lung_nodule_candidates.py", include_str!("medical-imaging/scripts/lung_nodule_candidates.py")),
 ];

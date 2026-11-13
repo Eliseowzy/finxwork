@@ -1,0 +1,35 @@
+{
+  "profile": {
+    "orientation": "patient",
+    "unit": "HU",
+    "windows": {
+      "肺窗": [1500, -600],
+      "纵隔窗": [400, 40],
+      "骨窗": [2000, 400]
+    },
+    "disclaimer": "AI 提示仅供参考，不能代替医生的诊断。"
+  },
+  "structures": [
+    { "id": "body", "name": "体表", "color": "#c8a48a", "opacity": 0.15,
+      "steps": [ { "threshold": [-400, null] }, { "keep_largest": 1 }, { "fill_holes": true } ] },
+    { "id": "airway", "name": "气道", "color": "#f2e394",
+      "steps": [ { "threshold": [null, -900] }, { "inside": "body" },
+                 { "connected_to_seed": "top_largest" }, { "keep_largest": 1 } ] },
+    { "id": "lungs", "name": "双肺", "color": "#4a90d9", "opacity": 0.35, "hidden": true,
+      "steps": [ { "threshold": [null, -400] }, { "inside": "body" },
+                 { "outside": "airway", "dilate_mm": 1 },
+                 { "drop_touching_border": true }, { "keep_largest": 2 } ] },
+    { "id": "lungs_closed", "name": "双肺（含血管）", "color": "#4a90d9", "hidden": true,
+      "steps": [ { "from": "lungs" }, { "dilate_mm": 5 }, { "erode_mm": 5 } ] },
+    { "id": "lung_right", "name": "右肺", "color": "#4a90d9", "opacity": 0.35,
+      "steps": [ { "from": "lungs" }, { "split_side": "patient_right" } ] },
+    { "id": "lung_left", "name": "左肺", "color": "#5aa9e6", "opacity": 0.35,
+      "steps": [ { "from": "lungs" }, { "split_side": "patient_left" } ] },
+    { "id": "vessels", "name": "肺血管", "color": "#e0607a",
+      "steps": [ { "threshold": [-300, null] }, { "inside": "lungs_closed" },
+                 { "drop_smaller_than_mm3": 20 } ] },
+    { "id": "bones", "name": "骨骼", "color": "#e8e4d8", "opacity": 0.6,
+      "steps": [ { "threshold": [200, null] }, { "outside": "lungs", "dilate_mm": 1 },
+                 { "drop_smaller_than_mm3": 500 } ] }
+  ]
+}

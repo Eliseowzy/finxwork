@@ -14,7 +14,7 @@
     "app": "node scripts/build-app.mjs",
     "release": "node scripts/release.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test src/renderer/src/docs/pptx/*.test.ts src/renderer/src/docs/docx/*.test.ts src/renderer/src/docs/pptx/commands/*.test.ts src/renderer/src/docs/*.test.ts src/renderer/src/docs/sheet/*.test.ts src/renderer/src/files/*.test.ts src/shared/*.test.ts src/main/*.test.ts src/main/kernel/*.test.ts src/main/browser/*.test.ts src/main/docx/*.test.ts src/renderer/src/composer/*.test.ts scripts/*.test.mjs src/renderer/src/session/markdown/*.test.ts src/renderer/src/session/*.test.ts",
+    "test": "node --test src/renderer/src/docs/pptx/*.test.ts src/renderer/src/docs/docx/*.test.ts src/renderer/src/docs/pptx/commands/*.test.ts src/renderer/src/docs/*.test.ts src/renderer/src/docs/sheet/*.test.ts src/renderer/src/files/*.test.ts src/renderer/src/spatial/*.test.ts src/shared/*.test.ts src/main/*.test.ts src/main/kernel/*.test.ts src/main/browser/*.test.ts src/main/docx/*.test.ts src/renderer/src/composer/*.test.ts scripts/*.test.mjs src/renderer/src/session/markdown/*.test.ts src/renderer/src/session/*.test.ts",
     "verify": "node e2e/run.mjs",
     "e2e": "node e2e/stale-model.mjs",
     "e2e:pptx": "node e2e/pptx-editor.mjs",
@@ -63,6 +63,7 @@
     "remark-parse": "11.0.0",
     "remend": "1.4.0",
     "shiki": "4.5.0",
+    "three": "0.186.1",
     "unified": "11.0.5"
   },
   "devDependencies": {
@@ -74,6 +75,7 @@
     "@types/node": "24.10.1",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "6.1.2",
     "electron": "44.9.0",
     "electron-vite": "6.0.0",

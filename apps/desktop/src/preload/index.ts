@@ -86,6 +86,7 @@ const bridge: Bridge = {
   pasteFiles: () => ipcRenderer.invoke("paste-files"),
   attachPaths: (paths: string[]) => ipcRenderer.invoke("attach-paths", paths),
   revealPath: (path: string) => ipcRenderer.send("reveal-path", path),
+  readModel: (path: string) => ipcRenderer.invoke("read-model", path),
   pathInfo: (base: string, paths: string[]) => ipcRenderer.invoke("path-info", base, paths),
   openFile: (path: string, options?: { line?: number; app?: string }) => ipcRenderer.invoke("open-file", path, options),
   editors: () => ipcRenderer.invoke("editors"),

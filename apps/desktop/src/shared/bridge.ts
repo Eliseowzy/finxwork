@@ -317,6 +317,8 @@ export type Bridge = {
   attachPaths(paths: string[]): Promise<PastedItem[]>;
   /** Shows a file or folder in Finder (Explorer, the file manager). */
   revealPath(path: string): void;
+  /** A 3D model's bytes (.stl, .obj, .ply, .glb) for the spatial view; null when it cannot be read. */
+  readModel(path: string): Promise<Uint8Array | null>;
   /** Paths a reply wrote, looked up under `base` (its session's folder): what each is, never what is in it. */
   pathInfo(base: string, paths: string[]): Promise<PathInfo[]>;
   /** Opens a file or folder a reply pointed at outside the app: in `app` (an editor's id), else its default app; at `line` where an editor takes one. */
