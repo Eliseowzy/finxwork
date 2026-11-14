@@ -516,6 +516,8 @@ export function registerIPC() {
       menu.popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined, callback: () => setTimeout(() => resolve(chosen)) });
     });
   });
+  // A menu the page draws itself (pageMenu.tsx): nothing to do here but in tests, which read and answer it as a native one.
+  ipcMain.handle("menu-shown", (e, items: MenuItem[]) => (trusted(e) && menuTests && Array.isArray(items) ? testMenu(items) : null));
   ipcMain.handle("preferences", (e) => (trusted(e) ? preferences() : null));
   ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => {
     if (!trusted(e) || typeof p !== "object" || p === null) return null;

@@ -504,6 +504,7 @@
     "copyLink": "Copy Link",
     "copy": "Copy",
     "quote": "Quote",
+    "selectionActions": "Selected text",
     "copyCode": "Copy Code",
     "copyCommand": "Copy Command",
     "copyOutput": "Copy Output",

@@ -294,6 +294,8 @@ export type Bridge = {
   onSettingsOpen(cb: (open: boolean) => void): () => void;
   /** A native menu at the pointer; resolves to the chosen item's id. */
   popupMenu(items: MenuItem[]): Promise<string | null>;
+  /** A menu the page drew itself has opened: end-to-end tests write its items down and may answer with an item's id (null otherwise). */
+  menuShown?(items: MenuItem[]): Promise<string | null>;
   onCommand(cb: (c: Command) => void): () => void;
   setMenuState(state: MenuState): void;
   pickDirectory(): Promise<string | null>;

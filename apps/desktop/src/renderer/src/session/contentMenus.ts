@@ -5,11 +5,12 @@ import { isPageFile } from "../../../shared/pageFile";
 import type { Store } from "../store";
 import { quoteToComposer } from "../composer/inbox";
 import { showFile } from "../files/state";
+import { pageMenu } from "../pageMenu";
 import { bringBrowserBack } from "./browserPanel";
 import { selectionQuoteOf } from "./quote";
 import { recheckFiles, type Scope } from "./scope";
 
-// What a reply's files, links, code blocks and steps do, from a click or their native menus
+// What a reply's files, links, code blocks and steps do, from a click or their menus (drawn by the page, pageMenu.tsx)
 // (content-actions-design §4–§8). The main process checks again before it acts.
 
 const t = i18n.getFixedT(null, "session");
@@ -17,7 +18,7 @@ const mac = () => window.finx?.platform === "mac";
 
 export const copyText = (text: string) => navigator.clipboard.writeText(text);
 
-function copy(st: Store, text: string, said: string) {
+export function copy(st: Store, text: string, said: string) {
   void copyText(text).then(() => st.show(said));
 }
 
@@ -29,7 +30,7 @@ export function editorList(): Promise<EditorInfo[]> {
 }
 
 /** The text selected in the conversation (not in a field), to copy first in any menu there. */
-function selection(): string {
+export function selection(): string {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed) return "";
   const at = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement;
@@ -46,13 +47,13 @@ function partAt(node: Node | null): { key: string; role: string } | null {
 }
 
 /** The quote a selection in the conversation makes, if both ends are in one quotable part (§4.2). */
-function selectionQuote(): MessageQuote | null {
+export function selectionQuote(): MessageQuote | null {
   const sel = window.getSelection();
   return sel && !sel.isCollapsed ? selectionQuoteOf(partAt(sel.anchorNode), partAt(sel.focusNode), sel.toString()) : null;
 }
 
 /** Puts a quote of the conversation in the composer of the session it was selected in (§4.4). */
-function addQuote(st: Store, quote: MessageQuote) {
+export function addQuote(st: Store, quote: MessageQuote) {
   if (st.selection.kind === "session") quoteToComposer(st.selection.id, quote);
 }
 
@@ -63,7 +64,7 @@ async function popup(st: Store, items: MenuItem[]): Promise<string | null> {
   const head: MenuItem[] = sel
     ? [{ id: "copySel", label: t("content.copy") }, ...(quote ? [{ id: "quoteSel", label: t("content.quote") }] : []), ...(items.length ? [{ separator: true } as const] : []), ...items]
     : items;
-  const id = await window.finx?.popupMenu(head);
+  const id = await pageMenu(head);
   if (id === "copySel") copy(st, sel, t("content.copied"));
   else if (id === "quoteSel" && quote) addQuote(st, quote);
   return id ?? null;

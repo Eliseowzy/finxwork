@@ -10,6 +10,7 @@ import { useStore } from "../store";
 import { Background } from "./Background";
 import { Chat } from "./Chat";
 import { selectionMenu } from "./contentMenus";
+import { SelectionBar } from "./SelectionBar";
 import { Inspector } from "./Inspector";
 import { ContentScope } from "./scope";
 import { SidePanelButtons, SidePanelViews, useSidePanels } from "./SidePanels";
@@ -88,6 +89,7 @@ export function SessionPage({ s }: { s: ListSession }) {
               {view && info && <Inspector s={s} view={view} yours={yours} />}
               {view && background && <Background s={s} view={view} />}
             </div>
+            <SelectionBar />
           </ContentScope>
       </div>
       <SidePanelViews panels={panels} view={view} />

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Quoting a message from the conversation (docs/desktop/message-quote-design.md): a selection's
-// right-click menu, the hover bar's Quote, the composer and bubble tiles, what the model is told,
+// bar and right-click menu, the hover bar's Quote, the composer and bubble tiles, what the model is told,
 // the jump back with its light on the words, a quote whose message was taken back, and how a
 // restored session's old messages are sent conservatively while new ones are not.
 //
@@ -357,14 +357,51 @@ try {
   await page.shot("02-excerpt-sent");
 
   // ── a fragment by right-click, sent, and its light on the words ──
-  step("a selected part is quoted from the right-click menu");
+  step("a selected part is quoted from the bar by the selection; the right-click menu has it too");
   await send("写一份方案");
   await until("the plan drawn", `[...document.querySelectorAll(".md")].some((m) => m.textContent.includes(${JSON.stringify(PHRASE)}))`);
   const menu = await select(PHRASE).then(() => contextMenu());
   const ids = menu.filter((m) => m.id).map((m) => m.id);
   check(ids[0] === "copySel" && ids[1] === "quoteSel", `copy then quote first, got ${JSON.stringify(ids)}`);
   check(["引用", "Quote"].includes(menu[1].label), `the label says Quote, got ${menu[1].label}`);
-  await contextMenu("quoteSel");
+  // The menu is drawn by the page, in the app's look: the same two, each with its icon; Escape puts it away.
+  const drawn = `[...document.querySelectorAll(".pmenu .mi")]`;
+  await until("the drawn menu", `${drawn}.length === 2`);
+  check(await run(`${drawn}.map((b) => b.dataset.id).join() === "copySel,quoteSel" && ${drawn}.every((b) => b.querySelector("svg"))`), "the drawn menu has Copy and Quote with icons");
+  await run(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+  await until("the menu gone on Escape", `!document.querySelector(".pmenu")`);
+  // The bar by the selection (§4.2): there without a right-click, Quote then Copy, over the words.
+  const bar = `[...document.querySelectorAll(".selbar .selbar-b")].map((b) => b.textContent)`;
+  await until("the selection's bar", `${bar}.length === 2`);
+  const barAt = await run(`(() => { const b = document.querySelector(".selbar").getBoundingClientRect(), r = getSelection().getRangeAt(0).getBoundingClientRect(); return { above: b.bottom <= r.top, near: r.top - b.bottom < 16, over: b.left < r.right && b.right > r.left }; })()`);
+  check(barAt.above && barAt.near && barAt.over, `the bar sits just over the words, got ${JSON.stringify(barAt)}`);
+  await page.shot("03-selection-bar");
+  // Dragged over with the pointer: no bar while the button is down, the bar once it is let go.
+  const words = await run(`(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); getSelection().removeAllRanges(); return { x1: r.left + 1, x2: r.right - 1, y: r.top + r.height / 2 }; })()`);
+  await until("the bar gone with the selection", `!document.querySelector(".selbar")`);
+  await page.call("Input.dispatchMouseEvent", { type: "mousePressed", x: words.x1, y: words.y, button: "left", buttons: 1, clickCount: 1 });
+  await page.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: (words.x1 + words.x2) / 2, y: words.y, button: "left", buttons: 1 });
+  await page.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: words.x2, y: words.y, button: "left", buttons: 1 });
+  await sleep(400);
+  check(await run(`!getSelection().isCollapsed && !document.querySelector(".selbar")`), "no bar while the words are still being dragged over");
+  await page.call("Input.dispatchMouseEvent", { type: "mouseReleased", x: words.x2, y: words.y, button: "left", buttons: 0, clickCount: 1 });
+  await until("the bar after the drag", `${bar}.length === 2`);
+  // A real right-click on the dragged words: the menu at the pointer, the bar out of its way; its Copy copies them.
+  await page.call("Input.dispatchMouseEvent", { type: "mousePressed", x: words.x2 - 20, y: words.y, button: "right", buttons: 2, clickCount: 1 });
+  await page.call("Input.dispatchMouseEvent", { type: "mouseReleased", x: words.x2 - 20, y: words.y, button: "right", buttons: 0, clickCount: 1 });
+  await until("the menu at the pointer", `${drawn}.length === 2 && !document.querySelector(".selbar")`);
+  const menuAt = await run(`(() => { const r = document.querySelector(".pmenu").getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);
+  check(Math.abs(menuAt.x - (words.x2 - 20)) < 3 && Math.abs(menuAt.y - words.y) < 3, `the menu opens at the pointer, got ${JSON.stringify(menuAt)}`);
+  await page.shot("03-context-menu");
+  const copyAt = await run(`(() => { const r = document.querySelector('.pmenu .mi[data-id="copySel"]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  await page.call("Input.dispatchMouseEvent", { type: "mousePressed", x: copyAt.x, y: copyAt.y, button: "left", buttons: 1, clickCount: 1 });
+  await page.call("Input.dispatchMouseEvent", { type: "mouseReleased", x: copyAt.x, y: copyAt.y, button: "left", buttons: 0, clickCount: 1 });
+  await until("the menu gone once picked", `!document.querySelector(".pmenu")`);
+  check(await run(`!getSelection().isCollapsed`), "the selection is kept after the menu's Copy");
+  await select(PHRASE);
+  await until("the bar on the phrase", `${bar}.length === 2`);
+  await run(`document.querySelector(".selbar .selbar-b.quote").click()`);
+  await until("the bar gone once quoted", `!document.querySelector(".selbar") && getSelection().isCollapsed`);
   await until("the composer's tile", `${tiles}.length === 1`);
   await until("the caret back in the composer", `document.activeElement?.closest(".cmp") !== null`);
   const name = await run(`${tiles}[0].textContent`);
@@ -427,6 +464,7 @@ try {
   check(cross, "a selection across rows");
   let crossMenu = await contextMenu();
   check(crossMenu.filter((m) => m.id).map((m) => m.id).join() === "copySel", `only copy, got ${JSON.stringify(crossMenu)}`);
+  await until("the bar with Copy alone", `document.querySelectorAll(".selbar .selbar-b").length === 1 && !document.querySelector(".selbar .selbar-b.quote")`);
 
   step("a selection on an attachment's words offers only Copy");
   await run(`document.querySelector(".cscroll").scrollTop = document.querySelector(".cscroll").scrollHeight`);
@@ -446,6 +484,9 @@ try {
   check(onTile, "a selection on the tile");
   crossMenu = await contextMenu();
   check(crossMenu.filter((m) => m.id).map((m) => m.id).join() === "copySel", `only copy on a tile, got ${JSON.stringify(crossMenu)}`);
+  // A card's words are not selectable text: there is nothing to copy either, so no bar comes up.
+  await sleep(400);
+  check(await run(`!document.querySelector(".selbar .selbar-b.quote")`), "no Quote in a bar on a tile");
   await page.shot("06-only-copy");
 
   step("a sent message written again brings its quote back");

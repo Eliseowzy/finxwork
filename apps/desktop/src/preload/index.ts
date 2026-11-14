@@ -74,6 +74,7 @@ const bridge: Bridge = {
   settingsOpen: () => ipcRenderer.invoke("settings-open"),
   onSettingsOpen: (cb: (open: boolean) => void) => listen("settings-open", cb),
   popupMenu: (items: MenuItem[]) => ipcRenderer.invoke("popup-menu", items),
+  menuShown: (items: MenuItem[]) => ipcRenderer.invoke("menu-shown", items),
   onCommand: (cb: (c: Command) => void) => listen("command", cb),
   setMenuState: (s: MenuState) => ipcRenderer.send("menu-state", s),
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
