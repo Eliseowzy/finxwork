@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { baseName, type DocQuote, type WebComment } from "@finx/client";
 import { useDocOpener } from "../docs/state";
-import { isLegacyWord, isPresentation, isWord, opensAsDoc, opensInOwnApp } from "../files/kind";
+import { isLegacyWord, isPresentation, isWord, mayBeStudy, opensAsDoc, opensInOwnApp } from "../files/kind";
 import { Icon } from "../icons";
 import { opensAsPage, showPage } from "../session/contentMenus";
 import { useScope } from "../session/scope";
@@ -322,7 +322,7 @@ export function useOpenFile() {
   const st = useStore();
   return (path: string) => {
     if (docs && opensAsPage(path)) return showPage(st, docs.session, path);
-    if (docs && (opensAsDoc(path) || isPresentation(path) || isWord(path) || isLegacyWord(path))) return docs.open({ path });
+    if (docs && (opensAsDoc(path) || mayBeStudy(path) || isPresentation(path) || isWord(path) || isLegacyWord(path))) return docs.open({ path });
     if (!docs || opensInOwnApp(path)) return void window.finx?.openFile(path, { app: "system" });
     docs.open({ path });
   };

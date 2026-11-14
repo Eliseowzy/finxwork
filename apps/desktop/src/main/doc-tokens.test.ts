@@ -11,6 +11,14 @@ test("a token stands for its document's working copy, and for nothing else", () 
   fs.mkdirSync(path.join(home, "docs", ".tokens"), { recursive: true });
   fs.writeFileSync(path.join(home, "docs", ".tokens", token), "652f9b08f5e8db76");
   assert.equal(tokenFile(home, `finxdoc://${token}/current.pdf`), path.join(home, "docs", "652f9b08f5e8db76", "current.pdf"));
+  assert.equal(tokenFile(home, `finxdoc://${token}/spatial/index.json`), path.join(home, "cache", "spatial", "652f9b08f5e8db76", "volume", "index.json"));
+  assert.equal(tokenFile(home, `finxdoc://${token}/spatial/bricks.bin`), path.join(home, "cache", "spatial", "652f9b08f5e8db76", "volume", "bricks.bin"));
+  assert.equal(
+    tokenFile(home, `finxdoc://${token}/spatial/mesh/lung_left/0.bin`),
+    path.join(home, "cache", "spatial", "652f9b08f5e8db76", "mesh", "lung_left", "0.bin"),
+  );
+  assert.equal(tokenFile(home, `finxdoc://${token}/spatial/mesh/../secret/0.bin`), null);
+  assert.equal(tokenFile(home, `finxdoc://${token}/spatial/mesh/lung/bad.bin`), null);
   assert.equal(tokenFile(home, `finxdoc://${token}/base.pdf`), null);
   assert.equal(tokenFile(home, `finxdoc://${token}/../../etc/passwd`), null);
   assert.equal(tokenFile(home, "finxdoc://ffffffffffffffffffffffffffffffff/current.pdf"), null);

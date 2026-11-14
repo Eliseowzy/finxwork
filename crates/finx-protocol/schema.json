@@ -317,6 +317,12 @@
       "$ref": "#/definitions/DocOpenResult"
     },
     {
+      "$ref": "#/definitions/DocOpsParams"
+    },
+    {
+      "$ref": "#/definitions/DocOpsResult"
+    },
+    {
       "$ref": "#/definitions/DocRecalcParams"
     },
     {
@@ -606,6 +612,9 @@
     },
     {
       "$ref": "#/definitions/SnapshotResult"
+    },
+    {
+      "$ref": "#/definitions/SpatialViewParams"
     },
     {
       "$ref": "#/definitions/TemplateProfile"
@@ -1114,6 +1123,138 @@
             "page",
             "quads",
             "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A point of a three-dimensional document (spatial-design §3, §13): a voxel or a mesh surface, LPS mm.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "spatial_point"
+              ],
+              "type": "string"
+            },
+            "position_mm": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 3,
+              "minItems": 3,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "position_mm"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A slice, or a box drawn on it.",
+          "properties": {
+            "index": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "spatial_slice"
+              ],
+              "type": "string"
+            },
+            "plane": {
+              "$ref": "#/definitions/SpatialPlane"
+            },
+            "rect": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SliceRect"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "index",
+            "kind",
+            "plane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A structure or a mesh.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "spatial_part"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "spatial_finding"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A viewpoint: the 3D camera, the slice shown, or both.",
+          "properties": {
+            "camera": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SpatialCamera"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "enum": [
+                "spatial_view"
+              ],
+              "type": "string"
+            },
+            "slice": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SpatialSliceAt"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind"
           ],
           "type": "object"
         }
@@ -8849,6 +8990,13 @@
             "xls"
           ],
           "type": "string"
+        },
+        {
+          "description": "A volume (DICOM) or a mesh (STL, OBJ, PLY, GLB) (spatial-design §3).",
+          "enum": [
+            "spatial"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -8947,6 +9095,17 @@
             "$ref": "#/definitions/SheetInfo"
           },
           "type": "array"
+        },
+        "spatial": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpatialInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A three-dimensional document's layers."
         }
       },
       "required": [
@@ -8974,6 +9133,13 @@
           "description": "A spreadsheet (spreadsheet-design §4.1).",
           "enum": [
             "grid"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A three-dimensional document (spatial-design §4.2).",
+          "enum": [
+            "space"
           ],
           "type": "string"
         }
@@ -9010,6 +9176,123 @@
         "anchor"
       ],
       "type": "object"
+    },
+    "DocOp": {
+      "description": "One change to a three-dimensional document's layers (§13). Each adds the item, or replaces the one with its id; a finding's `source` cannot change once made.",
+      "oneOf": [
+        {
+          "properties": {
+            "op": {
+              "enum": [
+                "spatial_structure"
+              ],
+              "type": "string"
+            },
+            "structure": {
+              "$ref": "#/definitions/SpatialStructure"
+            }
+          },
+          "required": [
+            "op",
+            "structure"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "marker": {
+              "$ref": "#/definitions/SpatialMarker"
+            },
+            "op": {
+              "enum": [
+                "spatial_marker"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "marker",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "measure": {
+              "$ref": "#/definitions/SpatialMeasure"
+            },
+            "op": {
+              "enum": [
+                "spatial_measure"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "measure",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "finding": {
+              "$ref": "#/definitions/SpatialFinding"
+            },
+            "op": {
+              "enum": [
+                "spatial_finding"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "finding",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "op": {
+              "enum": [
+                "spatial_profile"
+              ],
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/definitions/SpatialProfile"
+            }
+          },
+          "required": [
+            "op",
+            "profile"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "layer": {
+              "$ref": "#/definitions/SpatialLayer"
+            },
+            "op": {
+              "enum": [
+                "spatial_remove"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "layer",
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "DocOpenParams": {
       "properties": {
@@ -9061,6 +9344,54 @@
       "required": [
         "info",
         "token"
+      ],
+      "type": "object"
+    },
+    "DocOpsParams": {
+      "description": "`doc/ops`: a person's marks and measures in the 3D view, as one revision.",
+      "properties": {
+        "base_revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "ops": {
+          "items": {
+            "$ref": "#/definitions/DocOp"
+          },
+          "type": "array"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "ops",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocOpsResult": {
+      "properties": {
+        "info": {
+          "$ref": "#/definitions/DocInfo"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "info",
+        "revision"
       ],
       "type": "object"
     },
@@ -9135,6 +9466,13 @@
       "properties": {
         "anchor": {
           "$ref": "#/definitions/Anchor"
+        },
+        "block": {
+          "description": "The block the text starts in (`p12.b3`), for a region as for a selection: what a citation of it names.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "boxes": {
           "description": "The boxes of the characters the kernel took: the interface draws the selection with them.",
@@ -11717,6 +12055,25 @@
         }
       ]
     },
+    "FindingSource": {
+      "description": "Who a finding (or a marker) comes from; set when it is made, never changed (§3).",
+      "oneOf": [
+        {
+          "enum": [
+            "ai",
+            "user"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Authoritative material the user gave (in medicine, the doctor's report).",
+          "enum": [
+            "reference"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "FooterDate": {
       "description": "The date in the footer.",
       "oneOf": [
@@ -13768,6 +14125,13 @@
           "type": "string"
         }
       ]
+    },
+    "MeshSource": {
+      "enum": [
+        "file",
+        "structure"
+      ],
+      "type": "string"
     },
     "Message": {
       "description": "A message of the conversation. The parts are shared: the session history and every request built from it point at the same data, so cloning a message is cheap.",
@@ -18319,6 +18683,38 @@
       ],
       "type": "object"
     },
+    "SliceRect": {
+      "description": "A box on a slice, in voxels of the slice's two axes: `[u0, u1)`, `[v0, v1)`.",
+      "properties": {
+        "u0": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "u1": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "v0": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "v1": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "u0",
+        "u1",
+        "v0",
+        "v1"
+      ],
+      "type": "object"
+    },
     "SlideChangeKind": {
       "enum": [
         "changed",
@@ -18654,6 +19050,633 @@
       ],
       "type": "object"
     },
+    "SpatialCamera": {
+      "description": "A 3D camera, LPS mm.",
+      "properties": {
+        "position": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "target": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "up": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "position",
+        "target"
+      ],
+      "type": "object"
+    },
+    "SpatialFinding": {
+      "properties": {
+        "evidence": {
+          "default": [],
+          "description": "What it rests on, in words a person can check (a slice, a structure, a computed value).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "measures": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SpatialMeasureValue"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position_mm": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "radius_mm": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "report_item": {
+          "description": "The report's item it stands for (a reference finding's line, or one an AI finding locates).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/definitions/FindingSource"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "view": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpatialViewAt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "source",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "SpatialInfo": {
+      "description": "A three-dimensional document's layers (`DocInfo.spatial`).",
+      "properties": {
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SpatialFinding"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/definitions/SpatialKind"
+        },
+        "markers": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SpatialMarker"
+          },
+          "type": "array"
+        },
+        "measures": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SpatialMeasure"
+          },
+          "type": "array"
+        },
+        "meshes": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SpatialMesh"
+          },
+          "type": "array"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpatialProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "structures": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SpatialStructure"
+          },
+          "type": "array"
+        },
+        "volume": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpatialVolume"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "SpatialKind": {
+      "enum": [
+        "volume",
+        "mesh"
+      ],
+      "type": "string"
+    },
+    "SpatialLayer": {
+      "description": "What a layer is, to remove one.",
+      "enum": [
+        "structure",
+        "marker",
+        "measure",
+        "finding"
+      ],
+      "type": "string"
+    },
+    "SpatialMarker": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "position_mm": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/definitions/FindingSource"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "position_mm",
+        "source"
+      ],
+      "type": "object"
+    },
+    "SpatialMeasure": {
+      "description": "A length between two points; `length_mm` is the kernel's.",
+      "properties": {
+        "from_mm": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "type": "string"
+        },
+        "length_mm": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/definitions/FindingSource"
+        },
+        "to_mm": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        }
+      },
+      "required": [
+        "from_mm",
+        "id",
+        "source",
+        "to_mm"
+      ],
+      "type": "object"
+    },
+    "SpatialMeasureValue": {
+      "description": "A number a finding states, worked out by the kernel.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "SpatialMesh": {
+      "properties": {
+        "color": {
+          "description": "`#rrggbb`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lods": {
+          "description": "Levels of detail at `spatial/mesh/<id>/<lod>.bin`, 0 the finest.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "opacity": {
+          "format": "double",
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/definitions/MeshSource"
+        }
+      },
+      "required": [
+        "color",
+        "id",
+        "lods",
+        "name",
+        "opacity",
+        "source"
+      ],
+      "type": "object"
+    },
+    "SpatialPlane": {
+      "enum": [
+        "axial",
+        "coronal",
+        "sagittal"
+      ],
+      "type": "string"
+    },
+    "SpatialProfile": {
+      "description": "A skill's display settings (spatial-design §5.2 `profile`).",
+      "properties": {
+        "disclaimer": {
+          "description": "Shown whenever there is an `ai` finding.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "orientation": {
+          "description": "`patient` (L/R, A/P, S/I shown) or `none`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "windows": {
+          "default": [],
+          "description": "`[name, width, level]`, in order.",
+          "items": {
+            "items": [
+              {
+                "type": "string"
+              },
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "format": "double",
+                "type": "number"
+              }
+            ],
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SpatialSeries": {
+      "description": "A series found in the files opened.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why it cannot be a volume.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slices": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "spacing_mm": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "uid": {
+          "type": "string"
+        },
+        "usable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "description",
+        "slices",
+        "uid",
+        "usable"
+      ],
+      "type": "object"
+    },
+    "SpatialSliceAt": {
+      "properties": {
+        "index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "plane": {
+          "$ref": "#/definitions/SpatialPlane"
+        }
+      },
+      "required": [
+        "index",
+        "plane"
+      ],
+      "type": "object"
+    },
+    "SpatialStructure": {
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "hidden": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mask": {
+          "description": "Its mask, in the cache: `masks/<id>.bin`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "opacity": {
+          "format": "double",
+          "type": "number"
+        },
+        "origin": {
+          "description": "Where it came from: `script:run_<n>`, `user`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stats": {
+          "$ref": "#/definitions/StructureStats",
+          "default": {
+            "max_diameter_mm": 0.0,
+            "volume_mm3": 0.0
+          }
+        }
+      },
+      "required": [
+        "color",
+        "id",
+        "name",
+        "opacity"
+      ],
+      "type": "object"
+    },
+    "SpatialViewAt": {
+      "description": "Where a finding is looked at from.",
+      "properties": {
+        "camera": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpatialCamera"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slice": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpatialSliceAt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SpatialViewParams": {
+      "description": "`spatial/view`: the agent asks the person's view to turn to something (it does not move by itself otherwise).",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/definitions/Anchor"
+        }
+      },
+      "required": [
+        "doc_id",
+        "session_id",
+        "target"
+      ],
+      "type": "object"
+    },
+    "SpatialVolume": {
+      "properties": {
+        "dims": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "direction": {
+          "description": "The directions of i, j and k, LPS.",
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "levels": {
+          "description": "Levels of the brick pyramid.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "origin": {
+          "description": "The first voxel's centre, LPS mm.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "picked": {
+          "description": "The series shown: its uid.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why that one.",
+          "type": "string"
+        },
+        "series": {
+          "items": {
+            "$ref": "#/definitions/SpatialSeries"
+          },
+          "type": "array"
+        },
+        "spacing": {
+          "description": "mm along i, j, k.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "unit": {
+          "description": "The values' unit when calibrated (`HU`); none for raw grey levels.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "dims",
+        "direction",
+        "levels",
+        "origin",
+        "picked",
+        "reason",
+        "series",
+        "spacing"
+      ],
+      "type": "object"
+    },
     "Speaker": {
       "enum": [
         "user",
@@ -18722,6 +19745,35 @@
         "delete_columns"
       ],
       "type": "string"
+    },
+    "StructureStats": {
+      "properties": {
+        "centroid": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "max_diameter_mm": {
+          "format": "double",
+          "type": "number"
+        },
+        "volume_mm3": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "max_diameter_mm",
+        "volume_mm3"
+      ],
+      "type": "object"
     },
     "TableEdit": {
       "description": "One change to a table's structure or look. Cell text is edited as text: every cell is a story (`deck/read` lists their `story_id`s), or `set_cells`.",
@@ -20813,6 +21865,10 @@
       "params": "DocOpenParams",
       "result": "DocOpenResult"
     },
+    "doc/ops": {
+      "params": "DocOpsParams",
+      "result": "DocOpsResult"
+    },
     "doc/recalc": {
       "params": "DocRecalcParams",
       "result": "DocApplyResult"
@@ -21104,7 +22160,8 @@
     "session/detached": "SessionDetachedParams",
     "session/event": "SessionEventParams",
     "sessions/changed": "SessionsChangedParams",
-    "skills/changed": "SkillsChangedParams"
+    "skills/changed": "SkillsChangedParams",
+    "spatial/view": "SpatialViewParams"
   },
   "x-server-requests": {
     "docx/serialize": {
@@ -21188,6 +22245,7 @@
       "doc/find": "experimental",
       "doc/locate": "experimental",
       "doc/open": "experimental",
+      "doc/ops": "experimental",
       "doc/recalc": "experimental",
       "doc/redo": "experimental",
       "doc/resolve": "experimental",
@@ -21281,7 +22339,8 @@
       "session/detached": "stable",
       "session/event": "stable",
       "sessions/changed": "stable",
-      "skills/changed": "stable"
+      "skills/changed": "stable",
+      "spatial/view": "experimental"
     },
     "server_requests": {
       "docx/serialize": "internal"

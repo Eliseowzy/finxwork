@@ -47,6 +47,7 @@ import os from "node:os";
 import path from "node:path";
 import { agentDesktopBinaries, agentDesktopRelease } from "./agent-desktop.mjs";
 import { pdfiumLibrary, pdfiumLibraryFor, pdfiumRelease } from "./pdfium.mjs";
+import { uvBinaryFor, uvRelease } from "./uv.mjs";
 import { smokeWord } from "./docx-smoke.mjs";
 import { catalogProblems, catalogSkillsDir } from "./catalog-hash.mjs";
 import { ensureRustTarget, rustTriples } from "./rust-target.mjs";
@@ -206,6 +207,23 @@ if (!execFileSync("lipo", ["-archs", pdfiumSource], { encoding: "utf8" }).trim()
 fs.copyFileSync(pdfiumSource, pdfium);
 fs.chmodSync(pdfium, 0o755);
 
+step(`embedding uv ${uvRelease.version}`);
+// Beside finx in Contents/MacOS, where spatial_script looks first (crates/finx-core/src/spatial_script.rs).
+const uv = path.join(contents, "MacOS/uv");
+const uvSource = uvBinaryFor(arch, path.join(desktop, "node_modules/.cache/uv"));
+if (execFileSync("lipo", ["-archs", uvSource], { encoding: "utf8" }).trim() !== machO) throw new Error(`${uvSource} is not ${machO}`);
+fs.copyFileSync(uvSource, uv);
+fs.chmodSync(uv, 0o755);
+
+step("embedding finx_spatial python module");
+fs.cpSync(path.join(root, "crates/finx-spatial/python"), path.join(contents, "Resources/python"), {
+  recursive: true,
+  filter: (f) => {
+    const base = path.basename(f);
+    return base !== ".DS_Store" && base !== "__pycache__" && !base.endsWith(".pyc");
+  },
+});
+
 step("flipping Electron fuses");
 await flipFuses(path.join(contents, "MacOS/FinxWork"), {
   version: FuseVersion.V1,
@@ -220,12 +238,12 @@ await flipFuses(path.join(contents, "MacOS/FinxWork"), {
 
 step(`signing with: ${identity === "-" ? "ad-hoc" : identity}`);
 // The helper tools beside the app's executable, which run without Electron's entitlements.
-const helpers = [embedded, ...desktopTools].map((f) => `/${path.relative(app, f)}`);
+const helpers = [embedded, ...desktopTools, uv].map((f) => `/${path.relative(app, f)}`);
 // osx-sign signs Contents/MacOS in directory order, so FinxWork comes before finx and agent-desktop, and
 // codesign refuses a main executable whose neighbours carry no signature at all. arm64 binaries always carry
 // one (the linker's, or the release's); x64 ones may not. An ad-hoc signature first puts both architectures
 // in the same state; osx-sign then replaces it with the real one.
-for (const f of [embedded, ...desktopTools]) sh("codesign", ["--sign", "-", "--force", f]);
+for (const f of [embedded, ...desktopTools, uv]) sh("codesign", ["--sign", "-", "--force", f]);
 await sign({
   app,
   identity,
@@ -243,7 +261,7 @@ await sign({
   }),
 });
 sh("codesign", ["--verify", "--strict", "--deep", app]);
-for (const f of [embedded, ...desktopTools, pdfium]) sh("codesign", ["--verify", "--strict", f]);
+for (const f of [embedded, ...desktopTools, uv, pdfium]) sh("codesign", ["--verify", "--strict", f]);
 // The deck editor's metric-compatible Calibri/Cambria stand-ins (Carlito, Caladea) travel in the page (app.asar, covered by
 // the signature above); the signed bundle must still hold every face, at its full size, where the page fetches them (fonts/).
 {
@@ -299,6 +317,11 @@ if (arch === nativeArch) {
   if (signedVersion !== kernelVersion) throw new Error(`the embedded finx reports ${signedVersion}, expected ${kernelVersion}`);
   const desktopVersion = JSON.parse(execFileSync(desktopTools[0], ["version"], { encoding: "utf8" }).trim().split("\n").pop()).data?.version;
   if (desktopVersion !== agentDesktopRelease.version) throw new Error(`the embedded agent-desktop reports ${desktopVersion}, expected ${agentDesktopRelease.version}`);
+  const uvVersion = execFileSync(uv, ["--version"], { encoding: "utf8" }).trim();
+  if (!uvVersion.includes(uvRelease.version)) throw new Error(`the embedded uv reports ${uvVersion}, expected ${uvRelease.version}`);
+  if (!fs.existsSync(path.join(contents, "Resources/python/finx_spatial/__init__.py"))) {
+    throw new Error("the bundle lacks Resources/python/finx_spatial/__init__.py");
+  }
   // The signed kernel opens a PDF with the PDFium in the bundle: no FINX_PDFIUM, a HOME without ~/.finx/pdfium,
   // and a dist build never looks in tools/pdfium; library validation runs as on the user's Mac.
   const docHome = fs.mkdtempSync(path.join(tmp, "doc-home-"));

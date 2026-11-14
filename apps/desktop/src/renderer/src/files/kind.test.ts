@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isGrid, isLegacyWord, isPresentation, isWord, opensAsDoc, previewable, readsAsResult, wraps } from "./kind.ts";
+import { isGrid, isLegacyWord, isPresentation, isWord, mayBeStudy, opensAsDoc, previewable, readsAsResult, wraps } from "./kind.ts";
 
 test("documents open in finx, text in the editor", () => {
   for (const p of ["/a/r.PDF", "/a/b.xlsx", "/a/b.xlsm", "/a/b.xls", "/a/b.csv", "/a/b.tsv"]) assert.ok(opensAsDoc(p), p);
   for (const p of ["/a/b.md", "/a/b.docx", "/a/pdf", "/a/b.xlsb"]) assert.ok(!opensAsDoc(p), p);
+  assert.ok(mayBeStudy("/a/study.ZIP") && mayBeStudy("/a/0001.dcm") && !mayBeStudy("/a/readme.txt"));
   assert.ok(isGrid("/a/b.csv") && !isGrid("/a/b.pdf"));
   assert.ok(isPresentation("/a/deck.PPTX") && !isPresentation("/a/deck.ppt") && !isGrid("/a/deck.pptx"));
   assert.ok(isWord("/a/d.DOCX") && !isWord("/a/d.doc") && !isWord("/a/d.dotx") && !isWord("/a/d.docm") && !opensAsDoc("/a/d.docx"));

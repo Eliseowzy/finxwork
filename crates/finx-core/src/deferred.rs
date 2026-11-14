@@ -126,6 +126,13 @@ impl Deferred {
                 tools: crate::word::tools(),
             });
         }
+        if docs && settings.spatial.enabled {
+            groups.push(Group {
+                name: crate::spatial::GROUP,
+                summary: crate::spatial::GROUP_SUMMARY.into(),
+                tools: crate::spatial::tools(),
+            });
+        }
         match agents {
             AgentRole::Main => groups.push(Group {
                 name: AGENTS,
@@ -159,6 +166,9 @@ impl Deferred {
             names.push(DOC);
             names.push(crate::deck::GROUP);
             names.push(crate::word::GROUP);
+            if settings.spatial.enabled {
+                names.push(crate::spatial::GROUP);
+            }
         }
         if agents != AgentRole::None {
             names.push(AGENTS);

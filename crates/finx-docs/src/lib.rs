@@ -9,6 +9,7 @@ pub mod engine;
 pub mod kind;
 pub mod layout;
 pub mod sheet;
+pub mod spatial;
 pub mod store;
 pub mod word;
 pub mod worker;

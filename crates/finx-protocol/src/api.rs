@@ -85,6 +85,10 @@ pub mod method {
     pub const DOC_SORT: &str = "doc/sort";
     pub const DOC_AUTOFILL: &str = "doc/autofill";
     pub const DOC_SAVE: &str = "doc/save";
+    /// Three-dimensional documents: layer edits (spatial-design §13).
+    pub const DOC_OPS: &str = "doc/ops";
+    /// Notification: the agent turns a session's 3D view to something.
+    pub const SPATIAL_VIEW: &str = "spatial/view";
     /// Notification: a document changed (an edit, undo, redo or save, from any session); to
     /// every connection that opened a document (spreadsheet-design §7).
     pub const DOC_CHANGED: &str = "doc/changed";

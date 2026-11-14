@@ -513,10 +513,34 @@ const TETS: [[usize; 4]; 6] = [
 /// surface, with more triangles, which [`decimate`] takes away). Only the mask's box, one voxel
 /// wider each way, is visited.
 pub fn surface(mask: &Mask) -> Mesh {
-    match coarse(mask) {
-        Some(c) => surface_at(&c),
-        None => surface_at(mask),
+    let mut m = match coarse(mask) {
+        Some(c) => c,
+        None => return surface_at(mask),
+    };
+    // A surface still this large (a spongy mask, as an airway leaked into the lungs) would take
+    // minutes at this resolution: halve again, whatever it costs in volume.
+    while faces(&m) > MAX_FACES && m.grid.dims.iter().all(|d| *d > 8) {
+        m = halve(&m);
     }
+    surface_at(&m)
+}
+
+/// Voxel faces above which [`surface`] keeps halving.
+pub const MAX_FACES: usize = 1_500_000;
+
+fn faces(mask: &Mask) -> usize {
+    let [w, h, d] = mask.grid.dims.map(|x| x as usize);
+    let mut faces = 0usize;
+    for (n, b) in mask.data.iter().enumerate() {
+        if !*b {
+            continue;
+        }
+        let [i, j, k] = mask.grid.ijk(n).map(|x| x as usize);
+        faces += (i + 1 < w && !mask.data[n + 1]) as usize
+            + (j + 1 < h && !mask.data[n + w]) as usize
+            + (k + 1 < d && !mask.data[n + w * h]) as usize;
+    }
+    faces
 }
 
 /// Voxel faces between the mask and the rest above which [`surface`] works at half resolution:
@@ -527,21 +551,18 @@ pub const COARSE_FACES: usize = 80_000;
 /// surface is larger than [`COARSE_FACES`] and halving keeps its volume within 3% (thin
 /// structures, as vessels, stay at full resolution).
 fn coarse(mask: &Mask) -> Option<Mask> {
-    let g = &mask.grid;
-    let [w, h, d] = g.dims.map(|x| x as usize);
-    let mut faces = 0usize;
-    for (n, b) in mask.data.iter().enumerate() {
-        if !*b {
-            continue;
-        }
-        let [i, j, k] = g.ijk(n).map(|x| x as usize);
-        faces += (i + 1 < w && !mask.data[n + 1]) as usize
-            + (j + 1 < h && !mask.data[n + w]) as usize
-            + (k + 1 < d && !mask.data[n + w * h]) as usize;
-    }
-    if faces <= COARSE_FACES {
+    let n = faces(mask);
+    if n <= COARSE_FACES {
         return None;
     }
+    let out = halve(mask);
+    let (fine, rough) = (mask.count() as f64, out.count() as f64 * 8.0);
+    ((rough / fine - 1.0).abs() <= 0.03 || n > MAX_FACES).then_some(out)
+}
+
+/// The mask at half resolution: a 2×2×2 block is in when at least half its voxels are.
+fn halve(mask: &Mask) -> Mask {
+    let g = &mask.grid;
     let dims = g.dims.map(|x| x.div_ceil(2));
     // The centre of block (0, 0, 0) is half a voxel in from the first voxel's centre.
     let origin = g.to_patient([0.5; 3]);
@@ -562,8 +583,7 @@ fn coarse(mask: &Mask) -> Option<Mask> {
     for (o, c) in out.data.iter_mut().zip(&count) {
         *o = *c >= 4;
     }
-    let (fine, rough) = (mask.count() as f64, out.count() as f64 * 8.0);
-    ((rough / fine - 1.0).abs() <= 0.03).then_some(out)
+    out
 }
 
 fn surface_at(mask: &Mask) -> Mesh {

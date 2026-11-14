@@ -34,6 +34,7 @@ import { sizeText } from "../format";
 const Editor = lazy(() => import("./Editor"));
 const PresentationView = lazy(() => import("../docs/pptx/PresentationView"));
 const WordView = lazy(() => import("../docs/docx/WordView"));
+const SpatialDocView = lazy(() => import("../spatial/SpatialDocView"));
 
 /** What the conversation keeps beside the panel at least, as with the browser; more beside a document, which is read beside it. */
 const conversationRoom = (doc: boolean) => (doc ? 360 : 160);
@@ -147,7 +148,11 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
               const doc = docOf(x);
               return doc && (
                 <div key={doc.info.doc_id} className="dcp-viewer" hidden={x !== tab}>
-                  {doc.info.layout === "grid" ? (
+                  {doc.info.layout === "space" ? (
+                    <Suspense fallback={<Loading />}>
+                      <SpatialDocView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
+                    </Suspense>
+                  ) : doc.info.layout === "grid" ? (
                     <SheetView rpc={st.rpc!} session={session} tab={doc} activeView={x === tab} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
                   ) : (
                     <PdfView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />

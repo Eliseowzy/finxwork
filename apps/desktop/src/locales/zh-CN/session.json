@@ -940,12 +940,42 @@
     "clipAxis": "剖切方向",
     "clipAt": "剖切位置",
     "parts": "部件",
+    "layersHide": "收起",
     "show": "显示 {{name}}",
     "opacity": "{{name}} 的透明度",
     "deselect": "取消选中",
     "addToChat": "添加到对话",
     "quotePrefix": "三维",
     "disclaimer": "标记中有 AI 给出的结果，仅供参考，不能代替专业人员的判断。",
-    "readFailed": "读不到这个文件"
+    "readFailed": "读不到这个文件",
+    "defaultWindow": "默认",
+    "enableSkillHint": "已打开医学影像检查，启用医学影像 skill 可辅助识别肺部等结构与发现。",
+    "enableSkill": "启用医学影像",
+    "series": "序列",
+    "slicesCount": "{{n}} 层",
+    "seriesShown": "当前显示",
+    "sliceAt": "第 {{n}} / {{of}} 层",
+    "window": "窗位预设",
+    "outside": "{{where}} · 扫描视野外",
+    "edge": {
+      "right": "右",
+      "left": "左",
+      "front": "前",
+      "back": "后",
+      "head": "头",
+      "feet": "足"
+    },
+    "sliceLoading": "正在读取层面…",
+    "sliceFailed": "无法读取层面：{{message}}",
+    "sliceSlider": "切换层面",
+    "findings": "发现",
+    "source": {
+      "reference": "参考 / 报告",
+      "ai": "AI 检出",
+      "user": "我的标记"
+    },
+    "locate": "定位",
+    "viewSlice": "看原片",
+    "ask": "问一问"
   }
 }

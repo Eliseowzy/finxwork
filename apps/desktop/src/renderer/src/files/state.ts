@@ -5,7 +5,7 @@ import { i18n } from "../../../shared/i18n";
 import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPassword, sheetViewingOf, type DocAnchor, type DocTab } from "../docs/state";
 import { isRpcKind } from "../rpcError";
 import { errorText, type Store } from "../store";
-import { isLegacyWord, isPresentation, isWord, opensAsDoc, previewable } from "./kind";
+import { isLegacyWord, isPresentation, isWord, mayBeStudy, opensAsDoc, previewable } from "./kind";
 import { kernelAuthority, openKernelPresentation } from "../docs/pptx/kernel";
 import { readPresentation, type PresentationProgress } from "../docs/pptx/progress";
 import { PresentationDoc } from "../docs/pptx/document";
@@ -137,7 +137,7 @@ export function openFile(s: SessionFiles, path: string, at?: { line?: number; en
   changed(s);
 }
 
-function newTab(s: SessionFiles, path: string, asDoc = opensAsDoc(path)): Tab {
+function newTab(s: SessionFiles, path: string, asDoc = opensAsDoc(path) || mayBeStudy(path)): Tab {
   const opened = asDoc ? { docId: null, locked: null, opening: null } : null;
   return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, presentation: null, word: null, preview: previewable(path), target: null, editor: null, scroll: 0, opened };
 }
@@ -155,6 +155,12 @@ function openAsDoc(s: SessionFiles, tab: Tab, anchor?: DocAnchor, password?: str
       doc.locked = opened ? null : { wrong: password !== undefined, anchor };
       tab.error = null;
     } catch (e) {
+      // A zip or dcm that is not a study: shown as any other file.
+      if (mayBeStudy(tab.path) && isRpcKind(e, "doc_unavailable") && (e.data as { unsupported?: boolean } | null)?.unsupported) {
+        tab.opened = null;
+        void load(s, tab);
+        return;
+      }
       tab.error = errorText(e);
     }
   })().finally(() => {

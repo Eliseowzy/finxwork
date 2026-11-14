@@ -100,7 +100,7 @@ function Cite({ docId, target, children }: { docId: string; target: string; chil
       const text = r.anchor.kind === "text" || r.anchor.kind === "cells" ? (r.anchor.text ?? "") : "";
       const where = r.anchor.kind === "cells"
         ? `${baseName(r.path)} · ${r.anchor.sheet}!${r.anchor.range}`
-        : t("doc.where", { name: baseName(r.path), page: r.anchor.page });
+        : t("doc.where", { name: baseName(r.path), page: "page" in r.anchor ? r.anchor.page : 0 });
       setFound({ title: text ? `${where}\n${text.length > 120 ? text.slice(0, 120) + "…" : text}` : where });
     });
   };

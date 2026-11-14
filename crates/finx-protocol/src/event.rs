@@ -29,6 +29,7 @@ pub struct Event {
     pub msg: EventMsg,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventMsg {

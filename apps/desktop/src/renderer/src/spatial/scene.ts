@@ -9,6 +9,14 @@ import {
   DoubleSide,
   EdgesGeometry,
   Group,
+  DecrementWrapStencilOp,
+  IncrementWrapStencilOp,
+  AlwaysStencilFunc,
+  NotEqualStencilFunc,
+  ReplaceStencilOp,
+  BackSide,
+  FrontSide,
+  Matrix4,
   HemisphereLight,
   LineBasicMaterial,
   LineSegments,
@@ -27,7 +35,6 @@ import {
   SpriteMaterial,
   SRGBColorSpace,
   Texture,
-  TextureLoader,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -41,16 +48,23 @@ import { decodeMesh, type Finding, type FindingSource, type MeshInput, type Part
 // a clipping plane, the corner axes, findings with rings that keep their size on screen, and
 // the current slice. Loaded only when a model opens (SpatialView imports it), so three.js stays
 // out of the app's first load. Renders only when something changed.
+//
+// Coordinates are the source's: a model file's own, or LPS millimetres for a volume's surfaces.
+// With `patient` orientation the camera's up is the head (+z) and the corner axes say R/L/A/P/S/I.
+// A cut is closed with caps: each part's back faces minus its front faces in the stencil buffer
+// mark where the cut plane is inside the part, and a plane in the part's colour fills just there.
 
 export type ViewName = "front" | "side" | "top" | "reset";
 export type Axis = 0 | 1 | 2;
 
-type Part = { id: number; name: string; mesh: Mesh; material: MeshStandardMaterial; visible: boolean; opacity: number; size: [number, number, number] };
+type Part = { id: number; name: string; mesh: Mesh; material: MeshStandardMaterial; visible: boolean; opacity: number; size: [number, number, number]; key?: string; caps: Mesh[] };
 
 export type ViewerEvents = {
   parts: (parts: PartInfo[]) => void;
   select: (part: PartInfo | null) => void;
   hover: (name: string | null) => void;
+  /** A click on a surface: where, in the source's units (mm for a volume). */
+  point?: (at: [number, number, number]) => void;
 };
 
 const canvasColor = 0x16181d;
@@ -87,6 +101,11 @@ export class Viewer {
   private resize: ResizeObserver;
   private down: { x: number; y: number } | null = null;
   private pointer: Vector2 | null = null;
+  private patient = false;
+  private settled = false;
+  private sliceMap: Texture | null = null;
+  private focused: string | null = null;
+  private flashes = new Map<string, number>();
 
   private host: HTMLElement;
   private events: ViewerEvents;
@@ -94,7 +113,7 @@ export class Viewer {
   constructor(host: HTMLElement, events: ViewerEvents) {
     this.host = host;
     this.events = events;
-    this.renderer = new WebGLRenderer({ antialias: true });
+    this.renderer = new WebGLRenderer({ antialias: true, stencil: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(canvasColor);
     this.renderer.localClippingEnabled = true;
@@ -152,15 +171,31 @@ export class Viewer {
 
   /** Meshes in the kernel's format (model.ts), each a part. */
   setMeshes(meshes: MeshInput[]) {
-    for (const m of meshes) {
-      const { positions, indices } = decodeMesh(m.data);
-      const g = new BufferGeometry();
-      g.setAttribute("position", new BufferAttribute(positions, 3));
-      g.setIndex(new BufferAttribute(indices, 1));
-      const part = this.addGeometry(m.name, g, m.color);
-      if (m.opacity !== undefined) part.opacity = Math.max(0, Math.min(1, m.opacity));
-    }
+    for (const m of meshes) this.addMeshData(m);
     this.settle();
+  }
+
+  /** One more mesh, as structures arrive one by one: the camera stays where the person put it. */
+  addMesh(m: MeshInput) {
+    if (m.key && this.parts.some((p) => p.key === m.key)) return;
+    this.addMeshData(m);
+    this.settle(this.settled);
+  }
+
+  /** Whether a structure's mesh is in. */
+  hasMesh(key: string) {
+    return this.parts.some((p) => p.key === key);
+  }
+
+  private addMeshData(m: MeshInput) {
+    const { positions, indices, normals } = decodeMesh(m.data);
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(positions, 3));
+    if (normals) g.setAttribute("normal", new BufferAttribute(normals, 3));
+    g.setIndex(new BufferAttribute(indices, 1));
+    const part = this.addGeometry(m.name, g, m.color);
+    part.key = m.key;
+    if (m.opacity !== undefined) part.opacity = Math.max(0, Math.min(1, m.opacity));
   }
 
   private addGeometry(name: string, g: BufferGeometry, color?: string | number) {
@@ -199,13 +234,13 @@ export class Viewer {
       side: DoubleSide,
     });
     mesh.material = material;
-    const part: Part = { id, name, mesh, material, visible: true, opacity: 1, size: [0, 0, 0] };
+    const part: Part = { id, name, mesh, material, visible: true, opacity: 1, size: [0, 0, 0], caps: [] };
     this.parts.push(part);
     return part;
   }
 
   /** After a load: sizes, the camera on the whole, the list to the page. */
-  private settle() {
+  private settle(keepCamera = false) {
     this.model.updateMatrixWorld(true);
     this.bounds.setFromObject(this.model);
     for (const p of this.parts) {
@@ -214,7 +249,8 @@ export class Viewer {
     }
     this.applyClip();
     this.restyle();
-    this.view("reset");
+    if (!keepCamera) this.view("reset");
+    this.settled = true;
     this.events.parts(this.info());
   }
 
@@ -224,7 +260,7 @@ export class Viewer {
     return this.parts.map(this.partInfo);
   }
 
-  private partInfo = (p: Part): PartInfo => ({ id: p.id, name: p.name, visible: p.visible, opacity: p.opacity, size: p.size });
+  private partInfo = (p: Part): PartInfo => ({ id: p.id, name: p.name, visible: p.visible, opacity: p.opacity, size: p.size, ...(p.key !== undefined && { key: p.key }) });
 
   setVisible(id: number, visible: boolean) {
     const p = this.parts[id];
@@ -260,6 +296,15 @@ export class Viewer {
       p.material.depthWrite = o >= 1;
       p.material.emissive.setHex(p === this.selected ? 0x1d3a66 : p === this.hovered ? 0x2a2f38 : 0x000000);
       p.mesh.renderOrder = o < 1 ? 1 : 0;
+      for (const c of p.caps) {
+        c.visible = p.mesh.visible && this.clipOn;
+        const m = c.material as MeshBasicMaterial;
+        if (m.stencilFunc === NotEqualStencilFunc) {
+          m.color.copy(p.material.color);
+          m.opacity = Math.max(o, 0.35);
+          m.transparent = m.opacity < 1;
+        }
+      }
     }
     this.invalidate();
   }
@@ -270,12 +315,56 @@ export class Viewer {
     const c = this.bounds.isEmpty() ? new Vector3() : this.bounds.getCenter(new Vector3());
     const r = this.bounds.isEmpty() ? 1 : Math.max(this.bounds.getSize(new Vector3()).length() / 2, 1e-6);
     const d = r / Math.sin((this.camera.fov * Math.PI) / 360) * 1.15;
-    const dir = name === "front" ? new Vector3(0, 0, 1) : name === "side" ? new Vector3(1, 0, 0) : name === "top" ? new Vector3(0, 1, 0.0001) : new Vector3(0.9, 0.6, 1.2);
+    // A patient is seen from the front (anterior, −y), the left side (+x), above the head (+z), the head up.
+    const dir = this.patient
+      ? name === "front" ? new Vector3(0, -1, 0) : name === "side" ? new Vector3(1, 0, 0) : name === "top" ? new Vector3(0, -0.0001, 1) : new Vector3(0.6, -1.2, 0.5)
+      : name === "front" ? new Vector3(0, 0, 1) : name === "side" ? new Vector3(1, 0, 0) : name === "top" ? new Vector3(0, 1, 0.0001) : new Vector3(0.9, 0.6, 1.2);
+    this.camera.up.set(0, this.patient ? 0 : 1, this.patient ? 1 : 0);
+    this.syncUp();
     this.camera.near = d / 100;
     this.camera.far = d * 100;
     this.camera.updateProjectionMatrix();
     this.camera.position.copy(c).addScaledVector(dir.normalize(), d);
     this.controls.target.copy(c);
+    this.controls.update();
+    this.invalidate();
+  }
+
+  /** Patient coordinates (LPS): the head up, the corner axes in patient sides. */
+  setOrientation(patient: boolean) {
+    if (patient === this.patient) return;
+    this.patient = patient;
+    this.gizmo.traverse((o) => {
+      const m = o as Sprite;
+      m.material?.map?.dispose();
+      (m.material as Material | undefined)?.dispose();
+    });
+    this.gizmo.clear();
+    this.buildGizmo();
+    this.view("reset");
+  }
+
+  /** Turns the camera to a point, from the side it is seen from now; the distance fits `radius`. */
+  focus(at: readonly number[], radius = 20) {
+    const p = new Vector3(at[0], at[1], at[2]).divideScalar(this.unit);
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    const whole = this.bounds.isEmpty() ? 1 : this.bounds.getSize(new Vector3()).length() / 2;
+    const r = Math.max(radius / this.unit * 4, whole * 0.6);
+    const d = r / Math.sin((this.camera.fov * Math.PI) / 360);
+    this.controls.target.copy(p);
+    this.camera.position.copy(p).addScaledVector(dir, d);
+    this.controls.update();
+    this.invalidate();
+  }
+
+  /** A camera the kernel sent (`spatial/view`), in the source's units. */
+  setCamera(position: readonly number[], target: readonly number[], up?: readonly number[] | null) {
+    if (up?.length === 3) {
+      this.camera.up.set(up[0], up[1], up[2]);
+      this.syncUp();
+    }
+    this.camera.position.set(position[0], position[1], position[2]).divideScalar(this.unit);
+    this.controls.target.set(target[0], target[1], target[2]).divideScalar(this.unit);
     this.controls.update();
     this.invalidate();
   }
@@ -297,7 +386,49 @@ export class Viewer {
   }
 
   private applyClip() {
-    for (const p of this.parts) p.material.clippingPlanes = this.clipOn ? [this.clip] : [];
+    for (const p of this.parts) {
+      p.material.clippingPlanes = this.clipOn ? [this.clip] : [];
+      if (this.clipOn && !p.caps.length) this.buildCaps(p);
+    }
+    if (this.clipOn) this.placeCaps();
+    this.restyle();
+  }
+
+  /** The stencil pair and the cap of a part (three.js's clipping-stencil recipe). */
+  private buildCaps(p: Part) {
+    const base = { depthWrite: false, depthTest: false, colorWrite: false, stencilWrite: true, stencilFunc: AlwaysStencilFunc, clippingPlanes: [this.clip] };
+    const back = new Mesh(p.mesh.geometry, new MeshBasicMaterial({ ...base, side: BackSide, stencilFail: IncrementWrapStencilOp, stencilZFail: IncrementWrapStencilOp, stencilZPass: IncrementWrapStencilOp }));
+    const front = new Mesh(p.mesh.geometry, new MeshBasicMaterial({ ...base, side: FrontSide, stencilFail: DecrementWrapStencilOp, stencilZFail: DecrementWrapStencilOp, stencilZPass: DecrementWrapStencilOp }));
+    const capMat = new MeshStandardMaterial({ color: p.material.color, metalness: 0, roughness: 0.9, side: DoubleSide, stencilWrite: true, stencilRef: 0, stencilFunc: NotEqualStencilFunc, stencilFail: ReplaceStencilOp, stencilZFail: ReplaceStencilOp, stencilZPass: ReplaceStencilOp });
+    const cap = new Mesh(new PlaneGeometry(1, 1), capMat);
+    // The stencil is cleared after each cap, so the next part starts from nothing.
+    cap.onAfterRender = (r) => r.clearStencil();
+    const order = 10 + p.id * 3;
+    back.renderOrder = order;
+    front.renderOrder = order + 1;
+    cap.renderOrder = order + 2;
+    back.matrixAutoUpdate = front.matrixAutoUpdate = false;
+    p.mesh.updateMatrixWorld(true);
+    back.matrix.copy(p.mesh.matrixWorld);
+    front.matrix.copy(p.mesh.matrixWorld);
+    p.caps = [back, front, cap];
+    this.extras.add(back, front, cap);
+  }
+
+  /** Caps lie on the cut, big enough to cover the model. */
+  private placeCaps() {
+    const size = this.bounds.isEmpty() ? 1 : this.bounds.getSize(new Vector3()).length() * 2;
+    const at = this.clip.coplanarPoint(new Vector3());
+    const look = at.clone().sub(this.clip.normal);
+    for (const p of this.parts) {
+      const cap = p.caps[2];
+      if (!cap) continue;
+      cap.scale.set(size, size, 1);
+      cap.position.copy(at);
+      cap.lookAt(look);
+      // A hair towards what is kept, so the cap does not fight the cut faces.
+      cap.position.addScaledVector(this.clip.normal, 1e-4 * size);
+    }
   }
 
   // ── findings and the slice ──
@@ -305,13 +436,16 @@ export class Viewer {
   setFindings(findings: readonly Finding[]) {
     this.clearGroup(this.findingsGroup);
     for (const f of findings) {
+      const own = new Group();
+      own.userData.finding = f.id;
+      this.findingsGroup.add(own);
       const at = new Vector3(...f.position).divideScalar(this.unit);
       const color = sourceColor[f.source];
       if (f.radius > 0) {
         const ball = new Mesh(new SphereGeometry(f.radius / this.unit, 24, 16), new MeshBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }));
         ball.position.copy(at);
         ball.renderOrder = 2;
-        this.findingsGroup.add(ball);
+        own.add(ball);
       }
       const ring = new Sprite(new SpriteMaterial({ map: this.marker(f.source), sizeAttenuation: false, depthTest: false, transparent: true }));
       ring.position.copy(at);
@@ -319,27 +453,78 @@ export class Viewer {
       ring.renderOrder = 3;
       // A pin stands on its point.
       if (f.source === "user") ring.center.set(0.5, 0);
-      this.findingsGroup.add(ring);
+      own.add(ring);
+    }
+    this.restyleFindings();
+  }
+
+  /** One finding stands out, the rest and the parts fade; null: all as they are. */
+  highlight(id: string | null) {
+    this.focused = id;
+    this.restyleFindings();
+  }
+
+  /** A finding the agent just added blinks a few times; the camera does not move. */
+  flash(id: string) {
+    this.flashes.set(id, performance.now());
+    this.invalidate();
+  }
+
+  private restyleFindings(now = performance.now()) {
+    for (const g of this.findingsGroup.children) {
+      const id = g.userData.finding as string;
+      const since = this.flashes.has(id) ? now - this.flashes.get(id)! : Infinity;
+      if (since > 1800) this.flashes.delete(id);
+      const blink = since <= 1800 ? 0.5 + 0.5 * Math.cos((since / 300) * Math.PI) : 1;
+      const faint = this.focused !== null && this.focused !== id;
+      g.traverse((o) => {
+        const m = (o as Mesh).material as MeshBasicMaterial | SpriteMaterial | undefined;
+        if (!m) return;
+        const full = (o as Sprite).isSprite ? 1 : 0.35;
+        m.opacity = full * (faint ? 0.15 : 1) * blink;
+      });
+      const ring = g.children.find((o) => (o as Sprite).isSprite) as Sprite | undefined;
+      const s = ringSize * (this.focused === id ? 1.5 : 1) * (since <= 1800 ? 1 + 0.4 * (1 - since / 1800) : 1);
+      ring?.scale.set(s, s, 1);
+    }
+    for (const p of this.parts) {
+      const faint = this.focused !== null;
+      const o = p.opacity * (faint ? 0.35 : 1) * (this.selected && this.selected !== p ? 0.15 : 1);
+      p.material.opacity = o;
+      p.material.transparent = o < 1;
+      p.material.depthWrite = o >= 1;
     }
     this.invalidate();
   }
 
   setSlice(slice: SlicePlane | null) {
     this.clearGroup(this.sliceGroup);
+    this.sliceMap = null;
     if (slice) {
       const [w, h] = slice.size;
       const u = this.unit;
-      const map = slice.texture === undefined ? null : typeof slice.texture === "string" ? new TextureLoader().load(slice.texture, () => this.invalidate()) : new CanvasTexture(slice.texture as HTMLCanvasElement);
-      if (map) map.colorSpace = SRGBColorSpace;
-      const plane = new Mesh(new PlaneGeometry(w / u, h / u), new MeshBasicMaterial({ map, color: map ? 0xffffff : 0x6aa7ff, transparent: true, opacity: map ? 0.92 : 0.18, side: DoubleSide, depthWrite: false }));
-      const edge = new LineSegments(new EdgesGeometry(plane.geometry), new LineBasicMaterial({ color: 0x6aa7ff }));
+      // Only marks where the slice is: the picture itself is in the slice view beside, and drawn
+      // here it would hide the model. A faint sheet of glass with a bright rim.
+      const plane = new Mesh(new PlaneGeometry(w / u, h / u), new MeshBasicMaterial({ color: 0x6aa7ff, transparent: true, opacity: 0.1, side: DoubleSide, depthWrite: false }));
+      const edge = new LineSegments(new EdgesGeometry(plane.geometry), new LineBasicMaterial({ color: 0x9cc4ff, transparent: true, opacity: 0.7 }));
       const holder = new Group();
       holder.add(plane, edge);
       holder.position.set(...slice.origin).divideScalar(u);
-      holder.quaternion.copy(new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...slice.normal).normalize()));
+      if (slice.axes) {
+        // The picture's right and up given: the plane turned so its x and y lie on them.
+        const x = new Vector3(...slice.axes[0]).normalize();
+        const y = new Vector3(...slice.axes[1]).normalize();
+        holder.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(x, y, x.clone().cross(y)));
+      } else holder.quaternion.copy(new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...slice.normal).normalize()));
       holder.renderOrder = 1;
       this.sliceGroup.add(holder);
     }
+    this.invalidate();
+  }
+
+  /** The slice's picture (a canvas) was drawn again. */
+  touchSlice() {
+    if (this.sliceMap) this.sliceMap.needsUpdate = true;
     this.invalidate();
   }
 
@@ -408,11 +593,26 @@ export class Viewer {
       g.font = "bold 44px system-ui, sans-serif";
       g.textAlign = "center";
       g.textBaseline = "middle";
-      g.fillText("XYZ"[i], 32, 34);
+      g.fillText(this.patient ? "LPS"[i] : "XYZ"[i], 32, 34);
       const label = new Sprite(new SpriteMaterial({ map: new CanvasTexture(c), depthTest: false }));
       label.position.copy(d).multiplyScalar(1.35);
       label.scale.setScalar(0.5);
       this.gizmo.add(label);
+      // The opposite sides, fainter, at the other ends: R, A, I.
+      if (this.patient) {
+        const c2 = document.createElement("canvas");
+        c2.width = c2.height = 64;
+        const g2 = c2.getContext("2d")!;
+        g2.fillStyle = "#9aa0ab";
+        g2.font = "bold 40px system-ui, sans-serif";
+        g2.textAlign = "center";
+        g2.textBaseline = "middle";
+        g2.fillText("RAI"[i], 32, 34);
+        const back = new Sprite(new SpriteMaterial({ map: new CanvasTexture(c2), depthTest: false }));
+        back.position.copy(d).multiplyScalar(-1.1);
+        back.scale.setScalar(0.42);
+        this.gizmo.add(back);
+      }
     });
   }
 
@@ -425,11 +625,16 @@ export class Viewer {
 
   /** The visible, uncut part under a point. */
   private pick(ndc: Vector2): Part | null {
+    return this.hit(ndc)?.part ?? null;
+  }
+
+  private hit(ndc: Vector2): { part: Part; point: Vector3 } | null {
     this.raycaster.setFromCamera(ndc, this.camera);
-    const meshes = this.parts.filter((p) => p.mesh.visible).map((p) => p.mesh);
+    const meshes = this.parts.filter((p) => p.mesh.visible && p.material.opacity > 0.05).map((p) => p.mesh);
     for (const hit of this.raycaster.intersectObjects(meshes, false)) {
       if (this.clipOn && this.clip.distanceToPoint(hit.point) < 0) continue;
-      return this.parts.find((p) => p.mesh === hit.object) ?? null;
+      const part = this.parts.find((p) => p.mesh === hit.object);
+      if (part) return { part, point: hit.point };
     }
     return null;
   }
@@ -442,8 +647,9 @@ export class Viewer {
     const d = this.down;
     this.down = null;
     if (!d || e.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
-    const p = this.pick(this.toNdc(e));
-    this.select(p ? p.id : null);
+    const h = this.hit(this.toNdc(e));
+    this.select(h ? h.part.id : null);
+    if (h) this.events.point?.([h.point.x * this.unit, h.point.y * this.unit, h.point.z * this.unit]);
   };
 
   private onMove = (e: PointerEvent) => {
@@ -463,7 +669,16 @@ export class Viewer {
 
   // ── drawing ──
 
-  invalidate() {
+  /** OrbitControls takes the camera's up only when made: tell it again, or a drag orbits round
+   *  the old up and turns the model the wrong way. */
+  private syncUp() {
+    const c = this.controls as unknown as { _quat?: Quaternion; _quatInverse?: Quaternion };
+    if (!c._quat || !c._quatInverse) return;
+    c._quat.setFromUnitVectors(this.camera.up, new Vector3(0, 1, 0));
+    c._quatInverse.copy(c._quat).invert();
+  }
+
+    invalidate() {
     this.dirty = true;
   }
 
@@ -488,6 +703,7 @@ export class Viewer {
         this.renderer.domElement.style.cursor = p ? "pointer" : "";
       }
     }
+    if (this.flashes.size) this.restyleFindings();
     if (!this.dirty) return;
     this.dirty = false;
     const r = this.renderer;
@@ -521,6 +737,10 @@ export class Viewer {
     this.clearGroup(this.findingsGroup);
     this.clearGroup(this.sliceGroup);
     for (const p of this.parts) {
+      for (const c of p.caps) {
+        (c.material as Material).dispose();
+        if (c.geometry !== p.mesh.geometry) c.geometry.dispose();
+      }
       p.mesh.geometry.dispose();
       p.material.map?.dispose();
       p.material.dispose();

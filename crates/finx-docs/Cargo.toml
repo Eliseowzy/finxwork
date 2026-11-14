@@ -12,6 +12,7 @@ base64.workspace = true
 finx-protocol.workspace = true
 finx-sheet.workspace = true
 finx-slide.workspace = true
+finx-spatial.workspace = true
 finx-word.workspace = true
 parking_lot.workspace = true
 png.workspace = true

@@ -75,6 +75,11 @@ pub fn document() -> Value {
             name::<crate::doc::DocApplyResult>(g),
         ),
         (
+            method::DOC_OPS,
+            Some(name::<crate::doc::DocOpsParams>(g)),
+            name::<crate::doc::DocOpsResult>(g),
+        ),
+        (
             method::DOC_UNDO,
             Some(name::<crate::doc::DocIdParams>(g)),
             name::<crate::doc::DocApplyResult>(g),
@@ -348,6 +353,7 @@ pub fn document() -> Value {
         (method::DOCX_SYNC, name::<docx::DocxSyncNotice>(g)),
         (method::DOCX_CHANGED, name::<docx::DocxChangedParams>(g)),
         (method::DOC_CHANGED, name::<crate::doc::DocChangedParams>(g)),
+        (method::SPATIAL_VIEW, name::<crate::doc::SpatialViewParams>(g)),
         (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
@@ -427,6 +433,7 @@ pub fn stability(name: &str) -> &'static str {
         "connectors/",
         "doc/",
         "docx/",
+        "spatial/",
         "pptx/",
         "bots/",
         "browser/",

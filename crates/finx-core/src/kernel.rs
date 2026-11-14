@@ -268,6 +268,16 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
                 }
             }),
         }));
+        let mut script_handle = crate::spatial_script::ScriptHandle::new(
+            Arc::new(crate::spatial::SpatialScriptData::new(store.clone(), launch.root_id.clone())),
+            launch.home.clone(),
+        );
+        for p in crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd()).iter() {
+            if !script_handle.skill_roots.contains(p) {
+                script_handle.skill_roots.push(p.clone());
+            }
+        }
+        tool_state.insert(Arc::new(script_handle));
     }
     let own_folder = launch.home.private_folder(&crate::protected::canonical_lossy(launch.deps.env.cwd()));
     let session = Arc::new(Session {

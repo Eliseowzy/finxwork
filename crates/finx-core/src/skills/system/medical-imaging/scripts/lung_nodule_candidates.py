@@ -2,7 +2,7 @@
 
 Run through `spatial_script`. Input: one JSON string in argv[1], all optional:
   {"min_mm": 3, "max_mm": 30, "max_candidates": 30, "region": "lung_right"}
-  region: a segment name from recipes/chest.json (default "lungs").
+  region: a structure built by scripts/chest_structures.py (default "lungs").
 
 Output (also submitted with submit.candidates): a list of candidates, each
   {"id": int, "center_voxel": [k, j, i], "diameter_mm": float,

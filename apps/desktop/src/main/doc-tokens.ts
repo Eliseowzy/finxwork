@@ -3,7 +3,7 @@ import path from "node:path";
 
 // What finxdoc:// answers to (main/docs.ts), kept apart from Electron to be tested.
 
-/** The working copy a token stands for, or null. */
+/** The working copy or spatial cache file a token stands for, or null. */
 export function tokenFile(home: string, url: string): string | null {
   let u: URL;
   try {
@@ -11,7 +11,7 @@ export function tokenFile(home: string, url: string): string | null {
   } catch {
     return null;
   }
-  if (!/^[0-9a-f]{32}$/.test(u.host) || u.pathname !== "/current.pdf") return null;
+  if (!/^[0-9a-f]{32}$/.test(u.host)) return null;
   const docs = path.join(home, "docs");
   let id: string;
   try {
@@ -19,7 +19,16 @@ export function tokenFile(home: string, url: string): string | null {
   } catch {
     return null;
   }
-  return /^[0-9a-f]{16}$/.test(id) ? path.join(docs, id, "current.pdf") : null;
+  if (!/^[0-9a-f]{16}$/.test(id)) return null;
+  if (u.pathname === "/current.pdf") return path.join(docs, id, "current.pdf");
+  const spatial = path.join(home, "cache", "spatial", id);
+  if (u.pathname === "/spatial/index.json") return path.join(spatial, "volume", "index.json");
+  if (u.pathname === "/spatial/bricks.bin") return path.join(spatial, "volume", "bricks.bin");
+  const mesh = /^\/spatial\/mesh\/([A-Za-z0-9._-]+)\/(\d+)\.bin$/.exec(u.pathname);
+  if (mesh && mesh[1] !== "." && mesh[1] !== "..") {
+    return path.join(spatial, "mesh", mesh[1], `${mesh[2]}.bin`);
+  }
+  return null;
 }
 
 /** `bytes=a-b`, `bytes=a-` or `bytes=-n` within `size`, or null for the whole file. */

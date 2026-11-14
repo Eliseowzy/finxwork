@@ -109,6 +109,24 @@ export type Anchor = {
   page: number;
   quads: Rect[];
   text: string;
+} | {
+  kind: "spatial_point";
+  position_mm: number[];
+} | {
+  index: number;
+  kind: "spatial_slice";
+  plane: SpatialPlane;
+  rect?: SliceRect | null;
+} | {
+  id: string;
+  kind: "spatial_part";
+} | {
+  id: string;
+  kind: "spatial_finding";
+} | {
+  camera?: SpatialCamera | null;
+  kind: "spatial_view";
+  slice?: SpatialSliceAt | null;
 };
 
 export type AnimationClass = "entrance" | "emphasis" | "exit";
@@ -1906,7 +1924,7 @@ export type DocFindParams = {
   session_id: string;
 };
 
-export type DocFormat = "pdf" | "xlsx" | "xlsm" | "csv" | "xls";
+export type DocFormat = "pdf" | "xlsx" | "xlsm" | "csv" | "xls" | "spatial";
 
 export type DocFoundResult = {
   /** At most 500 for a trace, `limit` for a search; `more` when there were others. */
@@ -1939,9 +1957,11 @@ export type DocInfo = {
   scanned?: boolean;
   /** A spreadsheet's sheets, in workbook order. */
   sheets?: SheetInfo[];
+  /** A three-dimensional document's layers. */
+  spatial?: SpatialInfo | null;
 };
 
-export type DocLayout = "paged" | "flow" | "grid";
+export type DocLayout = "paged" | "flow" | "grid" | "space";
 
 /** A citation's target in an open document: `p12.b3` (a block) or `p12` (a page). */
 export type DocLocateParams = {
@@ -1953,6 +1973,28 @@ export type DocLocateParams = {
 export type DocLocateResult = {
   /** A block's text and lines, or the page. */
   anchor: Anchor;
+};
+
+/** One change to a three-dimensional document's layers (§13). Each adds the item, or replaces the one with its id; a finding's `source` cannot change once made. */
+export type DocOp = {
+  op: "spatial_structure";
+  structure: SpatialStructure;
+} | {
+  marker: SpatialMarker;
+  op: "spatial_marker";
+} | {
+  measure: SpatialMeasure;
+  op: "spatial_measure";
+} | {
+  finding: SpatialFinding;
+  op: "spatial_finding";
+} | {
+  op: "spatial_profile";
+  profile: SpatialProfile;
+} | {
+  id: string;
+  layer: SpatialLayer;
+  op: "spatial_remove";
 };
 
 export type DocOpenParams = {
@@ -1969,6 +2011,19 @@ export type DocOpenResult = {
   password?: string | null;
   /** Reads the working copy: `finxdoc://<token>/current.pdf` (§7.3). */
   token: string;
+};
+
+/** `doc/ops`: a person's marks and measures in the 3D view, as one revision. */
+export type DocOpsParams = {
+  base_revision?: number | null;
+  doc_id: string;
+  ops: DocOp[];
+  session_id: string;
+};
+
+export type DocOpsResult = {
+  info: DocInfo;
+  revision: number;
 };
 
 export type DocRecalcParams = {
@@ -1993,6 +2048,8 @@ export type DocResolveParams = {
 
 export type DocResolveResult = {
   anchor: Anchor;
+  /** The block the text starts in (`p12.b3`), for a region as for a selection: what a citation of it names. */
+  block?: string | null;
   /** The boxes of the characters the kernel took: the interface draws the selection with them. */
   boxes: Rect[];
   /** The pages after the first, for a selection that goes on (`more`); `text` is all of it. */
@@ -2614,6 +2671,9 @@ export type FillSpec = {
   source: PictureSource;
 };
 
+/** Who a finding (or a marker) comes from; set when it is made, never changed (§3). */
+export type FindingSource = "ai" | "user" | "reference";
+
 /** The date in the footer. */
 export type FooterDate = {
   kind: "hidden";
@@ -3096,6 +3156,8 @@ export type McpToolsResult = {
 export type McpToolsSource = "session" | "cache" | "none";
 
 export type McpTransportKind = "stdio" | "http" | "sse";
+
+export type MeshSource = "file" | "structure";
 
 /** A message of the conversation. The parts are shared: the session history and every request built from it point at the same data, so cloning a message is cheap. */
 export type Message = {
@@ -4244,6 +4306,14 @@ export type SkillsSetEnabledResult = {
   removed_names?: string[];
 };
 
+/** A box on a slice, in voxels of the slice's two axes: `[u0, u1)`, `[v0, v1)`. */
+export type SliceRect = {
+  u0: number;
+  u1: number;
+  v0: number;
+  v1: number;
+};
+
 export type SlideChangeKind = "changed" | "inserted" | "deleted" | "moved";
 
 /** What a batch or proposal does to one slide, for the canvas markers and the approval card. */
@@ -4324,6 +4394,154 @@ export type SnapshotResult = {
   snapshot: SessionSnapshot;
 };
 
+/** A 3D camera, LPS mm. */
+export type SpatialCamera = {
+  position: number[];
+  target: number[];
+  up?: number[] | null;
+};
+
+export type SpatialFinding = {
+  /** What it rests on, in words a person can check (a slice, a structure, a computed value). */
+  evidence?: string[];
+  id: string;
+  measures?: SpatialMeasureValue[];
+  name: string;
+  position_mm?: number[] | null;
+  radius_mm?: number | null;
+  /** The report's item it stands for (a reference finding's line, or one an AI finding locates). */
+  report_item?: string | null;
+  source: FindingSource;
+  summary: string;
+  view?: SpatialViewAt | null;
+};
+
+/** A three-dimensional document's layers (`DocInfo.spatial`). */
+export type SpatialInfo = {
+  findings: SpatialFinding[];
+  kind: SpatialKind;
+  markers: SpatialMarker[];
+  measures: SpatialMeasure[];
+  meshes: SpatialMesh[];
+  profile?: SpatialProfile | null;
+  structures: SpatialStructure[];
+  volume?: SpatialVolume | null;
+};
+
+export type SpatialKind = "volume" | "mesh";
+
+/** What a layer is, to remove one. */
+export type SpatialLayer = "structure" | "marker" | "measure" | "finding";
+
+export type SpatialMarker = {
+  id: string;
+  label: string;
+  position_mm: number[];
+  source: FindingSource;
+};
+
+/** A length between two points; `length_mm` is the kernel's. */
+export type SpatialMeasure = {
+  from_mm: number[];
+  id: string;
+  label?: string;
+  length_mm?: number;
+  source: FindingSource;
+  to_mm: number[];
+};
+
+/** A number a finding states, worked out by the kernel. */
+export type SpatialMeasureValue = {
+  name: string;
+  unit?: string | null;
+  value: number;
+};
+
+export type SpatialMesh = {
+  /** `#rrggbb`. */
+  color: string;
+  id: string;
+  /** Levels of detail at `spatial/mesh/<id>/<lod>.bin`, 0 the finest. */
+  lods: number;
+  name: string;
+  opacity: number;
+  source: MeshSource;
+};
+
+export type SpatialPlane = "axial" | "coronal" | "sagittal";
+
+/** A skill's display settings (spatial-design §5.2 `profile`). */
+export type SpatialProfile = {
+  /** Shown whenever there is an `ai` finding. */
+  disclaimer?: string | null;
+  /** `patient` (L/R, A/P, S/I shown) or `none`. */
+  orientation?: string | null;
+  unit?: string | null;
+  /** `[name, width, level]`, in order. */
+  windows?: unknown[][];
+};
+
+/** A series found in the files opened. */
+export type SpatialSeries = {
+  description: string;
+  /** Why it cannot be a volume. */
+  reason?: string | null;
+  slices: number;
+  spacing_mm?: number | null;
+  uid: string;
+  usable: boolean;
+};
+
+export type SpatialSliceAt = {
+  index: number;
+  plane: SpatialPlane;
+};
+
+export type SpatialStructure = {
+  color: string;
+  hidden?: boolean;
+  id: string;
+  /** Its mask, in the cache: `masks/<id>.bin`. */
+  mask?: string | null;
+  name: string;
+  opacity: number;
+  /** Where it came from: `script:run_<n>`, `user`. */
+  origin?: string | null;
+  stats?: StructureStats;
+};
+
+/** Where a finding is looked at from. */
+export type SpatialViewAt = {
+  camera?: SpatialCamera | null;
+  slice?: SpatialSliceAt | null;
+};
+
+/** `spatial/view`: the agent asks the person's view to turn to something (it does not move by itself otherwise). */
+export type SpatialViewParams = {
+  doc_id: string;
+  session_id: string;
+  target: Anchor;
+};
+
+export type SpatialVolume = {
+  dims: number[];
+  /** The directions of i, j and k, LPS. */
+  direction: number[][];
+  /** Levels of the brick pyramid. */
+  levels: number;
+  /** The first voxel's centre, LPS mm. */
+  origin: number[];
+  /** The series shown: its uid. */
+  picked: string;
+  /** Why that one. */
+  reason: string;
+  series: SpatialSeries[];
+  /** mm along i, j, k. */
+  spacing: number[];
+  /** The values' unit when calibrated (`HU`); none for raw grey levels. */
+  unit?: string | null;
+};
+
 export type Speaker = "user" | "bot";
 
 export type StopReason = "stop" | "length" | "tool_use" | "error" | "aborted";
@@ -4342,6 +4560,12 @@ export type StrikeStyle = "none" | "single" | "double";
 
 /** What `doc/structure` does: Excel's 插入 / 删除 of whole rows or columns. */
 export type StructureKind = "insert_rows" | "delete_rows" | "insert_columns" | "delete_columns";
+
+export type StructureStats = {
+  centroid?: number[] | null;
+  max_diameter_mm: number;
+  volume_mm3: number;
+};
 
 /** One change to a table's structure or look. Cell text is edited as text: every cell is a story (`deck/read` lists their `story_id`s), or `set_cells`. */
 export type TableEdit = {
@@ -4810,6 +5034,7 @@ export interface Methods {
   "doc/find": [DocFindParams, DocFoundResult];
   "doc/locate": [DocLocateParams, DocLocateResult];
   "doc/open": [DocOpenParams, DocOpenResult];
+  "doc/ops": [DocOpsParams, DocOpsResult];
   "doc/recalc": [DocRecalcParams, DocApplyResult];
   "doc/redo": [DocIdParams, DocApplyResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
@@ -4909,6 +5134,7 @@ export interface ServerNotifications {
   "session/event": SessionEventParams;
   "sessions/changed": SessionsChangedParams;
   "skills/changed": SkillsChangedParams;
+  "spatial/view": SpatialViewParams;
 }
 
 /** Notifications: their params. */

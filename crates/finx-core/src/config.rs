@@ -38,6 +38,7 @@ pub struct ConfigFile {
     pub browser: Option<BrowserFile>,
     pub desktop: Option<DesktopFile>,
     pub web_search: Option<WebSearchFile>,
+    pub spatial: Option<SpatialFile>,
     pub models: Option<ModelsFile>,
     pub ui: Option<UiFile>,
     pub history: Option<HistoryFile>,
@@ -291,6 +292,30 @@ impl DesktopSettings {
     /// The configured level of `app`, by bundle id or name.
     pub fn app(&self, app: &str) -> Option<AppLevel> {
         self.apps.get(&app.trim().to_lowercase()).copied()
+    }
+}
+
+/// `[spatial]`: 3D volume and mesh tools.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SpatialFile {
+    pub enabled: Option<bool>,
+}
+
+/// `[spatial]` with its defaults applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpatialSettings {
+    pub enabled: bool,
+}
+
+impl Default for SpatialSettings {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl SpatialSettings {
+    fn from_file(file: SpatialFile) -> Self {
+        Self { enabled: file.enabled.unwrap_or(true) }
     }
 }
 
@@ -554,6 +579,7 @@ pub struct Config {
     pub browser: BrowserSettings,
     pub desktop: DesktopSettings,
     pub web_search: WebSearchSettings,
+    pub spatial: SpatialSettings,
     /// Refresh model lists and the public catalog in the background (`[models] network`).
     pub models_network: bool,
     /// The configured servers by name, names filled in; not yet validated.
@@ -601,6 +627,7 @@ impl Config {
         let browser = BrowserSettings::from_file(file.browser.unwrap_or_default())?;
         let desktop = DesktopSettings::from_file(file.desktop.unwrap_or_default())?;
         let web_search = WebSearchSettings::from_file(file.web_search.unwrap_or_default());
+        let spatial = SpatialSettings::from_file(file.spatial.unwrap_or_default());
         let threshold = compaction.threshold.unwrap_or(0.9);
         if !(0.1..=1.0).contains(&threshold) {
             return Err(ConfigError::Invalid(format!(
@@ -682,6 +709,7 @@ impl Config {
             browser,
             desktop,
             web_search,
+            spatial,
             models_network: file.models.and_then(|m| m.network).unwrap_or(true),
             mcp_servers: file
                 .mcp_servers
@@ -1035,6 +1063,7 @@ fn known_keys(table: &str) -> &'static [&'static str] {
         "browser" => fields_of::<BrowserFile>(),
         "desktop" => fields_of::<DesktopFile>(),
         "web_search" => fields_of::<WebSearchFile>(),
+        "spatial" => fields_of::<SpatialFile>(),
         "models" => fields_of::<ModelsFile>(),
         "ui" => fields_of::<UiFile>(),
         "history" => fields_of::<HistoryFile>(),

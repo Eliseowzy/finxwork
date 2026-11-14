@@ -98,7 +98,7 @@ impl Server {
             return Err(RpcError::invalid_params("give quads or rect"));
         }
         let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
-        let (anchor, mut text, boxes) = self.0.docs.resolve(&doc, p.page, &p.quads, p.rect).await.map_err(rpc_error)?;
+        let (anchor, mut text, boxes, block) = self.0.docs.resolve(&doc, p.page, &p.quads, p.rect).await.map_err(rpc_error)?;
         let mut more = Vec::new();
         let mut last = p.page;
         for part in &p.more {
@@ -106,13 +106,13 @@ impl Server {
                 return Err(RpcError::invalid_params("more: pages after `page`, in order, each with quads"));
             }
             last = part.page;
-            let (anchor, part_text, boxes) = self.0.docs.resolve(&doc, part.page, &part.quads, None).await.map_err(rpc_error)?;
+            let (anchor, part_text, boxes, _) = self.0.docs.resolve(&doc, part.page, &part.quads, None).await.map_err(rpc_error)?;
             if !part_text.is_empty() {
                 text = finx_docs::layout::join_texts(&[text, part_text]);
             }
             more.push(ResolvedPart { anchor, boxes });
         }
-        Ok(DocResolveResult { anchor, text, boxes, more })
+        Ok(DocResolveResult { anchor, text, boxes, more, block })
     }
 
     pub(crate) async fn doc_locate(&self, p: DocLocateParams) -> Result<DocLocateResult, RpcError> {

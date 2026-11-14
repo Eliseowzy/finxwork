@@ -43,6 +43,7 @@ finx-mcp = { path = "crates/finx-mcp" }
 finx-browser = { path = "crates/finx-browser" }
 finx-desktop = { path = "crates/finx-desktop" }
 finx-docs = { path = "crates/finx-docs" }
+finx-spatial = { path = "crates/finx-spatial" }
 finx-sheet = { path = "crates/finx-sheet" }
 finx-eval = { path = "crates/finx-eval" }
 finx-slide = { path = "crates/finx-slide" }

@@ -15,6 +15,8 @@ pub enum DocKind {
     Tsv,
     /// A legacy binary workbook: read only.
     Xls,
+    /// A volume or a mesh (spatial-design §3): found by `spatial::detect`, never by `detect`.
+    Spatial,
 }
 
 /// Why a file is not opened.
@@ -69,11 +71,12 @@ impl DocKind {
             Self::Csv => "csv",
             Self::Tsv => "tsv",
             Self::Xls => "xls",
+            Self::Spatial => "spatial",
         }
     }
 
     pub fn is_sheet(self) -> bool {
-        self != Self::Pdf
+        !matches!(self, Self::Pdf | Self::Spatial)
     }
 
     /// Values only, no styles or calculation (spreadsheet-design §10).
@@ -83,7 +86,7 @@ impl DocKind {
 
     /// Never written here.
     pub fn read_only(self) -> bool {
-        self == Self::Xls
+        matches!(self, Self::Xls | Self::Spatial)
     }
 
     pub fn format(self) -> DocFormat {
@@ -93,18 +96,23 @@ impl DocKind {
             Self::Xlsm => DocFormat::Xlsm,
             Self::Csv | Self::Tsv => DocFormat::Csv,
             Self::Xls => DocFormat::Xls,
+            Self::Spatial => DocFormat::Spatial,
         }
     }
 
     pub fn layout(self) -> DocLayout {
-        if self.is_sheet() { DocLayout::Grid } else { DocLayout::Paged }
+        match self {
+            Self::Spatial => DocLayout::Space,
+            _ if self.is_sheet() => DocLayout::Grid,
+            _ => DocLayout::Paged,
+        }
     }
 
     /// A workbook's edit capabilities (a PDF's depend on what is in it).
     pub fn sheet_capabilities(self) -> Vec<Capability> {
         let mut out = vec![Capability::View, Capability::Cells];
         match self {
-            Self::Pdf | Self::Xls => {}
+            Self::Pdf | Self::Xls | Self::Spatial => {}
             Self::Csv | Self::Tsv => out.push(Capability::EditValues),
             Self::Xlsx | Self::Xlsm => out.extend([Capability::EditValues, Capability::EditFormulas]),
         }

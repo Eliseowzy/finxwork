@@ -13,6 +13,9 @@ const image = /\.(png|jpe?g|gif|webp|svg|bmp|ico|heic|tiff?)$/i;
 /** Opens as finx's document (pdf.js, or the workbook grid), not read as text. */
 export const opensAsDoc = (path: string) => doc.test(path);
 
+/** May be a CT or MRI study (spatial-design §7): finx is asked, and says when it is not one. */
+export const mayBeStudy = (path: string) => /\.(zip|dcm)$/i.test(path);
+
 /** An object-based presentation editor, opened in the browser's own WASM session. */
 export const isPresentation = (path: string) => /\.pptx$/i.test(path);
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeMesh, encodeMesh, needsDisclaimer, partQuote, sealFindings, type Finding } from "./model.ts";
+import { decodeMesh, encodeFxms, encodeMesh, FXMS_HEADER, needsDisclaimer, partQuote, sealFindings, type Finding } from "./model.ts";
 
 test("a mesh comes back as it was sent", () => {
   const positions = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1.5];
@@ -55,4 +55,42 @@ test("findings are copied and frozen; a bad one is dropped", () => {
 
 test("a part's quote", () => {
   assert.equal(partQuote("三维", "a.glb", "Sphere", [20, 12.5, 8]), "三维 · a.glb · Sphere · 20.0 × 12.5 × 8.00 mm");
+});
+
+test("the kernel's FXMS mesh: header, bounds, normals", () => {
+  const positions = [0, 0, 0, 2, 0, 0, 0, 3, -1];
+  const normals = [0, 0, 1, 0, 0, 1, 0, 0, 1];
+  const m = decodeMesh(encodeFxms(positions, [0, 1, 2], normals));
+  assert.deepEqual([...m.positions], positions);
+  assert.deepEqual([...m.normals!], normals);
+  assert.deepEqual([...m.indices], [0, 1, 2]);
+  assert.deepEqual(m.bounds, [[0, 0, -1], [2, 3, 0]]);
+  const plain = decodeMesh(encodeFxms(positions, [0, 1, 2]));
+  assert.equal(plain.normals, undefined);
+});
+
+test("FXMS is read byte by byte as mesh.rs writes it", () => {
+  // 'FXMS', v1, flags 0, 3 vertices, 3 indices, bounds, 8 zero bytes; then vertices and indices.
+  const b = new ArrayBuffer(FXMS_HEADER + 36 + 12);
+  const v = new DataView(b);
+  [0x46, 0x58, 0x4d, 0x53].forEach((c, i) => v.setUint8(i, c));
+  v.setUint16(4, 1, true);
+  v.setUint32(8, 3, true);
+  v.setUint32(12, 3, true);
+  v.setFloat32(FXMS_HEADER + 12, 7.5, true);
+  v.setUint32(FXMS_HEADER + 36 + 4, 1, true);
+  v.setUint32(FXMS_HEADER + 36 + 8, 2, true);
+  const m = decodeMesh(b);
+  assert.equal(m.positions[3], 7.5);
+  assert.deepEqual([...m.indices], [0, 1, 2]);
+});
+
+test("a broken FXMS mesh is refused", () => {
+  const ok = encodeFxms([0, 0, 0, 1, 0, 0, 0, 1, 0], [0, 1, 2], [0, 0, 1, 0, 0, 1, 0, 0, 1]);
+  assert.throws(() => decodeMesh(ok.slice(0, 20)), /header/);
+  assert.throws(() => decodeMesh(ok.slice(0, ok.byteLength - 4)), /header says/);
+  const v2 = ok.slice(0);
+  new DataView(v2).setUint16(4, 2, true);
+  assert.throws(() => decodeMesh(v2), /version/);
+  assert.throws(() => decodeMesh(encodeFxms([0, 0, 0, 1, 0, 0, 0, 1, 0], [0, 1, 9])), /past 3 vertices/);
 });

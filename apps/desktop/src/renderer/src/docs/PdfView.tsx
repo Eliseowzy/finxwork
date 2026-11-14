@@ -209,7 +209,7 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
   const go = async (anchor: Anchor) => {
     await ready.current;
     const v = viewer.current;
-    if (!v) return;
+    if (!v || !("page" in anchor)) return;
     const rects = anchor.kind === "text" ? anchor.quads : anchor.kind === "region" ? [anchor.rect] : [];
     const top = rects.reduce((m, r) => Math.max(m, r.y1), -Infinity);
     v.scrollPageIntoView({ pageNumber: anchor.page, destArray: rects.length ? [null, { name: "XYZ" }, null, top + 36, null] : undefined, allowNegativeOffset: true });
@@ -330,13 +330,14 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
     setAdding(true);
     try {
       const r = await rpc.request("doc/resolve", { session_id: session, doc_id: docId, page: p.page, quads: p.quads, rect: p.rect, more: p.more });
-      const block = r.anchor.kind === "text" ? (r.anchor.block ?? undefined) : undefined;
+      // A region names its block too, so the model can cite the passage, not only the page.
+      const block = r.block ?? (r.anchor.kind === "text" ? (r.anchor.block ?? undefined) : undefined);
       const toPage = p.more.at(-1)?.page;
       const comment = note.trim() || undefined;
       quoteToComposer(session, { quote: { path: tab.info.path, doc_id: docId, page: p.page, text: r.text, block, anchor: r.anchor, region: p.rect ? true : undefined, to_page: toPage, comment }, image: p.image });
       // Over the window (a preview), the composer it went to is out of sight.
       scope?.leave?.();
-      const parts = [{ page: p.page, rects: r.boxes.length ? r.boxes : p.rect ? [p.rect] : [] }, ...(r.more ?? []).map((m) => ({ page: m.anchor.page, rects: m.boxes }))];
+      const parts = [{ page: p.page, rects: r.boxes.length ? r.boxes : p.rect ? [p.rect] : [] }, ...(r.more ?? []).map((m) => ({ page: "page" in m.anchor ? m.anchor.page : p.page, rects: m.boxes }))];
       setFlash({ parts, seq: Date.now() });
       setPending(null);
       window.getSelection()?.removeAllRanges();

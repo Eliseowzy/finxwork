@@ -60,14 +60,316 @@ pub enum Anchor {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         block: Option<String>,
     },
+    /// A point of a three-dimensional document (spatial-design §3, §13): a voxel or a mesh
+    /// surface, LPS mm.
+    SpatialPoint { position_mm: [f64; 3] },
+    /// A slice, or a box drawn on it.
+    SpatialSlice {
+        plane: SpatialPlane,
+        index: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rect: Option<SliceRect>,
+    },
+    /// A structure or a mesh.
+    SpatialPart { id: String },
+    SpatialFinding { id: String },
+    /// A viewpoint: the 3D camera, the slice shown, or both.
+    SpatialView {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        camera: Option<SpatialCamera>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slice: Option<SpatialSliceAt>,
+    },
 }
 
 impl Anchor {
+    /// The page of a page anchor; 0 for the anchors of three-dimensional documents, which have none.
     pub fn page(&self) -> u32 {
         match self {
             Anchor::Page { page } | Anchor::Region { page, .. } | Anchor::Text { page, .. } => *page,
+            _ => 0,
         }
     }
+
+    /// A place in a three-dimensional document, not on a page.
+    pub fn is_spatial(&self) -> bool {
+        !matches!(self, Anchor::Page { .. } | Anchor::Region { .. } | Anchor::Text { .. })
+    }
+}
+
+// ---- three-dimensional documents (spatial-design §3, §13) ----
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SpatialPlane {
+    Axial,
+    Coronal,
+    Sagittal,
+}
+
+/// A box on a slice, in voxels of the slice's two axes: `[u0, u1)`, `[v0, v1)`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SliceRect {
+    pub u0: u32,
+    pub v0: u32,
+    pub u1: u32,
+    pub v1: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSliceAt {
+    pub plane: SpatialPlane,
+    pub index: u32,
+}
+
+/// A 3D camera, LPS mm.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialCamera {
+    pub position: [f64; 3],
+    pub target: [f64; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub up: Option<[f64; 3]>,
+}
+
+/// Where a finding is looked at from.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialViewAt {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<SpatialCamera>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice: Option<SpatialSliceAt>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SpatialKind {
+    Volume,
+    Mesh,
+}
+
+/// A series found in the files opened.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSeries {
+    pub uid: String,
+    pub description: String,
+    pub slices: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing_mm: Option<f64>,
+    pub usable: bool,
+    /// Why it cannot be a volume.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialVolume {
+    pub dims: [u32; 3],
+    /// mm along i, j, k.
+    pub spacing: [f64; 3],
+    /// The first voxel's centre, LPS mm.
+    pub origin: [f64; 3],
+    /// The directions of i, j and k, LPS.
+    pub direction: [[f64; 3]; 3],
+    /// The values' unit when calibrated (`HU`); none for raw grey levels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// Levels of the brick pyramid.
+    pub levels: u32,
+    pub series: Vec<SpatialSeries>,
+    /// The series shown: its uid.
+    pub picked: String,
+    /// Why that one.
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MeshSource {
+    File,
+    Structure,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialMesh {
+    pub id: String,
+    pub name: String,
+    /// `#rrggbb`.
+    pub color: String,
+    pub opacity: f64,
+    pub source: MeshSource,
+    /// Levels of detail at `spatial/mesh/<id>/<lod>.bin`, 0 the finest.
+    pub lods: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct StructureStats {
+    pub volume_mm3: f64,
+    pub max_diameter_mm: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub centroid: Option<[f64; 3]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialStructure {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub opacity: f64,
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub stats: StructureStats,
+    /// Where it came from: `script:run_<n>`, `user`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// Its mask, in the cache: `masks/<id>.bin`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask: Option<String>,
+}
+
+/// Who a finding (or a marker) comes from; set when it is made, never changed (§3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingSource {
+    /// Authoritative material the user gave (in medicine, the doctor's report).
+    Reference,
+    Ai,
+    User,
+}
+
+/// A number a finding states, worked out by the kernel.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialMeasureValue {
+    pub name: String,
+    pub value: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialFinding {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    pub source: FindingSource,
+    /// The report's item it stands for (a reference finding's line, or one an AI finding locates).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_item: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_mm: Option<[f64; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius_mm: Option<f64>,
+    #[serde(default)]
+    pub measures: Vec<SpatialMeasureValue>,
+    /// What it rests on, in words a person can check (a slice, a structure, a computed value).
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<SpatialViewAt>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialMarker {
+    pub id: String,
+    pub position_mm: [f64; 3],
+    pub label: String,
+    pub source: FindingSource,
+}
+
+/// A length between two points; `length_mm` is the kernel's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialMeasure {
+    pub id: String,
+    pub from_mm: [f64; 3],
+    pub to_mm: [f64; 3],
+    #[serde(default)]
+    pub length_mm: f64,
+    #[serde(default)]
+    pub label: String,
+    pub source: FindingSource,
+}
+
+/// A skill's display settings (spatial-design §5.2 `profile`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialProfile {
+    /// `patient` (L/R, A/P, S/I shown) or `none`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// `[name, width, level]`, in order.
+    #[serde(default)]
+    pub windows: Vec<(String, f64, f64)>,
+    /// Shown whenever there is an `ai` finding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disclaimer: Option<String>,
+}
+
+/// A three-dimensional document's layers (`DocInfo.spatial`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialInfo {
+    pub kind: SpatialKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume: Option<SpatialVolume>,
+    #[serde(default)]
+    pub meshes: Vec<SpatialMesh>,
+    #[serde(default)]
+    pub structures: Vec<SpatialStructure>,
+    #[serde(default)]
+    pub findings: Vec<SpatialFinding>,
+    #[serde(default)]
+    pub markers: Vec<SpatialMarker>,
+    #[serde(default)]
+    pub measures: Vec<SpatialMeasure>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<SpatialProfile>,
+}
+
+/// What a layer is, to remove one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SpatialLayer {
+    Structure,
+    Marker,
+    Measure,
+    Finding,
+}
+
+/// One change to a three-dimensional document's layers (§13). Each adds the item, or replaces
+/// the one with its id; a finding's `source` cannot change once made.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum DocOp {
+    SpatialStructure { structure: SpatialStructure },
+    SpatialMarker { marker: SpatialMarker },
+    SpatialMeasure { measure: SpatialMeasure },
+    SpatialFinding { finding: SpatialFinding },
+    SpatialProfile { profile: SpatialProfile },
+    SpatialRemove { layer: SpatialLayer, id: String },
+}
+
+/// `doc/ops`: a person's marks and measures in the 3D view, as one revision.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocOpsParams {
+    pub session_id: String,
+    pub doc_id: String,
+    pub ops: Vec<DocOp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocOpsResult {
+    pub revision: u64,
+    pub info: DocInfo,
+}
+
+/// `spatial/view`: the agent asks the person's view to turn to something (it does not move by itself otherwise).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialViewParams {
+    pub session_id: String,
+    pub doc_id: String,
+    pub target: Anchor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -80,6 +382,8 @@ pub enum DocFormat {
     Csv,
     /// Excel 97–2003, read only (§10.2).
     Xls,
+    /// A volume (DICOM) or a mesh (STL, OBJ, PLY, GLB) (spatial-design §3).
+    Spatial,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -89,6 +393,8 @@ pub enum DocLayout {
     Flow,
     /// A spreadsheet (spreadsheet-design §4.1).
     Grid,
+    /// A three-dimensional document (spatial-design §4.2).
+    Space,
 }
 
 /// What a document supports (§4.5); toolbars and tool descriptions follow it.
@@ -142,6 +448,9 @@ pub struct DocInfo {
     /// A spreadsheet's sheets, in workbook order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sheets: Vec<SheetInfo>,
+    /// A three-dimensional document's layers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spatial: Option<SpatialInfo>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -400,6 +709,9 @@ pub struct DocResolveResult {
     /// The pages after the first, for a selection that goes on (`more`); `text` is all of it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub more: Vec<ResolvedPart>,
+    /// The block the text starts in (`p12.b3`), for a region as for a selection: what a citation of it names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<String>,
 }
 
 /// A citation's target in an open document: `p12.b3` (a block) or `p12` (a page).

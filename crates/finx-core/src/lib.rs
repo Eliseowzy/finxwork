@@ -40,6 +40,8 @@ pub mod rules;
 pub mod runtime;
 mod session;
 mod site_policy;
+mod spatial;
+mod spatial_script;
 pub mod skills;
 pub mod system;
 pub mod store;

@@ -1,12 +1,11 @@
 //! The 3D kernel (docs/desktop/spatial-design.md §4.1). Generic: no industry words. Readers find
-//! formats by content, volumes go to a brick cache, the algorithms work on labels and values, and
-//! a recipe (§5.2) strings the algorithms together into structures with meshes.
+//! formats by content, volumes go to a brick cache, and masks are measured and meshed. Dividing a
+//! volume into structures is not done here: a skill's script does it and hands back masks (§5.2).
 
 pub mod algo;
 pub mod brick;
 pub mod dicom;
 pub mod mesh;
-pub mod recipe;
 pub mod render;
 pub mod source;
 pub mod volume;

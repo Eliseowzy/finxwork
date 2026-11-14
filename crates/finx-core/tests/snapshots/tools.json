@@ -2169,6 +2169,796 @@
     }
   },
   {
+    "description": "Open a 3D volume (DICOM file, folder, or zip) or mesh (.stl, .obj, .ply, .glb) beside the conversation and return its doc_id and metadata.",
+    "group": "spatial",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "spatial_open",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Path to a DICOM file, a folder of DICOM files, a DICOM zip, or a mesh (.stl, .obj, .ply, .glb).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Return the current metadata and layers (volume geometry, series, meshes, structures, findings, markers, profile) of a 3D document.",
+    "group": "spatial",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "spatial_info",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "description": "Document id or path.",
+          "type": "string"
+        },
+        "survey": {
+          "default": false,
+          "description": "Also survey the volume's values before segmenting it: scanned extent, which way the axes run, a histogram (mL per 50-unit bin) and the background noise. Takes a few seconds.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Render one or more adjacent 2D slices of a volume as a PNG image, optionally zoomed around a 3D point, with slice index, mm/px, and edge orientations.",
+    "group": "spatial",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "spatial_slice",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "center_mm": {
+          "default": null,
+          "description": "Patient LPS point [x, y, z] in mm to zoom around.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "count": {
+          "default": null,
+          "description": "Number of consecutive slices to tile into one image (1..=9, default: 1).",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "doc": {
+          "description": "Document id or path.",
+          "type": "string"
+        },
+        "index": {
+          "default": null,
+          "description": "Slice index along the plane's fixed axis (default: middle slice, or nearest to center_mm).",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "plane": {
+          "description": "Slice plane: axial, coronal, or sagittal (default: axial).",
+          "enum": [
+            "axial",
+            "coronal",
+            "sagittal"
+          ],
+          "type": "string"
+        },
+        "radius_mm": {
+          "default": null,
+          "description": "Half-width in mm around center_mm when zooming (default: 40 mm).",
+          "type": "number"
+        },
+        "size": {
+          "default": null,
+          "description": "Longer side of each rendered slice in pixels (128..=1024, default: 512).",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "window": {
+          "default": null,
+          "description": "Value window [low, high] mapped from black to white (default: profile's first window or [-1000, 1000]).",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "window_name": {
+          "default": null,
+          "description": "Named window from the document's profile (e.g. \"lung\", \"mediastinum\", \"bone\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Compute or inspect exact statistics (voxels, volume_mm3, max_diameter_mm, centroid, bbox, and intensity distribution) for built structures.",
+    "group": "spatial",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "spatial_stats",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "description": "Document id or path.",
+          "type": "string"
+        },
+        "id": {
+          "default": null,
+          "description": "Structure id to compute full stats for; omit to list all structures' stats.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Place or update an AI marker at a 3D patient LPS coordinate (mm) on a spatial document.",
+    "group": "spatial",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "spatial_mark",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "description": "Document id or path.",
+          "type": "string"
+        },
+        "id": {
+          "default": null,
+          "description": "Optional marker id (generated if omitted).",
+          "type": "string"
+        },
+        "label": {
+          "description": "Short label for the marker.",
+          "type": "string"
+        },
+        "position_mm": {
+          "description": "Position [x, y, z] in patient LPS mm.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        }
+      },
+      "required": [
+        "doc",
+        "label",
+        "position_mm"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Compute the Euclidean distance in mm between two 3D points and record it on the spatial document.",
+    "group": "spatial",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "spatial_measure",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "description": "Document id or path.",
+          "type": "string"
+        },
+        "from_mm": {
+          "description": "First endpoint [x, y, z] in patient LPS mm.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "id": {
+          "default": null,
+          "description": "Optional measure id (generated if omitted).",
+          "type": "string"
+        },
+        "label": {
+          "default": null,
+          "description": "Optional label for the measurement.",
+          "type": "string"
+        },
+        "to_mm": {
+          "description": "Second endpoint [x, y, z] in patient LPS mm.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        }
+      },
+      "required": [
+        "doc",
+        "from_mm",
+        "to_mm"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Record or update a structured finding on a spatial document (its source cannot be changed after creation).",
+    "group": "spatial",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "spatial_finding",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "description": "Document id or path.",
+          "type": "string"
+        },
+        "evidence": {
+          "default": [],
+          "description": "Human-checkable evidence strings (slices, structures, computed values).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "default": null,
+          "description": "Optional finding id (generated if omitted).",
+          "type": "string"
+        },
+        "measures": {
+          "default": [],
+          "description": "Computed numeric measures attached to this finding.",
+          "items": {
+            "description": "A number a finding states, worked out by the kernel.",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "name",
+              "value"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "Finding title/name.",
+          "type": "string"
+        },
+        "position_mm": {
+          "default": null,
+          "description": "Optional 3D location [x, y, z] in patient LPS mm.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "radius_mm": {
+          "default": null,
+          "description": "Optional radius in mm.",
+          "type": "number"
+        },
+        "report_item": {
+          "default": null,
+          "description": "Optional report item this finding corresponds to.",
+          "type": "string"
+        },
+        "source": {
+          "default": null,
+          "description": "Source of the finding (default: ai; cannot be changed once created).",
+          "oneOf": [
+            {
+              "enum": [
+                "ai",
+                "user"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Authoritative material the user gave (in medicine, the doctor's report).",
+              "enum": [
+                "reference"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "summary": {
+          "description": "Concise summary of the finding.",
+          "type": "string"
+        },
+        "view": {
+          "default": null,
+          "description": "Optional saved camera/slice view for this finding.",
+          "properties": {
+            "camera": {
+              "description": "A 3D camera, LPS mm.",
+              "properties": {
+                "position": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "target": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "up": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "position",
+                "target"
+              ],
+              "type": "object"
+            },
+            "slice": {
+              "properties": {
+                "index": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                },
+                "plane": {
+                  "enum": [
+                    "axial",
+                    "coronal",
+                    "sagittal"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "index",
+                "plane"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "doc",
+        "name",
+        "summary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Move the desktop 3D viewer to focus on a point, slice, structure, finding, or camera view (emits spatial/view).",
+    "group": "spatial",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "spatial_view",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "description": "Document id or path.",
+          "type": "string"
+        },
+        "target": {
+          "description": "Target spatial anchor (SpatialPoint, SpatialSlice, SpatialPart, SpatialFinding, or SpatialView).",
+          "oneOf": [
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "page"
+                  ],
+                  "type": "string"
+                },
+                "page": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "page"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "A region drawn on a page.",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "region"
+                  ],
+                  "type": "string"
+                },
+                "page": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                },
+                "rect": {
+                  "description": "A rectangle on a page: `x0 < x1`, `y0 < y1`.",
+                  "properties": {
+                    "x0": {
+                      "type": "number"
+                    },
+                    "x1": {
+                      "type": "number"
+                    },
+                    "y0": {
+                      "type": "number"
+                    },
+                    "y1": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x0",
+                    "x1",
+                    "y0",
+                    "y1"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "kind",
+                "page",
+                "rect"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Selected text: `quads` has one rectangle a line, `text` is what the kernel read there.",
+              "properties": {
+                "block": {
+                  "description": "The block the text starts in (`p3.b12`), when known.",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "text"
+                  ],
+                  "type": "string"
+                },
+                "page": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                },
+                "quads": {
+                  "items": {
+                    "description": "A rectangle on a page: `x0 < x1`, `y0 < y1`.",
+                    "properties": {
+                      "x0": {
+                        "type": "number"
+                      },
+                      "x1": {
+                        "type": "number"
+                      },
+                      "y0": {
+                        "type": "number"
+                      },
+                      "y1": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "x0",
+                      "x1",
+                      "y0",
+                      "y1"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "page",
+                "quads",
+                "text"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "A point of a three-dimensional document (spatial-design §3, §13): a voxel or a mesh surface, LPS mm.",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "spatial_point"
+                  ],
+                  "type": "string"
+                },
+                "position_mm": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "position_mm"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "A slice, or a box drawn on it.",
+              "properties": {
+                "index": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "spatial_slice"
+                  ],
+                  "type": "string"
+                },
+                "plane": {
+                  "enum": [
+                    "axial",
+                    "coronal",
+                    "sagittal"
+                  ],
+                  "type": "string"
+                },
+                "rect": {
+                  "description": "A box on a slice, in voxels of the slice's two axes: `[u0, u1)`, `[v0, v1)`.",
+                  "properties": {
+                    "u0": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    },
+                    "u1": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    },
+                    "v0": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    },
+                    "v1": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "u0",
+                    "u1",
+                    "v0",
+                    "v1"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "index",
+                "kind",
+                "plane"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "A structure or a mesh.",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "spatial_part"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "spatial_finding"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "A viewpoint: the 3D camera, the slice shown, or both.",
+              "properties": {
+                "camera": {
+                  "description": "A 3D camera, LPS mm.",
+                  "properties": {
+                    "position": {
+                      "items": {
+                        "type": "number"
+                      },
+                      "maxItems": 3,
+                      "minItems": 3,
+                      "type": "array"
+                    },
+                    "target": {
+                      "items": {
+                        "type": "number"
+                      },
+                      "maxItems": 3,
+                      "minItems": 3,
+                      "type": "array"
+                    },
+                    "up": {
+                      "items": {
+                        "type": "number"
+                      },
+                      "maxItems": 3,
+                      "minItems": 3,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "position",
+                    "target"
+                  ],
+                  "type": "object"
+                },
+                "kind": {
+                  "enum": [
+                    "spatial_view"
+                  ],
+                  "type": "string"
+                },
+                "slice": {
+                  "properties": {
+                    "index": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    },
+                    "plane": {
+                      "enum": [
+                        "axial",
+                        "coronal",
+                        "sagittal"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "index",
+                    "plane"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "required": [
+        "doc",
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Run a Python script over a volume document (a CT). The script reads the volume with `from finx_spatial import load, submit` (load().hu is int16 HU shaped k,j,i; .spacing (dk,dj,di) mm; .segment(name) a bool mask; .slice_of_image(n); .k_towards_head) and submits results with submit.candidates / marker / structure / finding. It runs with no network and can write only its work folder. The first run downloads Python and the skill's packages (about 120 MB); say so to the user before. Prefer a skill's own script (`skill_script`); write `script` only when none fits. Returns stdout, what was submitted and accepted, or the end of the error.",
+    "group": "spatial",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "spatial_script",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "default": null,
+          "description": "Passed to the script as one JSON string in argv[1]."
+        },
+        "doc_id": {
+          "description": "The spatial document (volume) the script reads.",
+          "type": "string"
+        },
+        "purpose": {
+          "description": "One plain sentence saying what the script does and why, shown to the user first.",
+          "type": "string"
+        },
+        "script": {
+          "default": null,
+          "description": "Python code you wrote; the user approves it. Give this or `skill_script`, not both.",
+          "type": "string"
+        },
+        "skill": {
+          "default": null,
+          "description": "For `script`: whose Python environment it runs in (default `medical-imaging`).",
+          "type": "string"
+        },
+        "skill_script": {
+          "default": null,
+          "description": "A script that comes with a skill, as `<skill>/scripts/<file>.py`, e.g. `medical-imaging/scripts/lung_nodule_candidates.py`. Runs without asking.",
+          "type": "string"
+        },
+        "timeout_s": {
+          "default": null,
+          "description": "Seconds the script may run (default 600, at most 1800). Installing does not count.",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "doc_id",
+        "purpose"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "description": "See the agents in this session: each one's label, status, how long it has run, its recent steps, what it last said and how long ago it last did anything. Name agents, or leave it out for all. For diagnosing, not for waiting: a report comes when an agent is done.",
     "group": "agents",
     "kind": "read_only",
