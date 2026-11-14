@@ -100,7 +100,7 @@
 | fork `finx/0.5` / release | `0ea01fa7` = `v0.5.1-finx.g0ea01fa7`，**未动** |
 | FinxWork 依赖 | 三处指针均指 `v0.5.1-finx.g0ea01fa7`（最新已发版，一致） |
 | FinxWork 文档 | PR #18 待合并 |
-| worktree | 主检出 + `betteroffice-parity`（活跃）+ wp-r2/wp-r4（WIP，已备份） |
+| worktree | 主检出 + `nimbleoffice-parity`（活跃）+ wp-r2/wp-r4（WIP，已备份） |
 | v3 指标 | 93.61% / 41.80%，18 好 2 差（差为既有误差暴露，见进展文档） |
 
 ## 四、留下的待办

@@ -1,7 +1,7 @@
 // What the running engine can do, detected at runtime. Each command lists the capabilities it
 // needs; a missing one greys the command with "waiting for the engine" instead of failing.
 //
-// When the BetterOffice fork ships a new interface, wire it here and nothing else changes:
+// When the NimbleOffice fork ships a new interface, wire it here and nothing else changes:
 //   • a method on the editor access (`handleAsync()`): add it to ACCESS (detected by presence);
 //   • a new `applyEdits` step: add the op to EDIT_OPS_0_5_1's successor below;
 //   • a new `formatText` patch key: add it to TEXT_KEYS in textStyle.ts and here.
@@ -63,7 +63,7 @@ const ACCESS: Partial<Record<Capability, string>> = {
   "access.insertChart": "insertChart",
 };
 
-/** `applyEdits` ops of BetterOffice 0.5.1, mapped to capabilities. */
+/** `applyEdits` ops of NimbleOffice 0.5.1, mapped to capabilities. */
 const EDIT_CAPS: Capability[] = ["edit.text", "edit.format", "edit.align", "edit.rect", "edit.fill", "edit.stroke", "edit.background"];
 
 /** Text keys the engine's `formatText` accepts beyond 0.5.1's set. TODO(engine): strike, highlight, caps. */

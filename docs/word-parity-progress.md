@@ -18,7 +18,7 @@
 
 ## 第一轮（已完成、已发版）
 
-- BetterOffice [v0.5.1-finx.g0ea01fa7](https://github.com/Eliseowzy/betteroffice/releases/tag/v0.5.1-finx.g0ea01fa7)，`finx/0.5` 已推送。
+- NimbleOffice [v0.5.1-finx.g0ea01fa7](https://github.com/Eliseowzy/nimbleoffice/releases/tag/v0.5.1-finx.g0ea01fa7)，`finx/0.5` 已推送。
 - FinxWork `9fd3955` 已升级到这个版本；构建后用应用打开东南大学论文模板，共 40 页，和 Word 一致。
 - PR：[finxwork/FinxWork#17](https://github.com/finxwork/FinxWork/pull/17)，从 `feat/document-editor` 合到 `main`，可合并。
 
@@ -34,7 +34,7 @@
 
 ## 第二轮（进行中）
 
-各会话都在自己的 BetterOffice 工作区里，先合入了 `finx/0.5`（0ea01fa7）。
+各会话都在自己的 NimbleOffice 工作区里，先合入了 `finx/0.5`（0ea01fa7）。
 
 | 会话 | 任务 | 状态 |
 | --- | --- | --- |
@@ -63,7 +63,7 @@
 - 没有样式表的文档：中文版 Word 默认等线 11pt，应用默认 Calibri 11pt。字体和字号已在第 4 轮工作区处理（未提交），页面默认值也在其中。
 - 其余浮动对象（文本框、页眉里的浮动对象等）。
 - 12 份文档 Word 无法导出：Word 打不开，或者弹出需要选择的对话框而超时，不计入对比。
-- BetterOffice 原本就有一个测试失败：`docx-layout --test chart_snapshots`，和这项工作无关。
+- NimbleOffice 原本就有一个测试失败：`docx-layout --test chart_snapshots`，和这项工作无关。
 
 ## 下一步
 

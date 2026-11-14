@@ -1,2 +1,2 @@
-BetterOffice
+NimbleOffice
 Copyright 2026 Elia Hilse, The OpenOOXML Project

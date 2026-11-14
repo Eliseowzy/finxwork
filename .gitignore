@@ -11,7 +11,7 @@ apps/desktop/out/
 dist/
 apps/desktop/build/model-runtime/
 
-# Local [patch] of the BetterOffice fork (crates/finx-slide/README.md)
+# Local [patch] of the NimbleOffice fork (crates/finx-slide/README.md)
 /.cargo/config.toml
 # PPT corpus samples and reference renders (tools/ppt-corpus/README.md)
 /tools/ppt-corpus/corpus/

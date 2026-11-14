@@ -1,4 +1,4 @@
-import type { SlideSnapshot, ShapeSnapshot } from "@betteroffice/pptx";
+import type { SlideSnapshot, ShapeSnapshot } from "@nimbleoffice/pptx";
 
 function shapeLines(shape: ShapeSnapshot): string[] {
   return [

@@ -1605,7 +1605,7 @@ export type DeckOpenResult = {
   /** From the file's canonical path: the same in every session. */
   deck_id: string;
   dirty: boolean;
-  /** The engine build (`betteroffice 0.5.1+finx.3`): a replica built from another is refused. */
+  /** The engine build (`nimbleoffice 0.5.1+finx.3`): a replica built from another is refused. */
   engine: string;
   /** Explicit font families in the package, plus the host's Latin and CJK fallbacks. */
   font_families: string[];

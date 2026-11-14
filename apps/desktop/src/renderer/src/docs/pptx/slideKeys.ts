@@ -1,6 +1,6 @@
 // Arrow keys turn pages like PowerPoint's normal view: on the slide strip, and on the stage
 // while no object or text is selected (with one selected, the keys belong to the object).
-// BetterOffice itself only pages with PageUp/PageDown/Home/End, and only on the stage.
+// NimbleOffice itself only pages with PageUp/PageDown/Home/End, and only on the stage.
 
 const BACK = new Set(["ArrowUp", "ArrowLeft", "PageUp"]);
 const FORWARD = new Set(["ArrowDown", "ArrowRight", "PageDown"]);

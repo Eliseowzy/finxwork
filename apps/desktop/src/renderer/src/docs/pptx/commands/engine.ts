@@ -1,8 +1,8 @@
-// The BetterOffice adapter: the one module that calls `PptxAsyncEditorApi`. Everything above it
+// The NimbleOffice adapter: the one module that calls `PptxAsyncEditorApi`. Everything above it
 // (commands, ribbon, palette, AI) speaks `Engine`. When the editor moves to a kernel-held
 // document, replace this file's internals; the `Engine` contract stays.
-import type { PptxEditStep, PptxFindMatch } from "@betteroffice/pptx";
-import type { PptxAsyncEditorAccess, PptxAsyncEditorApi, PptxCommandArgs, PptxCommandId, PptxPluginContext } from "@betteroffice/pptx-react";
+import type { PptxEditStep, PptxFindMatch } from "@nimbleoffice/pptx";
+import type { PptxAsyncEditorAccess, PptxAsyncEditorApi, PptxCommandArgs, PptxCommandId, PptxPluginContext } from "@nimbleoffice/pptx-react";
 import type { Rect } from "./geometry.ts";
 import type { Engine, Host, TextRange } from "./types.ts";
 

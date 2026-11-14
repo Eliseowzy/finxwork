@@ -1,4 +1,4 @@
-//! Word documents on BetterOffice: the kernel's editing session (Yrs), which editor replicas
+//! Word documents on NimbleOffice: the kernel's editing session (Yrs), which editor replicas
 //! join; reading for the agent, atomic edit batches (as revisions by default), review, undo of
 //! the kernel's own edits, and rendering of saved bytes.
 //!
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use betteroffice_docx::fonts::FontError;
+use nimbleoffice_docx::fonts::FontError;
 use docx_edit::session::{EditSessionCore, EngineResult, Host};
 use docx_native_save::OpenedSource;
 pub use docx_native_save::SaveOptions;
@@ -61,7 +61,7 @@ pub enum WordError {
     #[error("no page {0}")]
     NoPage(u32),
     #[error("not a readable .docx: {0}")]
-    Docx(#[from] betteroffice_docx::Error),
+    Docx(#[from] nimbleoffice_docx::Error),
     #[error("fonts: {0}")]
     Fonts(#[from] FontError),
     /// The native save could not write the document.

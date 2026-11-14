@@ -1,7 +1,7 @@
 // Every ribbon / shortcut / palette command. Add a command here, give it a label in
 // locales/*/session.json (pptx.ribbon.cmd.<id>), and place it in ribbon/layout.ts.
-import type { ParagraphAlignment, PptxEditStep, ShapeSnapshot } from "@betteroffice/pptx";
-import type { PptxCommandId, PptxZOrderMove } from "@betteroffice/pptx-react";
+import type { ParagraphAlignment, PptxEditStep, ShapeSnapshot } from "@nimbleoffice/pptx";
+import type { PptxCommandId, PptxZOrderMove } from "@nimbleoffice/pptx-react";
 import { align, bounds, changed, distribute, type AlignEdge, type DistributeAxis, type Placed } from "./geometry.ts";
 import { quickStyles } from "./quickStyles.ts";
 import { SHAPE_LIBRARY } from "./shapes.ts";
@@ -18,7 +18,7 @@ const text = (s: RibbonState): Gate | null => slide(s) ?? (s.selection?.target.k
 const range = (s: RibbonState): Gate | null => text(s) ?? (textRanges(s).length ? null : "needs-text-range");
 const several = (n: number) => (s: RibbonState): Gate | null => shapes(s) ?? (selectedShapes(s).length >= n ? null : n >= 3 ? "needs-three" : "needs-two");
 
-/** A built-in BetterOffice command, gated by its own state. */
+/** A built-in NimbleOffice command, gated by its own state. */
 function builtin<K extends PptxCommandId>(id: string, command: K, args: (a: any) => any, extra: Partial<AnySpec> = {}): AnySpec {
   return {
     id, needs: ["builtin"],

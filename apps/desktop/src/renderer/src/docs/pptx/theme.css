@@ -3,7 +3,7 @@
    The slides themselves draw in their own colours, as in PowerPoint.
    On :root, not .pptx-surface: the editor's menus and dialogs portal to <body>.
    --pptx-* colour FinxWork's ribbon, outline and loading card; --bo-editor-* and
-   --bo-toolbar-* the BetterOffice editor's stage, strip, panels and toolbar controls. */
+   --bo-toolbar-* the NimbleOffice editor's stage, strip, panels and toolbar controls. */
 :root {
   --pptx-bg: #fff;
   --pptx-ink: #202124;

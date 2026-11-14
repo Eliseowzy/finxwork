@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { PptxEditor, definePptxPlugin, type PptxAsyncEditorApi } from "@betteroffice/pptx-react";
-import type { AsyncCollaborationReplica, PptxFontFace } from "@betteroffice/pptx";
+import { PptxEditor, definePptxPlugin, type PptxAsyncEditorApi } from "@nimbleoffice/pptx-react";
+import type { AsyncCollaborationReplica, PptxFontFace } from "@nimbleoffice/pptx";
 import { presentationZhCN } from "./zh-CN";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import type { RpcClient } from "@finx/client";

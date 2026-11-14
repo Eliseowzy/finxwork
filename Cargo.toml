@@ -55,7 +55,7 @@ agent-client-protocol-schema = { version = "1.13", default-features = false }
 anyhow = "1"
 async-stream = "0.3"
 async-trait = "0.1"
-# PPT engine: our fork of BetterOffice (openooxml/betteroffice), branch finx/0.5. On top of
+# PPT engine: NimbleOffice (Eliseowzy/nimbleoffice), our fork of BetterOffice (openooxml/betteroffice). On top of
 # upstream a45ba76 the fork carries fixes upstream does not have yet:
 #   77a1364 pptx-render: wrap preset-shape text to the preset's text rect
 #   169980a pptx-raster: synthesize bold for faces with no bold weight
@@ -68,13 +68,13 @@ async-trait = "0.1"
 # Back to upstream once all of these are merged there and a release carries them. No font packs
 # (fonts-latin, fonts-intl, fonts-cjk): every face comes from the machine (finx-slide's
 # SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
-betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "8dfb1ee4c4bcda1c5eb9ea81392b21e797239fbc", default-features = false, features = ["raster", "fonts"] }
+nimbleoffice-pptx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "a271fb9b1654f69fae389892861008ffd2a02902", default-features = false, features = ["raster", "fonts"] }
 # Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
-betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "8dfb1ee4c4bcda1c5eb9ea81392b21e797239fbc", default-features = false, features = ["raster", "fonts", "pdf"] }
-docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "8dfb1ee4c4bcda1c5eb9ea81392b21e797239fbc", features = ["metafile", "tiff"] }
-ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "8dfb1ee4c4bcda1c5eb9ea81392b21e797239fbc", features = ["svg"] }
+nimbleoffice-docx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "a271fb9b1654f69fae389892861008ffd2a02902", default-features = false, features = ["raster", "fonts", "pdf"] }
+docx-edit = { package = "nimbleoffice-docx-edit", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "a271fb9b1654f69fae389892861008ffd2a02902", features = ["metafile", "tiff"] }
+ooxml-metafile = { package = "nimbleoffice-metafile", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "a271fb9b1654f69fae389892861008ffd2a02902", features = ["svg"] }
 # The .docx written from the session in Rust: the fork's port of the JS engine's saveYrsDocx.
-docx-native-save = { package = "betteroffice-docx-native-save", git = "https://github.com/Eliseowzy/betteroffice", rev = "8dfb1ee4c4bcda1c5eb9ea81392b21e797239fbc" }
+docx-native-save = { package = "nimbleoffice-docx-native-save", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "a271fb9b1654f69fae389892861008ffd2a02902" }
 base64 = "0.22"
 bytes = "1"
 calamine = "0.38"
@@ -184,7 +184,7 @@ opt-level = 3
 [profile.dev.package.zip]
 opt-level = 3
 
-# A Word save writes, then reopens, the whole document (BetterOffice and its CRDT and font
+# A Word save writes, then reopens, the whole document (NimbleOffice and its CRDT and font
 # shaping); unoptimized, a 40-page thesis took about 3s to write.
 # finx-spatial's tests build surfaces and run recipes over a whole synthetic CT.
 [profile.dev.package.finx-spatial]
@@ -193,37 +193,37 @@ opt-level = 3
 [profile.dev.package.finx-word]
 opt-level = 3
 
-[profile.dev.package.betteroffice-docx]
+[profile.dev.package.nimbleoffice-docx]
 opt-level = 3
 
-[profile.dev.package.betteroffice-docx-edit]
+[profile.dev.package.nimbleoffice-docx-edit]
 opt-level = 3
 
-[profile.dev.package.betteroffice-docx-layout]
+[profile.dev.package.nimbleoffice-docx-layout]
 opt-level = 3
 
-[profile.dev.package.betteroffice-docx-native-save]
+[profile.dev.package.nimbleoffice-docx-native-save]
 opt-level = 3
 
-[profile.dev.package.betteroffice-docx-parse]
+[profile.dev.package.nimbleoffice-docx-parse]
 opt-level = 3
 
-[profile.dev.package.betteroffice-docx-raster]
+[profile.dev.package.nimbleoffice-docx-raster]
 opt-level = 3
 
-[profile.dev.package.betteroffice-drawingml]
+[profile.dev.package.nimbleoffice-drawingml]
 opt-level = 3
 
-[profile.dev.package.betteroffice-fonts]
+[profile.dev.package.nimbleoffice-fonts]
 opt-level = 3
 
-[profile.dev.package.betteroffice-ooxml-text]
+[profile.dev.package.nimbleoffice-ooxml-text]
 opt-level = 3
 
-[profile.dev.package.betteroffice-ooxml-diff]
+[profile.dev.package.nimbleoffice-ooxml-diff]
 opt-level = 3
 
-[profile.dev.package.betteroffice-opc]
+[profile.dev.package.nimbleoffice-opc]
 opt-level = 3
 
 [profile.dev.package.yrs]

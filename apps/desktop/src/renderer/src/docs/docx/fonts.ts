@@ -1,4 +1,4 @@
-import type { BundledFontProvider, FontScript } from "@betteroffice/docx/layout";
+import type { BundledFontProvider, FontScript } from "@nimbleoffice/docx/layout";
 import { faceCatalog, type FaceReader } from "../pptx/fonts.ts";
 
 // The Word engine measures and paints every glyph from font bytes it is given (glyph outlines on a
@@ -12,7 +12,7 @@ import { faceCatalog, type FaceReader } from "../pptx/fonts.ts";
 // - any other family: Arial / Times New Roman, as Word substitutes, only when nothing else loads.
 //
 // The faces are not handed over as the editor's `fonts` (app-hosted faces): for a hosted family the
-// engine leaves out the provider's coverage fallbacks (@betteroffice/docx 0.5.1,
+// engine leaves out the provider's coverage fallbacks (@nimbleoffice/docx 0.5.1,
 // layout/measure/defaultFontProvider.ts excludeHostedFontFamilies, and rustMeasureSource.ts, which
 // skips script fallbacks for hosted families), so a hosted "Calibri" drew Chinese as boxes.
 

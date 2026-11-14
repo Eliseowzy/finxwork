@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider, useTranslation } from "react-i18next";
-import { DocxEditor, type DocxCommandExecution, type DocxEditorRef, type TrackedChangesOptions } from "@betteroffice/docx-react";
-import type { CollaborationReplica } from "@betteroffice/docx/collaboration";
-import type { BundledFontProvider } from "@betteroffice/docx/layout";
-import "@betteroffice/docx-react/styles.css";
+import { DocxEditor, type DocxCommandExecution, type DocxEditorRef, type TrackedChangesOptions } from "@nimbleoffice/docx-react";
+import type { CollaborationReplica } from "@nimbleoffice/docx/collaboration";
+import type { BundledFontProvider } from "@nimbleoffice/docx/layout";
+import "@nimbleoffice/docx-react/styles.css";
 import { i18n } from "../../../../shared/i18n";
 import { fromBase64 } from "../pptx/document";
 import { listFonts } from "../pptx/fonts";
@@ -33,7 +33,7 @@ export const trackedChanges: TrackedChangesOptions = {
 const FIT_GUTTER = 24, FIT_MIN = 0.5, FIT_MAX = 1.25;
 /** The zooms a pinch keeps within. */
 const PINCH_MIN = 0.25, PINCH_MAX = 4;
-/** The comments sidebar's width and gap (@betteroffice/docx SIDEBAR_WIDTH + SIDEBAR_PAGE_GAP). */
+/** The comments sidebar's width and gap (@nimbleoffice/docx SIDEBAR_WIDTH + SIDEBAR_PAGE_GAP). */
 const SIDEBAR = 352;
 /** Below this panel width the outline button's gutter costs the page too much. */
 const OUTLINE_MIN = 960;

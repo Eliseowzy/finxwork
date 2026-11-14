@@ -1,6 +1,6 @@
 # PPT 对照工具
 
-把 finx-slide（BetterOffice）画出的幻灯片和 PowerPoint 导出的参考图逐页对照，并检查保存是否只改了被编辑的部件。脚本需要 Python 3 和 Pillow。
+把 finx-slide（NimbleOffice）画出的幻灯片和 PowerPoint 导出的参考图逐页对照，并检查保存是否只改了被编辑的部件。脚本需要 Python 3 和 Pillow。
 
 样本和参考图不进仓库，放在被 gitignore 的目录里：
 
@@ -23,7 +23,7 @@ cargo run --release -p finx-slide --example render -- tools/ppt-corpus/corpus/de
 分数在参考图的原始尺寸上计算；候选图尺寸不同时会等比例缩放。宽高比不一致时会标记 `ASPECT MISMATCH`，不计算分数；缺图会标记 `MISSING`。因此新版分数不一定能和旧版固定拉伸到 1080×607 后的分数直接比较。
 
 ```bash
-python3 tools/ppt-corpus/compare.py deck_office tools/ppt-corpus/out/compare_deck_office.png PowerPoint=tools/ppt-corpus/corpus/pp BetterOffice=tools/ppt-corpus/out/bo
+python3 tools/ppt-corpus/compare.py deck_office tools/ppt-corpus/out/compare_deck_office.png PowerPoint=tools/ppt-corpus/corpus/pp NimbleOffice=tools/ppt-corpus/out/bo
 ```
 
 单页热力图，差异像素标红：

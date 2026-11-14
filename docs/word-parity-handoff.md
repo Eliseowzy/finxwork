@@ -4,20 +4,20 @@
 
 ## 目标与方法
 
-目标是 FinxWork 的 Word 编辑器在排版上全面追平 Microsoft Word。排版引擎是 BetterOffice fork（`~/betteroffice`，GitHub `Eliseowzy/betteroffice`，分支 `finx/0.5`）。
+目标是 FinxWork 的 Word 编辑器在排版上全面追平 Microsoft Word。排版引擎是 NimbleOffice fork（`~/betteroffice`，GitHub `Eliseowzy/nimbleoffice`，分支 `finx/0.5`）。
 
 方法：以本机 Word 为标准答案，在一批语料上自动逐行对比，按影响面从大到小逐类修复，每修一类都加回归测试并重跑全量。完整计划见 `~/.claude/plans/word-badcase-composed-torvalds.md`。
 
 ## 已完成
 
 ### 1. 封面日期跳页（已发版，已在 FinxWork 里使用）
-- BetterOffice `ac5be670`，release `v0.5.1-finx.gac5be670`。改了两处：
+- NimbleOffice `ac5be670`，release `v0.5.1-finx.gac5be670`。改了两处：
   - 网格补出的空白改为上下平分；
   - 只写了 `szCs` 而没有复杂文种字符的行，尾部空白允许伸进底边距。
 - FinxWork 已升级到这个版本（`114ba37`），之后又升级到 `ee14ba19`（`fcd4924`）。
 
 ### 2. 对照流水线（计划第 1 步）
-- 位置：`~/betteroffice-parity`（BetterOffice 的 worktree，分支 `finx/word-parity`，**只在本地，未推送**）。
+- 位置：`~/betteroffice-parity`（NimbleOffice 的 worktree，分支 `finx/word-parity`，**只在本地，未推送**）。
 - 提交：
   - `291a1d5c`：流水线本体；
   - `7106dd94`：网格修复，见下一节；
@@ -88,12 +88,12 @@ cd ~/betteroffice-parity && python3 -I tools/word-parity/run.py /tmp/wp-out /tmp
   - Ghidra 12.1.4 在 `~/tools/ghidra_12.1.4_PUBLIC`；
   - Word 16.114 的分析工程在 `~/tools/ghidra-projects/word`，脚本在 `~/tools/ghidra-scripts`。已知网格行距的内部编号是 sprm 0x9031，存在节属性偏移 0x68。静态逆向效率低，只在实验解释不了时才用。
 - **发版流程**（同 `ac5be670`）：
-  1. 在 BetterOffice 跑 `bun scripts/finx-pack.ts --out /tmp/bo-pack`；
+  1. 在 NimbleOffice 跑 `bun scripts/finx-pack.ts --out /tmp/bo-pack`；
   2. 推送 `finx/0.5`，打 tag，`gh release create`；
   3. 在 FinxWork 里改 `Cargo.toml`、`apps/desktop/package.json`、`pnpm-workspace.yaml` 的版本，运行 `pnpm install` 和 `cargo update`；
   4. `pnpm build`；
   5. 用 e2e 截图验证。注意 e2e 脚本不会自己构建应用。
-- BetterOffice 有一个原本就存在的测试失败：`docx-layout --test chart_snapshots`，和这里的改动无关。
+- NimbleOffice 有一个原本就存在的测试失败：`docx-layout --test chart_snapshots`，和这里的改动无关。
 
 ## 下一步
 
@@ -114,7 +114,7 @@ cd ~/betteroffice-parity && python3 -I tools/word-parity/run.py /tmp/wp-out /tmp
 - Word 沙盒授权需要人工操作，缺图文步骤说明。第一次导出时，必须在 Word 的"授予文件访问权限"对话框里，分别授权 `~/Documents/word-parity/t.docx` 和 `t.pdf` 这两个文件；这个对话框不能授权文件夹。
 
 ### 2. 只能在一台 Mac 上手动跑，没有自动化
-- 对比依赖本机 Word，没有接进 CI。应该把"用已缓存的 Word 结果做对比"（`WORD_PARITY_NO_EXPORT=1`）接进 BetterOffice 的 CI，并设置成"基线下降就拦住合并"。
+- 对比依赖本机 Word，没有接进 CI。应该把"用已缓存的 Word 结果做对比"（`WORD_PARITY_NO_EXPORT=1`）接进 NimbleOffice 的 CI，并设置成"基线下降就拦住合并"。
 - Word 升级后要整批重新导出，目前没有人负责、也没有固定节奏。
 - **待定**：CI 用什么机器跑，由谁负责更新 Word 导出结果。
 
@@ -132,7 +132,7 @@ cd ~/betteroffice-parity && python3 -I tools/word-parity/run.py /tmp/wp-out /tmp
   - fork 和上游 BetterOffice（openooxml/betteroffice）的同步策略。
 
 ### 4. 方法上的坑（务必遵守）
-- **子会话报告"测试通过"不可信**，合并前必须自己重跑：`cargo test -p betteroffice-ooxml-text -p betteroffice-docx-layout -p betteroffice-docx-edit --no-fail-fast`，只允许既有的 `chart_snapshots` 失败。第一轮有两个会话误报。
+- **子会话报告"测试通过"不可信**，合并前必须自己重跑：`cargo test -p nimbleoffice-ooxml-text -p nimbleoffice-docx-layout -p nimbleoffice-docx-edit --no-fail-fast`，只允许既有的 `chart_snapshots` 失败。第一轮有两个会话误报。
 - **不同版本探针量出的基线不能直接比**。改了 `layout_chars.rs`、`compare.py` 或 `run.py` 之后，必须用新探针把基线重新量一遍，否则会把探针的改动误算成引擎的提升。
 - **字体差异和排版差异要分开看**：看 `layout_chars` 输出里的 `fontFallbacks`。Word 自带字体里没有的字体（如方正小标宋_GBK），属于字体问题，不要在引擎里硬凑。
 - **几种 Word 弹框**：

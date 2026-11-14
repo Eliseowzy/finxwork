@@ -30,7 +30,7 @@ function pdfjsAssets(): Plugin {
 
 // The metric-compatible stand-ins for Calibri and Cambria (docs/pptx/fonts.ts), served at fonts/ beside the page.
 // The same files the kernel embeds (crates/finx-slide/fonts, with their OFL); the packaged renderer carries them as
-// assets (build-app.mjs checks they are there). @betteroffice/fonts now ships its faces compressed, in font packs.
+// assets (build-app.mjs checks they are there). @nimbleoffice/fonts now ships its faces compressed, in font packs.
 const fontsDir = path.join(import.meta.dirname, "../../crates/finx-slide/fonts");
 const standInFonts = ["Carlito", "Caladea"].flatMap((f) => ["Regular", "Bold", "Italic", "BoldItalic"].map((s) => `${f}-${s}.ttf`));
 function standInFontAssets(): Plugin {
@@ -51,9 +51,9 @@ function standInFontAssets(): Plugin {
   };
 }
 
-// The Word engine's wasm (@betteroffice/docx), which its modules load with `new URL("./generated/…", import.meta.url)`:
+// The Word engine's wasm (@nimbleoffice/docx), which its modules load with `new URL("./generated/…", import.meta.url)`:
 // the main build leaves those URLs as they are, so each file is copied to where the chunk that names it looks.
-const docxDist = path.join(import.meta.dirname, "node_modules/@betteroffice/docx/dist"); // its exports leave out package.json
+const docxDist = path.join(import.meta.dirname, "node_modules/@nimbleoffice/docx/dist"); // its exports leave out package.json
 function docxWasm(): Plugin {
   return {
     name: "finxwork-docx-wasm",

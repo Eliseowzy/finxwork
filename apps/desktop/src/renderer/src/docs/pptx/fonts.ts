@@ -1,9 +1,9 @@
-import type { PptxFontFace } from "@betteroffice/pptx";
+import type { PptxFontFace } from "@nimbleoffice/pptx";
 import type { FontLoadProgress } from "./PresentationLoading";
 
 // Fonts come straight from the machine through the Local Font Access API
 // (`queryLocalFonts`); no font CDN or kernel round trip. Only the metric-compatible stand-ins
-// for Calibri and Cambria (Carlito, Caladea, from @betteroffice/fonts) are bundled, so a deck
+// for Calibri and Cambria (Carlito, Caladea, from @nimbleoffice/fonts) are bundled, so a deck
 // breaks its lines as PowerPoint does on a machine without Office's fonts.
 
 /** One installed family the editor can draw. */
@@ -43,7 +43,7 @@ let bundledLoader: BundledLoader = async (file) => {
 /** Tests swap the bundled font source for a fake. */
 export function setBundledFontLoader(next: BundledLoader) { bundledLoader = next; faceCache.clear(); }
 
-/** The BetterOffice engine refuses faces above this size (`invalid-payload`; raised from 32 MiB in our patch). */
+/** The NimbleOffice engine refuses faces above this size (`invalid-payload`; raised from 32 MiB in our patch). */
 export const MAX_FACE_BYTES = 64 * 1024 * 1024;
 
 interface LocalFont { family: string; fullName: string; style: string; postscriptName: string; blob(): Promise<Blob> }
