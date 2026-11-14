@@ -138,6 +138,9 @@ pub struct BotSummary {
     /// Its routines, oldest first (docs/kernel/routine-design.md §8).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routines: Vec<RoutineSummary>,
+    /// Another subject's bot (bot-contacts-design §3): absent for this computer's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<BotSource>,
     /// Why routines cannot be used now: their database cannot be opened. `routines` is then empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routines_error: Option<String>,
@@ -179,6 +182,128 @@ pub struct BotUpdateParams {
     pub pinned: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub muted: Option<bool>,
+    /// The first-message notice was read (§4.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noticed: Option<bool>,
+    /// The owner looked at what changed in the card (§5.6): its credential scheme, say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accept_review: Option<bool>,
+    /// The owner took the name the card now gives (§5.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adopt_name: Option<bool>,
+}
+
+// ---- External bots (docs/kernel/bot-contacts-design.md §3, §7) ----
+
+/// What an external bot's card says it can receive. Phase one: only text and images.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BotAccept {
+    Text,
+    Image,
+}
+
+/// How an external bot takes a credential.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BotAuth {
+    None,
+    ApiKey,
+    Bearer,
+}
+
+/// One of an external bot's skills, as its card names it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotSkill {
+    pub name: String,
+    pub description: String,
+}
+
+/// A change in an external bot's card that stops the conversation until the owner looks
+/// (§5.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CardProblem {
+    /// The card now points its interface at another host: not accepted.
+    Moved,
+    /// The card has not been readable for a while; the last one is still in use.
+    Unreachable,
+}
+
+/// What a bot is: this computer's kernel, or another subject's service (§3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BotSourceKind {
+    Remote,
+}
+
+/// The protocol an external bot speaks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum BotProtocol {
+    #[serde(rename = "a2a")]
+    A2a,
+}
+
+/// An external bot: where it answers, and what its card said (§3). Its conversation is a session
+/// whose header names the other side; no model runs here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotSource {
+    pub kind: BotSourceKind,
+    pub protocol: BotProtocol,
+    /// The host the words go to, with its port.
+    pub host: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    pub description: String,
+    pub skills: Vec<BotSkill>,
+    pub accepts: Vec<BotAccept>,
+    pub auth: BotAuth,
+    /// The first-message notice was read (§4.3).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub noticed: bool,
+    /// What changed in the card and waits for the owner (§5.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_review: Option<String>,
+    /// The name the card has now, when it differs from the bot's (§5.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offered_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_problem: Option<CardProblem>,
+}
+
+/// What `bots/preview` reads from a link, before the owner adds the bot (§4.2, §5.2).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RemotePreview {
+    pub name: String,
+    pub description: String,
+    /// `data:image/png;base64,…`: the card's icon, downloaded and made 256 px.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// With its port.
+    pub host: String,
+    pub skills: Vec<BotSkill>,
+    pub accepts: Vec<BotAccept>,
+    pub auth: BotAuth,
+    /// Of the fields that matter, as in §5.2: the owner's confirmation carries it back.
+    pub card_sha256: String,
+}
+
+/// Parameters of `bots/preview`: the link the owner pasted.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotPreviewParams {
+    pub url: String,
+}
+
+/// Parameters of `bots/add`: the link, the card the owner saw, and a credential when the card
+/// wants one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotAddParams {
+    pub url: String,
+    pub card_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
 }
 
 /// Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`.

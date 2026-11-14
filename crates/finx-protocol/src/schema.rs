@@ -316,6 +316,8 @@ pub fn document() -> Value {
         (method::BOTS_UNSUBSCRIBE, None, name::<api::Empty>(g)),
         (method::BOTS_CREATE, Some(name::<bot::BotCreateParams>(g)), name::<bot::BotResult>(g)),
         (method::BOTS_UPDATE, Some(name::<bot::BotUpdateParams>(g)), name::<bot::BotResult>(g)),
+        (method::BOTS_PREVIEW, Some(name::<bot::BotPreviewParams>(g)), name::<bot::RemotePreview>(g)),
+        (method::BOTS_ADD, Some(name::<bot::BotAddParams>(g)), name::<bot::BotResult>(g)),
         (method::BOTS_AVATAR, Some(name::<bot::BotIdParams>(g)), name::<bot::BotAvatarResult>(g)),
         (method::BOTS_OPEN, Some(name::<bot::BotOpenParams>(g)), name::<api::SessionNewResult>(g)),
         (method::BOTS_READ, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),

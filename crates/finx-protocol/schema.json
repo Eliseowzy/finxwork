@@ -20,6 +20,9 @@
       "$ref": "#/definitions/AuthSetResult"
     },
     {
+      "$ref": "#/definitions/BotAddParams"
+    },
+    {
       "$ref": "#/definitions/BotAvatarResult"
     },
     {
@@ -30,6 +33,9 @@
     },
     {
       "$ref": "#/definitions/BotOpenParams"
+    },
+    {
+      "$ref": "#/definitions/BotPreviewParams"
     },
     {
       "$ref": "#/definitions/BotResult"
@@ -528,6 +534,9 @@
     },
     {
       "$ref": "#/definitions/ProvidersUpdateParams"
+    },
+    {
+      "$ref": "#/definitions/RemotePreview"
     },
     {
       "$ref": "#/definitions/ResourceReadParams"
@@ -1788,6 +1797,45 @@
       ],
       "type": "string"
     },
+    "BotAccept": {
+      "description": "What an external bot's card says it can receive. Phase one: only text and images.",
+      "enum": [
+        "text",
+        "image"
+      ],
+      "type": "string"
+    },
+    "BotAddParams": {
+      "description": "Parameters of `bots/add`: the link, the card the owner saw, and a credential when the card wants one.",
+      "properties": {
+        "card_sha256": {
+          "type": "string"
+        },
+        "credential": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_sha256",
+        "url"
+      ],
+      "type": "object"
+    },
+    "BotAuth": {
+      "description": "How an external bot takes a credential.",
+      "enum": [
+        "none",
+        "api_key",
+        "bearer"
+      ],
+      "type": "string"
+    },
     "BotAvatarResult": {
       "properties": {
         "data": {
@@ -1869,6 +1917,25 @@
         "bot_id"
       ],
       "type": "object"
+    },
+    "BotPreviewParams": {
+      "description": "Parameters of `bots/preview`: the link the owner pasted.",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "BotProtocol": {
+      "description": "The protocol an external bot speaks.",
+      "enum": [
+        "a2a"
+      ],
+      "type": "string"
     },
     "BotResult": {
       "description": "Result of `bots/create` and `bots/update`.",
@@ -2011,6 +2078,106 @@
       ],
       "type": "object"
     },
+    "BotSkill": {
+      "description": "One of an external bot's skills, as its card names it.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BotSource": {
+      "description": "An external bot: where it answers, and what its card said (§3). Its conversation is a session whose header names the other side; no model runs here.",
+      "properties": {
+        "accepts": {
+          "items": {
+            "$ref": "#/definitions/BotAccept"
+          },
+          "type": "array"
+        },
+        "auth": {
+          "$ref": "#/definitions/BotAuth"
+        },
+        "card_problem": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CardProblem"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "host": {
+          "description": "The host the words go to, with its port.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/BotSourceKind"
+        },
+        "needs_review": {
+          "description": "What changed in the card and waits for the owner (§5.6).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "noticed": {
+          "description": "The first-message notice was read (§4.3).",
+          "type": "boolean"
+        },
+        "offered_name": {
+          "description": "The name the card has now, when it differs from the bot's (§5.6).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protocol": {
+          "$ref": "#/definitions/BotProtocol"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/definitions/BotSkill"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "accepts",
+        "auth",
+        "description",
+        "host",
+        "kind",
+        "protocol",
+        "skills"
+      ],
+      "type": "object"
+    },
+    "BotSourceKind": {
+      "description": "What a bot is: this computer's kernel, or another subject's service (§3).",
+      "enum": [
+        "remote"
+      ],
+      "type": "string"
+    },
     "BotSummary": {
       "properties": {
         "agents_working": {
@@ -2078,6 +2245,17 @@
             "null"
           ]
         },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BotSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Another subject's bot (bot-contacts-design §3): absent for this computer's own."
+        },
         "typing": {
           "description": "It is answering: its conversation runs a task.",
           "type": "boolean"
@@ -2106,6 +2284,20 @@
     },
     "BotUpdateParams": {
       "properties": {
+        "accept_review": {
+          "description": "The owner looked at what changed in the card (§5.6): its credential scheme, say.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "adopt_name": {
+          "description": "The owner took the name the card now gives (§5.6).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "avatar": {
           "anyOf": [
             {
@@ -2128,6 +2320,13 @@
         "name": {
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "noticed": {
+          "description": "The first-message notice was read (§4.3).",
+          "type": [
+            "boolean",
             "null"
           ]
         },
@@ -2842,6 +3041,25 @@
           "description": "Edits come back with their impact; edits can be tried without keeping them.",
           "enum": [
             "calc"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "CardProblem": {
+      "description": "A change in an external bot's card that stops the conversation until the owner looks (§5.6).",
+      "oneOf": [
+        {
+          "description": "The card now points its interface at another host: not accepted.",
+          "enum": [
+            "moved"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The card has not been readable for a while; the last one is still in use.",
+          "enum": [
+            "unreachable"
           ],
           "type": "string"
         }
@@ -16313,6 +16531,63 @@
       ],
       "type": "object"
     },
+    "RemotePreview": {
+      "description": "What `bots/preview` reads from a link, before the owner adds the bot (§4.2, §5.2).",
+      "properties": {
+        "accepts": {
+          "items": {
+            "$ref": "#/definitions/BotAccept"
+          },
+          "type": "array"
+        },
+        "auth": {
+          "$ref": "#/definitions/BotAuth"
+        },
+        "card_sha256": {
+          "description": "Of the fields that matter, as in §5.2: the owner's confirmation carries it back.",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "host": {
+          "description": "With its port.",
+          "type": "string"
+        },
+        "icon": {
+          "description": "`data:image/png;base64,…`: the card's icon, downloaded and made 256 px.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/definitions/BotSkill"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "accepts",
+        "auth",
+        "card_sha256",
+        "description",
+        "host",
+        "name",
+        "skills"
+      ],
+      "type": "object"
+    },
     "RequestId": {
       "anyOf": [
         {
@@ -21576,6 +21851,13 @@
     "-32045": "routines_unavailable",
     "-32046": "no_model",
     "-32047": "endpoint_unusable",
+    "-32048": "bot_card_unreachable",
+    "-32049": "bot_card_invalid",
+    "-32050": "bot_card_unsupported",
+    "-32051": "bot_card_moved",
+    "-32052": "bot_card_changed",
+    "-32053": "bot_auth_required",
+    "-32054": "bot_not_supported",
     "-32600": "invalid_request",
     "-32601": "method_not_found",
     "-32602": "invalid_params",
@@ -21596,6 +21878,10 @@
       "params": "AuthSetParams",
       "result": "AuthSetResult"
     },
+    "bots/add": {
+      "params": "BotAddParams",
+      "result": "BotResult"
+    },
     "bots/avatar": {
       "params": "BotIdParams",
       "result": "BotAvatarResult"
@@ -21615,6 +21901,10 @@
     "bots/open": {
       "params": "BotOpenParams",
       "result": "SessionNewResult"
+    },
+    "bots/preview": {
+      "params": "BotPreviewParams",
+      "result": "RemotePreview"
     },
     "bots/read": {
       "params": "BotIdParams",
@@ -22181,11 +22471,13 @@
       "ai/action": "stable",
       "auth/delete": "stable",
       "auth/set": "stable",
+      "bots/add": "experimental",
       "bots/avatar": "experimental",
       "bots/clear": "experimental",
       "bots/create": "experimental",
       "bots/delete": "experimental",
       "bots/open": "experimental",
+      "bots/preview": "experimental",
       "bots/read": "experimental",
       "bots/routine": "experimental",
       "bots/routine_delete": "experimental",

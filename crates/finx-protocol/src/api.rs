@@ -218,6 +218,10 @@ pub mod method {
     pub const BOTS_UNSUBSCRIBE: &str = "bots/unsubscribe";
     pub const BOTS_CREATE: &str = "bots/create";
     pub const BOTS_UPDATE: &str = "bots/update";
+    /// Reads the card at a link, before the owner adds the bot (bot-contacts-design §4.2).
+    pub const BOTS_PREVIEW: &str = "bots/preview";
+    /// Adds another subject's bot (bot-contacts-design §4.2, §5.2).
+    pub const BOTS_ADD: &str = "bots/add";
     /// A bot's uploaded avatar.
     pub const BOTS_AVATAR: &str = "bots/avatar";
     /// Loads or attaches a bot's conversation, making it when there is none yet.
@@ -334,6 +338,23 @@ pub mod error_code {
     /// `providers/add`, `providers/update`: the address cannot be used; `data.reason` says why
     /// (`invalid_url`, `unreachable`, `tls`, `not_a_model_service`, `key_required`).
     pub const ENDPOINT_UNUSABLE: i64 = -32047;
+    /// `bots/preview`, `bots/add`: the card could not be read (offline, not HTTPS, an intranet
+    /// address).
+    pub const BOT_CARD_UNREACHABLE: i64 = -32048;
+    /// `bots/preview`, `bots/add`: the link is not a usable card; the message says what is
+    /// missing.
+    pub const BOT_CARD_INVALID: i64 = -32049;
+    /// `bots/preview`, `bots/add`: no interface or credential scheme this version speaks, or
+    /// the card takes no text.
+    pub const BOT_CARD_UNSUPPORTED: i64 = -32050;
+    /// `bots/preview`, `bots/add`: the card's interface is on another host; `data.host` names it.
+    pub const BOT_CARD_MOVED: i64 = -32051;
+    /// `bots/add`: the card changed between the preview and the confirmation.
+    pub const BOT_CARD_CHANGED: i64 = -32052;
+    /// An external bot refused the credential, or asked for one again mid-conversation.
+    pub const BOT_AUTH_REQUIRED: i64 = -32053;
+    /// The operation means nothing for an external bot, or `bots.external` is off.
+    pub const BOT_NOT_SUPPORTED: i64 = -32054;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -382,6 +403,13 @@ pub mod error_code {
         (ROUTINES_UNAVAILABLE, "routines_unavailable"),
         (NO_MODEL, "no_model"),
         (ENDPOINT_UNUSABLE, "endpoint_unusable"),
+        (BOT_CARD_UNREACHABLE, "bot_card_unreachable"),
+        (BOT_CARD_INVALID, "bot_card_invalid"),
+        (BOT_CARD_UNSUPPORTED, "bot_card_unsupported"),
+        (BOT_CARD_MOVED, "bot_card_moved"),
+        (BOT_CARD_CHANGED, "bot_card_changed"),
+        (BOT_AUTH_REQUIRED, "bot_auth_required"),
+        (BOT_NOT_SUPPORTED, "bot_not_supported"),
     ];
 }
 

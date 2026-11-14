@@ -242,6 +242,19 @@ export type AvatarInput = {
 /** The characters an avatar can show, told apart by their eyes and drawn by the client. Each alias is what the bots made before these eyes have in their `bot.json`. */
 export type AvatarShape = "tall" | "dot" | "smile" | "wink" | "lid" | "bar" | "side" | "odd";
 
+/** What an external bot's card says it can receive. Phase one: only text and images. */
+export type BotAccept = "text" | "image";
+
+/** Parameters of `bots/add`: the link, the card the owner saw, and a credential when the card wants one. */
+export type BotAddParams = {
+  card_sha256: string;
+  credential?: string | null;
+  url: string;
+};
+
+/** How an external bot takes a credential. */
+export type BotAuth = "none" | "api_key" | "bearer";
+
 export type BotAvatarResult = {
   /** `data:image/png;base64,…` */
   data: string;
@@ -268,6 +281,14 @@ export type BotOpenParams = {
   events?: EventFilter;
   history_limit?: number | null;
 };
+
+/** Parameters of `bots/preview`: the link the owner pasted. */
+export type BotPreviewParams = {
+  url: string;
+};
+
+/** The protocol an external bot speaks. */
+export type BotProtocol = "a2a";
 
 /** Result of `bots/create` and `bots/update`. */
 export type BotResult = {
@@ -315,6 +336,35 @@ export type BotRoutineSetEnabledParams = {
   routine_id: string;
 };
 
+/** One of an external bot's skills, as its card names it. */
+export type BotSkill = {
+  description: string;
+  name: string;
+};
+
+/** An external bot: where it answers, and what its card said (§3). Its conversation is a session whose header names the other side; no model runs here. */
+export type BotSource = {
+  accepts: BotAccept[];
+  auth: BotAuth;
+  card_problem?: CardProblem | null;
+  description: string;
+  /** The host the words go to, with its port. */
+  host: string;
+  kind: BotSourceKind;
+  /** What changed in the card and waits for the owner (§5.6). */
+  needs_review?: string | null;
+  /** The first-message notice was read (§4.3). */
+  noticed?: boolean;
+  /** The name the card has now, when it differs from the bot's (§5.6). */
+  offered_name?: string | null;
+  protocol: BotProtocol;
+  provider?: string | null;
+  skills: BotSkill[];
+};
+
+/** What a bot is: this computer's kernel, or another subject's service (§3). */
+export type BotSourceKind = "remote";
+
 export type BotSummary = {
   /** Sub-agents at work. */
   agents_working?: number;
@@ -337,6 +387,8 @@ export type BotSummary = {
   routines_error?: string | null;
   /** Its conversation, once there is one. */
   session_id?: string | null;
+  /** Another subject's bot (bot-contacts-design §3): absent for this computer's own. */
+  source?: BotSource | null;
   /** It is answering: its conversation runs a task. */
   typing?: boolean;
   /** Messages and approval requests since the user last looked (`bots/read`). */
@@ -346,10 +398,16 @@ export type BotSummary = {
 };
 
 export type BotUpdateParams = {
+  /** The owner looked at what changed in the card (§5.6): its credential scheme, say. */
+  accept_review?: boolean | null;
+  /** The owner took the name the card now gives (§5.6). */
+  adopt_name?: boolean | null;
   avatar?: AvatarInput | null;
   bot_id: string;
   muted?: boolean | null;
   name?: string | null;
+  /** The first-message notice was read (§4.3). */
+  noticed?: boolean | null;
   pinned?: boolean | null;
 };
 
@@ -529,6 +587,9 @@ export type CandidateSource = "template" | "structure" | "data";
 
 /** What a document supports (§4.5); toolbars and tool descriptions follow it. */
 export type Capability = "view" | "text" | "search" | "outline" | "edit_values" | "edit_formulas" | "cells" | "calc";
+
+/** A change in an external bot's card that stops the conversation until the owner looks (§5.6). */
+export type CardProblem = "moved" | "unreachable";
 
 /** The skill catalog in the system prompt. */
 export type CatalogInfo = {
@@ -3669,6 +3730,22 @@ export type Rect = {
   y1: number;
 };
 
+/** What `bots/preview` reads from a link, before the owner adds the bot (§4.2, §5.2). */
+export type RemotePreview = {
+  accepts: BotAccept[];
+  auth: BotAuth;
+  /** Of the fields that matter, as in §5.2: the owner's confirmation carries it back. */
+  card_sha256: string;
+  description: string;
+  /** With its port. */
+  host: string;
+  /** `data:image/png;base64,…`: the card's icon, downloaded and made 256 px. */
+  icon?: string | null;
+  name: string;
+  provider?: string | null;
+  skills: BotSkill[];
+};
+
 /** A JSON-RPC request id. */
 export type RequestId = number | string;
 
@@ -4965,11 +5042,13 @@ export interface Methods {
   "ai/action": [AiActionParams, AiActionResult];
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
+  "bots/add": [BotAddParams, BotResult];
   "bots/avatar": [BotIdParams, BotAvatarResult];
   "bots/clear": [BotIdParams, Empty];
   "bots/create": [BotCreateParams, BotResult];
   "bots/delete": [BotIdParams, Empty];
   "bots/open": [BotOpenParams, SessionNewResult];
+  "bots/preview": [BotPreviewParams, RemotePreview];
   "bots/read": [BotIdParams, Empty];
   "bots/routine": [BotRoutineParams, BotRoutineResult];
   "bots/routine_delete": [BotRoutineParams, Empty];
@@ -5187,6 +5266,13 @@ export const RPC_ERROR_KINDS = {
   "-32045": "routines_unavailable",
   "-32046": "no_model",
   "-32047": "endpoint_unusable",
+  "-32048": "bot_card_unreachable",
+  "-32049": "bot_card_invalid",
+  "-32050": "bot_card_unsupported",
+  "-32051": "bot_card_moved",
+  "-32052": "bot_card_changed",
+  "-32053": "bot_auth_required",
+  "-32054": "bot_not_supported",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",
