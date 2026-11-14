@@ -738,6 +738,8 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
     if (external && unsendable(sent.attachments)) {
       st.show(t("external.wordsOnly"), undefined, true);
     }
+    // The notice is for the first message: once one goes out, it has been read (§4.3).
+    if (external && !bot.source?.noticed) void st.call("bots/update", { bot_id: bot.id, noticed: true }).catch(() => {});
     // Another subject's bot gets the words, pictures and quotes, and nothing of this computer
     // (bot-contacts-design §5.4).
     const input = external ? externalInput(sent.text, sent.attachments) : toInput(sent.text, sent.attachments);

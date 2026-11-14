@@ -115,6 +115,7 @@ async fn a_card_is_added_and_its_conversation_carries_on_across_a_restart() {
     assert_eq!(card["provider"], "A2A Fake");
     assert!(card["accepts"].as_array().unwrap().contains(&json!("image")));
     assert_eq!(card["auth"], "none");
+    eprintln!("preview: {} from {} — {} skills, accepts {:?}", card["name"], card["host"], card["skills"].as_array().map(Vec::len).unwrap_or(0), card["accepts"]);
     let sha = card["card_sha256"].as_str().unwrap().to_string();
 
     let added = client
@@ -127,6 +128,7 @@ async fn a_card_is_added_and_its_conversation_carries_on_across_a_restart() {
     assert!(added["bot"]["source"]["noticed"].is_null(), "noticed is false until the first message");
     assert_eq!(added["bot"]["source"]["host"], host);
 
+    eprintln!("added bot {bot} (source host {host})");
     // `bot.json` is version 2 with the source; nothing secret is in it (there is none here).
     let file = std::fs::read_to_string(env.home.path().join("bots").join(&bot).join("bot.json")).unwrap();
     assert!(file.contains("\"version\": 2"), "{file}");
@@ -143,6 +145,7 @@ async fn a_card_is_added_and_its_conversation_carries_on_across_a_restart() {
 
     say(&client, &session, "你好").await;
     let first = until_end(&mut events).await;
+    eprintln!("turn 1: {:?}", sent(&first));
     assert_eq!(sent(&first), ["hello (1)"]);
     // The reply is marked as the other side's, not this machine's model.
     let reply = first
@@ -164,12 +167,14 @@ async fn a_card_is_added_and_its_conversation_carries_on_across_a_restart() {
         .await
         .expect("image prompt accepted");
     let second = until_end(&mut events).await;
+    eprintln!("turn 2 (with a picture): {:?}", sent(&second));
     assert_eq!(sent(&second).len(), 1);
 
-    // A file from the other side lands in the bot's folder.
+    eprintln!("turn 3 asks for a file");
     say(&client, &session, "file").await;
     let third = until_end(&mut events).await;
     let attachment = third.iter().find(|e| e["type"] == "tool_started" && e["args"]["type"] == "attachment").expect("a file");
+    eprintln!("file kept at {}", attachment["args"]["files"][0]["path"]);
     assert!(attachment["args"]["files"][0]["path"].as_str().unwrap().contains("/files/"));
 
     // The application restarts; the conversation is resumed and carries on.
@@ -189,6 +194,7 @@ async fn a_card_is_added_and_its_conversation_carries_on_across_a_restart() {
     let session2 = opened["session_id"].as_str().unwrap().to_string();
     say(&client2, &session2, "刚才说了什么").await;
     let fourth = until_end(&mut events2).await;
+    eprintln!("after a restart: {:?}", sent(&fourth));
     let said = sent(&fourth);
     assert!(said.first().is_some_and(|text| text.contains("you said")), "{said:?}");
 }

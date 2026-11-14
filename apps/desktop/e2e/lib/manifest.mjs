@@ -13,6 +13,21 @@ const server = "crates/finx-server/src/";
 
 export const scripts = {
   appearance: { covers: [`${renderer}appearance`, `${renderer}main.tsx`, `${renderer}styles/tokens.css`, `${renderer}settings/Settings`, `${main}preferences`, "apps/desktop/src/preload/index.ts"] },
+  "bot-external": {
+    covers: [
+      `${renderer}bots/BotSheet`,
+      `${renderer}bots/BotPage`,
+      `${renderer}bots/BotList`,
+      `${renderer}composer/Composer`,
+      `${renderer}composer/attachments`,
+      `${renderer}session/scope`,
+      `${renderer}session/content`,
+      `${server}bots`,
+      `${server}server`,
+      "crates/finx-a2a/src/",
+      "tools/a2a-fake/server.mjs",
+    ],
+  },
   "bot-failure": { covers: [`${renderer}bots/Messages`, `${renderer}session/Failure`] },
   "bot-messages": { covers: [`${renderer}bots/Messages`, `${renderer}bots/BotPage`, `${renderer}bots/useBotSession`, `${renderer}bots/actions`, `${client}botChat`] },
   "bot-mode": { manual: "a real model: DEEPSEEK_API_KEY", covers: [] },
