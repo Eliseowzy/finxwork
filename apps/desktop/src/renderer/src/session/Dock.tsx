@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { changesFilesAfter, docViewingBlock, pendingApproval, type ListSession, type SessionView } from "@finx/client";
+import { changesFilesAfter, docViewingBlock, pendingApproval, quoteForSend, type ListSession, type MessageQuote, type SessionView } from "@finx/client";
 import type { QueuedInput, UserMessage } from "@finx/protocol";
 import type { Attachment } from "../composer/attachments";
 import { addAttachments, fromInput, toInput } from "../composer/attachments";
@@ -47,7 +47,7 @@ const closed = new Set<string>();
  * `onAgain` tells them which one is, `onFind` finds it among them, and `onResent` follows the
  * conversation to its end.
  */
-export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, onResent }: {
+export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, onResent, onFindQuote, quoteGone }: {
   s: ListSession;
   view: SessionView;
   onHeight: (h: number) => void;
@@ -55,6 +55,10 @@ export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, o
   onAgain: (messageId: string | undefined) => void;
   onFind: (messageId: string) => void;
   onResent: () => void;
+  /** A quote's tile was clicked: show the words where they were said (message-quote-design §4.4). */
+  onFindQuote?: (q: MessageQuote) => void;
+  /** Whether a quote's message is out of the conversation (§5). */
+  quoteGone?: (q: MessageQuote) => boolean;
 }) {
   const { t } = useTranslation("session");
   const st = useStore();
@@ -76,7 +80,7 @@ export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, o
     const now = agains.get(id);
     const entry = view.entries.find((e) => e.type === "message" && e.message_id === messageId);
     if (now?.sending || entry?.type !== "message" || entry.message.role !== "user") return;
-    const back = fromInput(entry.message.content);
+    const back = fromInput(entry.message.content, view);
     const label = back.text.split("\n")[0] || t("queued.attachments", { count: back.attachments.length });
     writeAgain({ id: messageId, label, stash: now?.stash ?? drafts.get(id) ?? { text: "", attachments: [] }, sending: false });
     change(back);
@@ -146,7 +150,7 @@ export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, o
   // Messages back from the kernel go before what is being written, a blank line between, with
   // what they carry; while a sent message is being written again, before the draft set aside.
   const putBack = (messages: UserMessage[]) => {
-    const back = messages.map((m) => fromInput(m.content));
+    const back = messages.map((m) => fromInput(m.content, view));
     const now = agains.get(id);
     const d = now?.stash ?? drafts.get(id) ?? { text: "", attachments: [] };
     const text = [...back.map((b) => b.text), d.text.trim()].filter(Boolean).join("\n\n");
@@ -200,7 +204,7 @@ export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, o
     const sent = draft;
     const writing = agains.get(id);
     if (!writing) change({ text: "", attachments: [] });
-    const input = toInput(sent.text, sent.attachments);
+    const input = toInput(sent.text, sent.attachments.map((a) => (a.kind === "said" ? { ...a, quote: quoteForSend(a.quote, view) } : a)));
     // What the file panel shows goes along, so "this page" or "these cells" means something (§7.4).
     const viewing = viewingBlock(id, st.files);
     if (viewing && input.length) input.push(viewing);
@@ -258,6 +262,8 @@ export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, o
       onChange={(text) => change({ ...draft, text })}
       attachments={draft.attachments}
       onAttachments={(attachments) => change({ ...draft, attachments })}
+      onQuote={onFindQuote}
+      quoteGone={quoteGone}
       onSend={send}
       commands={commands}
       canSend={!s.archived && !again?.sending}

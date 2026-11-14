@@ -20,6 +20,7 @@
     "thinkingHidden": "服务商没有公开这段推理",
     "image": "图片",
     "copy": "拷贝",
+    "quote": "引用",
     "toBottom": "回到底部",
     "compacted": "上下文已压缩：{{before}} → {{after}} tokens",
     "interrupted": "你打断了这个任务。再发一条消息就会接着做。",
@@ -487,6 +488,7 @@
     "openInDefault": "在默认浏览器中打开",
     "copyLink": "拷贝链接",
     "copy": "拷贝",
+    "quote": "引用",
     "copyCode": "拷贝代码",
     "copyCommand": "拷贝命令",
     "copyOutput": "拷贝输出",
@@ -701,6 +703,13 @@
     },
     "offer": "交给这个对话：{{title}}",
     "offerRemove": "不交了"
+  },
+  "quote": {
+    "whole": {
+      "assistant": "整条回复",
+      "user": "你的消息"
+    },
+    "gone": "原消息已不在对话中"
   },
   "resend": {
     "from": "重发：{{text}}",

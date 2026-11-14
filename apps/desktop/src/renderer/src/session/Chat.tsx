@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { addTotals, baseName, costText, openChain, runningAgents, segments, settledSteps, tokensText, totals, withStreaming, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
+import { addTotals, baseName, costText, openChain, quoteIsGone, runningAgents, segments, settledSteps, tokensText, totals, withStreaming, type ListSession, type MessageQuote, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
-import { pairImages, tabsName } from "../composer/attachments";
+import { pairImages, saidName, tabsName } from "../composer/attachments";
+import { quoteToComposer } from "../composer/inbox";
 import { Tile } from "../composer/Tile";
 import { agoInterval, durationText, messageAgo, timeLine } from "../format";
 import { Icon, MarkMotion } from "../icons";
@@ -13,6 +14,7 @@ import { AgentCard, AgentMessageCard, BackgroundLine, ReportCard } from "./Agent
 import { Dock, writingAgain } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
 import { Markdown } from "./Markdown";
+import { clearQuoteMark, markQuote } from "./quote";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
 import { useBrowserStatus } from "./Yours";
 import { useVirtualRows, type VirtualRow } from "./useVirtualRows";
@@ -161,8 +163,21 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   // Each row with what it shows worked out from all the steps; rows that would draw nothing are left out, as an empty
   // row in the list would still take a gap. Only the rows near what is in sight are drawn (conversation-virtualization-design).
   const failed = !!view.failure && !view.live;
-  const rows = useMemo(() => rowsOf(steps, lastEnd, failed, working), [steps, lastEnd, failed, working]);
+  const rows = useMemo(() => rowsOf(steps, lastEnd, failed, working, { partial: !!view.before, retracted: view.rewound?.gone }), [steps, lastEnd, failed, working, view.before, view.rewound]);
   const virtual = useVirtualRows({ scroller, list, rows, initial: rowHeights });
+  const virtualRef = useRef(virtual);
+  virtualRef.current = virtual;
+  // A quote's message is still in the conversation if its step is here; one that went with a rewind
+  // is gone at once, and one only not loaded yet is not (§5, message-quote-design).
+  const present = useMemo(() => new Set(steps.map((x) => x.key)), [steps]);
+  const partial = !!view.before;
+  const retracted = view.rewound?.gone;
+  const quoteGone = useCallback((q: MessageQuote) => quoteIsGone(q, present, { partial, retracted }), [present, partial, retracted]);
+  const findQuote = useCallback((q: MessageQuote) => {
+    atEnd.current = false;
+    virtualRef.current.scrollToKey(q.key, { smooth: false, then: (el) => markQuote(el, q) });
+  }, []);
+  useEffect(() => clearQuoteMark, []);
   // Leaving a conversation read far back: what it held goes back once the next page settles (memory.ts).
   const held = useRef(0);
   held.current = rows.length;
@@ -190,7 +205,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
                 ? [<div key={`space:${part.at}`} className="vspace" style={{ height: part.space }} aria-hidden="true" />]
                 : rows.slice(part.from, part.to).map((r) => (
                     <div key={r.key} className="vrow" data-step-key={r.key} ref={virtual.measure(r.key)}>
-                      <Row step={r.step} previous={r.previous} final={r.final} merged={false} current={r.current} working={r.working} sessionId={s.session_id} again={r.key === again} onResend={s.archived ? undefined : onResend} />
+                      <Row step={r.step} previous={r.previous} final={r.final} merged={false} current={r.current} working={r.working} sessionId={s.session_id} again={r.key === again} onResend={s.archived ? undefined : onResend} saidGone={r.saidGone} onFindQuote={findQuote} quotable={!s.archived} />
                     </div>
                   )),
             )}
@@ -203,7 +218,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
       <button className={`tobottom ${away ? "on" : ""}`} style={{ "--dock": `${dock}px` } as CSSProperties} aria-label={t("chat.toBottom")} title={t("chat.toBottom")} tabIndex={away ? 0 : -1} aria-hidden={!away} onClick={toEnd}>
         <Icon name="arrowDown" />
       </button>
-      <Dock s={s} view={view} onHeight={setDock} takeBack={takeBack} onAgain={setAgain} onFind={find} onResent={toEnd} />
+      <Dock s={s} view={view} onHeight={setDock} takeBack={takeBack} onAgain={setAgain} onFind={find} onResent={toEnd} onFindQuote={findQuote} quoteGone={quoteGone} />
     </>
   );
 }
@@ -336,7 +351,7 @@ function isMerged(steps: Step[], i: number): boolean {
 }
 
 /** A row of the list: its step and what it shows of the steps around it. */
-type ChatRow = VirtualRow & { step: Step; previous: number | undefined; final: EndStep | undefined; current: boolean; working: number };
+type ChatRow = VirtualRow & { step: Step; previous: number | undefined; final: EndStep | undefined; current: boolean; working: number; saidGone?: boolean[] };
 
 /** Each kind's height until rows of it are measured: only how long the scrollbar is depends on it. */
 const rowHeights: Record<string, number> = { user: 64, text: 220, work: 40, agents: 120, report: 120, agent_message: 100, end: 32, note: 32 };
@@ -346,18 +361,21 @@ const rowHeights: Record<string, number> = { user: 64, text: 220, work: 40, agen
  * last words, a group whose calls all show in the working line or the approval), each with the time of the owner's
  * message before it, its task's end, and whether it is the current failure.
  */
-function rowsOf(steps: Step[], lastEnd: Step | undefined, failed: boolean, working: number): ChatRow[] {
+function rowsOf(steps: Step[], lastEnd: Step | undefined, failed: boolean, working: number, gone: { partial: boolean; retracted?: string[] }): ChatRow[] {
   const out: ChatRow[] = [];
+  const present = new Set(steps.map((x) => x.key));
+  const retracted = gone.retracted ?? [];
   steps.forEach((step, i) => {
     if (isMerged(steps, i)) return;
     if (step.kind === "work" && !step.items.some((it) => !runs(it) && !thinks(it) && !(it.kind === "tool" && it.tool.state === "awaiting_approval"))) return;
-    out.push({ key: step.key, kind: step.kind, step, previous: previousUser(steps, i), final: finalOf(steps, i), current: step === lastEnd && failed, working: step === lastEnd ? working : 0 });
+    const saidGone = step.kind !== "user" || step.said.length === 0 ? undefined : step.said.map((q) => quoteIsGone(q, present, gone));
+    out.push({ key: step.key, kind: step.kind, step, previous: previousUser(steps, i), final: finalOf(steps, i), current: step === lastEnd && failed, working: step === lastEnd ? working : 0, saidGone });
   });
   return out;
 }
 
 /** `working`: the background tasks still working, for the last task end. */
-type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string; again: boolean; onResend?: (messageId: string) => void };
+type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string; again: boolean; onResend?: (messageId: string) => void; saidGone?: boolean[]; onFindQuote?: (q: MessageQuote) => void; /** The conversation may be quoted: not an archived one (§4.2). */ quotable: boolean };
 
 /**
  * A row renders again only when what it shows changed: the steps are made
@@ -374,14 +392,19 @@ const Row = memo(
     a.sessionId === b.sessionId &&
     a.again === b.again &&
     a.onResend === b.onResend &&
+    a.onFindQuote === b.onFindQuote &&
+    a.quotable === b.quotable &&
+    sameList(a.saidGone, b.saidGone) &&
     (a.step === b.step || sameStep(a.step, b.step)),
 );
+
+const sameList = (a?: boolean[], b?: boolean[]) => a === b || (!!a && !!b && a.length === b.length && a.every((on, i) => on === b[i]));
 
 function sameStep(a: Step, b: Step): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
   switch (a.kind) {
     case "user":
-      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.quotes.length === (b as typeof a).quotes.length && a.tabs.length === (b as typeof a).tabs.length && a.skills.join() === (b as typeof a).skills.join();
+      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.quotes.length === (b as typeof a).quotes.length && a.said.length === (b as typeof a).said.length && a.tabs.length === (b as typeof a).tabs.length && a.skills.join() === (b as typeof a).skills.join();
     case "text":
       return a.text === (b as typeof a).text && a.live === (b as typeof a).live;
     case "work": {
@@ -414,7 +437,7 @@ function sameStep(a: Step, b: Step): boolean {
   }
 }
 
-function RowView({ step, previous, final, merged, current, working, sessionId, again, onResend }: RowProps) {
+function RowView({ step, previous, final, merged, current, working, sessionId, again, onResend, saidGone, onFindQuote, quotable }: RowProps) {
   const { t } = useTranslation("session");
   switch (step.kind) {
     case "user": {
@@ -424,7 +447,7 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
         <>
           <TimeLine at={step.ts} previous={previous} />
           <div className={`um ${again ? "again" : ""}`}>
-            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0 || step.tabs.length > 0) && (
+            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0 || step.said.length > 0 || step.tabs.length > 0) && (
               <div className="um-att">
                 {rest.map((im, i) => (
                   <Tile key={i} kind="image" src={`data:${im.mime_type};base64,${im.data}`} />
@@ -438,17 +461,20 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
                 {step.quotes.map((q, i) => (
                   <Tile key={`doc${i}`} kind="doc" quote={q} shot={picture(step.comments.length + i)} />
                 ))}
+                {step.said.map((q, i) => (
+                  <Tile key={`said${i}`} kind="said" said={q} name={saidName(q)} gone={saidGone?.[i]} onOpen={onFindQuote && (() => onFindQuote(q))} />
+                ))}
                 {step.tabs.map((tabs, i) => (
                   <Tile key={`tabs${i}`} kind="tabs" name={tabsName(tabs)} />
                 ))}
               </div>
             )}
             {step.text !== "" && (
-              <div className="bub sel-text">
+              <div className="bub sel-text" data-quote={quotable ? "user" : undefined}>
                 <Words text={step.text} skills={step.skills} />
               </div>
             )}
-            <MessageBar text={step.text} at={step.ts} mine onResend={onResend && (() => onResend(step.key))} />
+            <MessageBar text={step.text} at={step.ts} mine onResend={onResend && (() => onResend(step.key))} onQuote={!quotable || step.text === "" ? undefined : () => quoteToComposer(sessionId, { role: "user", text: step.text, key: step.key, whole: true })} />
           </div>
         </>
       );
@@ -456,8 +482,15 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
     case "text":
       return (
         <div className={`am ${final ? "act" : ""}`}>
-          <Markdown text={step.text} streaming={step.live} />
-          {final && <MessageBar text={step.text} at={step.ts} task={finished(final) ? <TaskTook end={final} started={previous} /> : undefined} />}
+          <Markdown text={step.text} streaming={step.live} quote={quotable ? "assistant" : undefined} />
+          {final && (
+            <MessageBar
+              text={step.text}
+              at={step.ts}
+              task={finished(final) ? <TaskTook end={final} started={previous} /> : undefined}
+              onQuote={quotable ? () => quoteToComposer(sessionId, { role: "assistant", text: step.text, key: step.key, whole: true }) : undefined}
+            />
+          )}
         </div>
       );
     case "work":
@@ -499,7 +532,7 @@ function TimeLine({ at, previous }: { at: number; previous: number | undefined }
  * its task took. The owner's messages keep to the right, so Copy comes last,
  * after writing the message again, which only brings it back to the composer.
  */
-function MessageBar({ text, at, task, mine, onResend }: { text: string; at: number; task?: ReactNode; mine?: boolean; onResend?: () => void }) {
+function MessageBar({ text, at, task, mine, onResend, onQuote }: { text: string; at: number; task?: ReactNode; mine?: boolean; onResend?: () => void; onQuote?: () => void }) {
   const { t } = useTranslation("session");
   const [done, setDone] = useState(false);
   const copy = (
@@ -523,7 +556,12 @@ function MessageBar({ text, at, task, mine, onResend }: { text: string; at: numb
       <Icon name="edit" className="sm" />
     </button>
   );
-  return <div className="msg-act">{mine ? <>{meta}{again}{copy}</> : <>{copy}{meta}</>}</div>;
+  const quote = onQuote && (
+    <button className="tb" aria-label={t("chat.quote")} title={t("chat.quote")} onClick={onQuote}>
+      <Icon name="quote" className="sm" />
+    </button>
+  );
+  return <div className="msg-act">{mine ? <>{meta}{again}{quote}{copy}</> : <>{copy}{quote}{meta}</>}</div>;
 }
 
 /** What a task took, after the time under its last words: how long, its sub-agents, tokens and cost. */

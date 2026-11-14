@@ -1,10 +1,12 @@
-import { baseName, toolOutput, type ToolView } from "@finx/client";
+import { baseName, toolOutput, type MessageQuote, type ToolView } from "@finx/client";
 import type { EditorInfo, MenuItem, PathInfo } from "../../../shared/bridge";
 import { i18n } from "../../../shared/i18n";
 import { isPageFile } from "../../../shared/pageFile";
 import type { Store } from "../store";
+import { quoteToComposer } from "../composer/inbox";
 import { showFile } from "../files/state";
 import { bringBrowserBack } from "./browserPanel";
+import { selectionQuoteOf } from "./quote";
 import { recheckFiles, type Scope } from "./scope";
 
 // What a reply's files, links, code blocks and steps do, from a click or their native menus
@@ -34,11 +36,36 @@ function selection(): string {
   return at?.closest(".dwrap") && !at.closest("[contenteditable], input, textarea") ? sel.toString() : "";
 }
 
-/** A menu with Copy first when text is selected; resolves to what was picked ("copySel" is handled here). */
+/** The quotable part a selection's end is in: the row's step key and whose words (§4.2), or null. */
+function partAt(node: Node | null): { key: string; role: string } | null {
+  const el = node instanceof Element ? node : (node?.parentElement ?? null);
+  const part = el?.closest<HTMLElement>("[data-quote]");
+  if (!part) return null;
+  const key = part.closest<HTMLElement>("[data-step-key]")?.dataset.stepKey;
+  return key ? { key, role: part.dataset.quote ?? "" } : null;
+}
+
+/** The quote a selection in the conversation makes, if both ends are in one quotable part (§4.2). */
+function selectionQuote(): MessageQuote | null {
+  const sel = window.getSelection();
+  return sel && !sel.isCollapsed ? selectionQuoteOf(partAt(sel.anchorNode), partAt(sel.focusNode), sel.toString()) : null;
+}
+
+/** Puts a quote of the conversation in the composer of the session it was selected in (§4.4). */
+function addQuote(st: Store, quote: MessageQuote) {
+  if (st.selection.kind === "session") quoteToComposer(st.selection.id, quote);
+}
+
+/** A menu with Copy first when text is selected; resolves to what was picked ("copySel" and "quoteSel" are handled here). */
 async function popup(st: Store, items: MenuItem[]): Promise<string | null> {
   const sel = selection();
-  const id = await window.finx?.popupMenu(sel ? [{ id: "copySel", label: t("content.copy") }, ...(items.length ? [{ separator: true } as const] : []), ...items] : items);
+  const quote = sel === "" ? null : selectionQuote();
+  const head: MenuItem[] = sel
+    ? [{ id: "copySel", label: t("content.copy") }, ...(quote ? [{ id: "quoteSel", label: t("content.quote") }] : []), ...(items.length ? [{ separator: true } as const] : []), ...items]
+    : items;
+  const id = await window.finx?.popupMenu(head);
   if (id === "copySel") copy(st, sel, t("content.copied"));
+  else if (id === "quoteSel" && quote) addQuote(st, quote);
   return id ?? null;
 }
 

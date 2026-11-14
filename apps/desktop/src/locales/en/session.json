@@ -20,6 +20,7 @@
     "thinkingHidden": "The provider keeps this reasoning private",
     "image": "Image",
     "copy": "Copy",
+    "quote": "Quote",
     "toBottom": "Jump to the latest",
     "compacted": "Context compacted: {{before}} → {{after}} tokens",
     "interrupted": "You interrupted this task. Send a message to go on.",
@@ -502,6 +503,7 @@
     "openInDefault": "Open in Default Browser",
     "copyLink": "Copy Link",
     "copy": "Copy",
+    "quote": "Quote",
     "copyCode": "Copy Code",
     "copyCommand": "Copy Command",
     "copyOutput": "Copy Output",
@@ -725,6 +727,13 @@
     },
     "offer": "For this conversation: {{title}}",
     "offerRemove": "Don't hand it over"
+  },
+  "quote": {
+    "whole": {
+      "assistant": "Whole reply",
+      "user": "Your message"
+    },
+    "gone": "No longer in this conversation"
   },
   "resend": {
     "from": "Resending: {{text}}",

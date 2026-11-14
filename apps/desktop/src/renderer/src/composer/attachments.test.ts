@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { handedTabBlock, handedTabsBlock, docViewingBlock, sheetViewingBlock, type DocQuote, type WebComment } from "@finx/client";
-import { docAttachment, fromInput, toInput, webAttachment, type Attachment } from "./attachments.ts";
+import { applyEvents, fromSnapshot, handedTabBlock, handedTabsBlock, docViewingBlock, sheetViewingBlock, type DocQuote, type MessageQuote, type WebComment } from "@finx/client";
+import type { Event, SessionInfo, Usage } from "@finx/protocol";
+import { addAttachments, docAttachment, fromInput, saidAttachment, saidWords, toInput, webAttachment, type Attachment } from "./attachments.ts";
 
 // A message taken back comes to the composer as it was, and sent again it says the same
 // (message-resend-design §5.4).
@@ -23,6 +24,8 @@ const seen = (a: Attachment) => {
       return { kind: a.kind, quote: { ...a.quote, image: undefined }, shot: a.image };
     case "tabs":
       return { kind: a.kind, block: a.block };
+    case "said":
+      return { kind: a.kind, path: a.path, name: a.name, quote: a.quote };
     default:
       return { kind: a.kind, path: a.path, name: a.name };
   }
@@ -37,6 +40,7 @@ for (const [name, text, attachments] of [
   ["a file and a folder", "看这些", [file, folder]],
   ["parts of pages, with a picture and without", "看这里", [webAttachment(comment("这里"), "SHOT"), webAttachment(comment("那里"))]],
   ["quotes, with a picture and without", "看这段", [docAttachment(quote("q1"), "SHOT"), docAttachment(quote("q2"))]],
+  ["parts of the conversation", "看这里", [saidAttachment({ role: "assistant", text: "第 3 步：先备份", key: "a1:0", whole: true }), saidAttachment({ role: "user", text: "按第二种来", key: "u1" })]],
 ] as [string, string, Attachment[]][]) {
   test(`${name}: back as it was, and the same when sent again`, () => {
     const sent = toInput(text, attachments);
@@ -48,10 +52,10 @@ for (const [name, text, attachments] of [
 }
 
 test("all kinds at once: grouped as the bubble shows them, and each picture still the right one", () => {
-  const sent = toInput("全都有", [file, image("a"), webAttachment(comment("c1"), "SHOT-W"), image("b"), docAttachment(quote("q1"), "SHOT-D"), folder]);
+  const sent = toInput("全都有", [file, image("a"), webAttachment(comment("c1"), "SHOT-W"), image("b"), docAttachment(quote("q1"), "SHOT-D"), folder, saidAttachment({ role: "assistant", text: "看这里", key: "a1:0" })]);
   const back = fromInput(sent);
   assert.equal(back.text, "全都有");
-  assert.deepEqual(back.attachments.map((a) => a.kind), ["image", "image", "file", "folder", "web", "doc"]);
+  assert.deepEqual(back.attachments.map((a) => a.kind), ["image", "image", "file", "folder", "web", "doc", "said"]);
   const web = back.attachments.find((a) => a.kind === "web");
   const doc = back.attachments.find((a) => a.kind === "doc");
   assert.ok(web?.kind === "web" && doc?.kind === "doc");
@@ -86,4 +90,49 @@ test("what the app adds by itself is not the owner's words", () => {
     assert.deepEqual(back.attachments.map((a) => a.kind), ["tabs"]);
     assert.deepEqual(toInput(back.text, back.attachments), sent);
   }
+});
+
+const info: SessionInfo = { session_id: "s", cwd: "/w", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
+const usage: Usage = { input: 1, output: 1, cache_read: 0, cache_write: 0, cost: { currency: "USD", input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0 } };
+
+/** A conversation whose messages came in this window: `u1` is a user message, `a1:0` its reply. */
+function conversationView(): ReturnType<typeof fromSnapshot> {
+  const events = [
+    { seq: 1, ts: 1, type: "message_completed", message_id: "u1", message: { role: "user", content: [{ type: "text", text: "按第二种来" }], ts: 1 } },
+    { seq: 2, ts: 2, type: "message_completed", message_id: "a1", message: { role: "assistant", content: [{ type: "text", text: "## 方案\n\n一是……" }], provider: "p", api: "a", model: "m", usage, stop_reason: "stop", ts: 2 } },
+  ] as Event[];
+  return applyEvents(fromSnapshot({ session: info, last_seq: 0, transcript: { items: [] }, usage: { per_model: {} } }), events);
+}
+
+test("a whole quote comes back from the conversation, a fragment keeps the start it was sent with", () => {
+  const whole: MessageQuote = { role: "user", text: "按第二", key: "u1", whole: true, excerpt: true };
+  const fragment: MessageQuote = { role: "assistant", text: "先备份", key: "a1:0", cut: true };
+  const sent = toInput("", [saidAttachment(whole), saidAttachment(fragment)]);
+  const back = fromInput(sent, conversationView());
+  const said = back.attachments.filter((a): a is Extract<Attachment, { kind: "said" }> => a.kind === "said");
+  assert.equal(said[0].quote.text, "按第二种来");
+  assert.equal(said[0].quote.excerpt, undefined);
+  assert.equal(said[1].quote.text, "先备份");
+  assert.equal(said[1].quote.cut, true);
+  // With the step gone, what was sent is all there is.
+  assert.deepEqual(fromInput(sent).attachments.map(seen), [saidAttachment({ ...whole }), saidAttachment({ ...fragment })].map(seen));
+});
+
+test("the same words quoted twice are one tile", () => {
+  const one = saidAttachment({ role: "assistant", text: "同一段话", key: "a1:0" });
+  const two = saidAttachment({ role: "assistant", text: "同一段话", key: "a1:0" });
+  assert.equal(one.path, two.path);
+  assert.deepEqual(addAttachments([one], [two]), [one]);
+  const other = saidAttachment({ role: "assistant", text: "同一段话", key: "a1:1" });
+  assert.notEqual(one.path, other.path);
+});
+
+test("a whole quote's card drops the Markdown marks, a fragment's words stay as selected", () => {
+  const whole: MessageQuote = { role: "assistant", text: "## 方案\n\n**一是**先 `备份`。\n\n```ts\nconst a = 1;\n```", key: "a1:0", whole: true };
+  assert.equal(saidWords(whole), "方案\n\n一是先 备份。\n\nconst a = 1;");
+  const name = saidAttachment(whole).name;
+  assert.ok(!name.includes("#") && !name.includes("*") && !name.includes("`"), name);
+  assert.ok(name.includes("方案"), name);
+  const fragment: MessageQuote = { role: "assistant", text: "a * b `c`", key: "a1:0" };
+  assert.equal(saidWords(fragment), "a * b `c`");
 });

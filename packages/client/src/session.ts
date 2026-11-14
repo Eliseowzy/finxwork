@@ -97,6 +97,11 @@ export interface SessionView {
   attached: object;
   lastSeq: number;
   entries: Entry[];
+  /**
+   * How many entries the snapshot had: ones at or after it arrived since, and are in the model's
+   * context unless a compaction seen since came later (message-quote-design §3.3, D-648).
+   */
+  snapshotEnd: number;
   /** Cursor to earlier history (session/history); absent at the beginning. */
   before?: string;
   live: LiveTask | null;
@@ -186,6 +191,7 @@ export function fromSnapshot(s: SessionSnapshot): SessionView {
     attached: {},
     lastSeq: s.last_seq,
     entries,
+    snapshotEnd: entries.length,
     before: s.transcript.before ?? undefined,
     live,
     usage: s.usage,
@@ -210,7 +216,7 @@ function contextAfter(entries: Entry[]): number {
 
 /** Earlier history (session/history) put before what the view has, with the cursor to what came before it. */
 export function withHistory(v: SessionView, page: TranscriptPage): SessionView {
-  return { ...v, entries: [...page.items, ...v.entries], before: page.before ?? undefined };
+  return { ...v, entries: [...page.items, ...v.entries], snapshotEnd: v.snapshotEnd + page.items.length, before: page.before ?? undefined };
 }
 
 /** A sub-agent from a snapshot: its own session shares the main one's settings. */
@@ -242,7 +248,9 @@ function agentFrom(info: SessionInfo, a: AgentSnapshot): AgentView {
  * Earlier history can be asked for again; what it is asked with comes from that snapshot.
  */
 export function latestPage(v: SessionView, entries: number): SessionView {
-  return v.entries.length <= entries ? v : { ...v, entries: v.entries.slice(-entries), before: v.before ?? "more" };
+  if (v.entries.length <= entries) return v;
+  const cut = v.entries.length - entries;
+  return { ...v, entries: v.entries.slice(-entries), snapshotEnd: Math.max(0, v.snapshotEnd - cut), before: v.before ?? "more" };
 }
 
 /** The sub-agents still working. */
@@ -332,6 +340,7 @@ function step(v: SessionView, e: Event): SessionView {
       const next: SessionView = {
         ...v,
         entries,
+        snapshotEnd: Math.min(v.snapshotEnd, entries.length),
         context: contextAfter(entries),
         failure: undefined,
         agents: removed.length ? v.agents.filter((a) => !removed.includes(a.id)) : v.agents,
