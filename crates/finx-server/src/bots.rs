@@ -22,7 +22,14 @@ use finx_protocol::bot::AvatarInput;
 use finx_protocol::bot::BotAvatarResult;
 use finx_protocol::bot::BotCreateParams;
 use finx_protocol::bot::BotResult;
+use finx_protocol::bot::BotAccept;
+use finx_protocol::bot::BotAuth;
+use finx_protocol::bot::BotProtocol;
+use finx_protocol::bot::BotSkill;
+use finx_protocol::bot::BotSource;
+use finx_protocol::bot::BotSourceKind;
 use finx_protocol::bot::BotSummary;
+use finx_protocol::bot::CardProblem;
 use finx_protocol::bot::BotUpdateParams;
 use finx_protocol::bot::BotsChangedParams;
 use finx_protocol::bot::BotsResult;
@@ -86,6 +93,63 @@ struct BotFile {
     /// The list's row, kept for when the conversation is not loaded.
     #[serde(default)]
     summary: Kept,
+    /// Another subject's bot (bot-contacts-design §3): where it answers, and what its card said.
+    /// Absent for this computer's own bots, and for files written before version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<BotSourceFile>,
+}
+
+/// The `source` of an external bot as `bot.json` keeps it: the card's facts plus what is needed
+/// to reach it again, which the list does not show.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct BotSourceFile {
+    kind: BotSourceKind,
+    protocol: BotProtocol,
+    card_url: String,
+    endpoint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tenant: Option<String>,
+    /// The host the words go to, with its port.
+    host: String,
+    card_sha256: String,
+    /// RFC 3339: when the card was last read (§5.6).
+    card_read_at: String,
+    description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
+    #[serde(default)]
+    skills: Vec<BotSkill>,
+    #[serde(default)]
+    accepts: Vec<BotAccept>,
+    auth: BotAuth,
+    #[serde(default)]
+    noticed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    needs_review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offered_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    card_problem: Option<CardProblem>,
+}
+
+impl BotSourceFile {
+    /// What the list and the bot's settings show (§4.3, §4.4).
+    fn view(&self) -> BotSource {
+        BotSource {
+            kind: self.kind,
+            protocol: self.protocol,
+            host: self.host.clone(),
+            provider: self.provider.clone(),
+            description: self.description.clone(),
+            skills: self.skills.clone(),
+            accepts: self.accepts.clone(),
+            auth: self.auth,
+            noticed: self.noticed,
+            needs_review: self.needs_review.clone(),
+            offered_name: self.offered_name.clone(),
+            card_problem: self.card_problem,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -138,6 +202,7 @@ impl Bot {
             created_at: f.created_at.clone(),
             routines: self.routines.clone(),
             routines_error: routines_error.map(str::to_string),
+            source: f.source.as_ref().map(BotSourceFile::view),
         }
     }
 }
@@ -388,7 +453,12 @@ fn read_all(home: &FinxHome) -> BTreeMap<String, Bot> {
             continue;
         }
         match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| serde_json::from_slice::<BotFile>(&b).map_err(|e| e.to_string())) {
-            Ok(file) if entry.file_name().to_str() == Some(file.id.as_str()) => {
+            Ok(mut file) if entry.file_name().to_str() == Some(file.id.as_str()) => {
+                // Version 1 is a local bot: it has no `source`. The field's default reads it,
+                // and the next save writes version 2 (D-700).
+                if file.version < 2 {
+                    file.version = 2;
+                }
                 bots.insert(file.id.clone(), Bot::new(file));
             }
             Ok(_) => tracing::warn!(path = %path.display(), "skipping a bot whose id is not its folder's name"),
@@ -638,6 +708,7 @@ impl Server {
             config: Arc::new(workspace.config),
             interactive_approvals: true,
             bot: Some(BotIdentity { id: id.to_string(), name }),
+            peer: None,
         };
         let kernel = finx_core::Kernel::start(options, deps).await.map_err(|e| errors::from_kernel(e, "new"))?;
         if let Some(text) = self.0.routines.listing_of(id) {
@@ -731,7 +802,7 @@ impl Server {
 
 fn new_file(name: String, avatar: Avatar, default: bool) -> BotFile {
     BotFile {
-        version: 1,
+        version: 2,
         id: uuid::Uuid::now_v7().to_string(),
         name,
         avatar,
@@ -744,5 +815,86 @@ fn new_file(name: String, avatar: Avatar, default: bool) -> BotFile {
         thinking: None,
         permission_mode: None,
         summary: Kept::default(),
+        source: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn home() -> (tempfile::TempDir, FinxHome) {
+        let dir = tempfile::tempdir().unwrap();
+        let home = FinxHome::new(dir.path().canonicalize().unwrap().join("home"));
+        home.ensure().unwrap();
+        (dir, home)
+    }
+
+    fn bot_file(id: &str, version: u32) -> serde_json::Value {
+        serde_json::json!({
+            "version": version,
+            "id": id,
+            "name": "FinxBot",
+            "avatar": { "kind": "char", "shape": "tall", "hue": "slate" },
+            "default": true,
+            "pinned": false,
+            "muted": false,
+            "created_at": "2026-11-14T00:00:00Z",
+            "summary": { "unread": 0 }
+        })
+    }
+
+    #[test]
+    fn a_version_one_bot_reads_and_upgrades_to_version_two() {
+        let (_dir, home) = home();
+        let id = "0193aaaa-bbbb-7ccc-8ddd-eeeeffff0000";
+        let dir = home.bot_dir(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bot.json"), serde_json::to_vec(&bot_file(id, 1)).unwrap()).unwrap();
+
+        let bots = read_all(&home);
+        let bot = bots.get(id).expect("the version 1 bot reads");
+        assert_eq!(bot.file.version, 2, "it is upgraded in memory");
+        assert!(bot.file.source.is_none(), "a version 1 bot is a local bot");
+        assert!(bot.summary(None).source.is_none());
+        assert!(bot.summary(None).default, "nothing else about it changes");
+    }
+
+    #[test]
+    fn an_external_bots_source_is_kept_and_shown() {
+        let (_dir, home) = home();
+        let id = "0193aaaa-bbbb-7ccc-8ddd-eeeeffff0001";
+        let dir = home.bot_dir(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut file = bot_file(id, 2);
+        file["default"] = serde_json::json!(false);
+        file["name"] = serde_json::json!("某医院预约助手");
+        file["source"] = serde_json::json!({
+            "kind": "remote", "protocol": "a2a",
+            "card_url": "https://example-hospital.cn/.well-known/agent-card.json",
+            "endpoint": "https://example-hospital.cn/a2a",
+            "host": "example-hospital.cn",
+            "card_sha256": "abc",
+            "card_read_at": "2026-11-14T12:00:00Z",
+            "description": "查询科室排班",
+            "provider": "某某医院",
+            "skills": [{ "name": "查排班", "description": "按日期查" }],
+            "accepts": ["text"],
+            "auth": "api_key",
+            "noticed": false
+        });
+        std::fs::write(dir.join("bot.json"), serde_json::to_vec(&file).unwrap()).unwrap();
+
+        let bots = read_all(&home);
+        let bot = bots.get(id).expect("the external bot reads");
+        let source = bot.file.source.as_ref().expect("its source");
+        assert_eq!(source.host, "example-hospital.cn");
+        assert_eq!(source.auth, BotAuth::ApiKey);
+        let view = bot.summary(None).source.expect("the list shows it");
+        assert_eq!(view.host, "example-hospital.cn");
+        assert_eq!(view.provider.as_deref(), Some("某某医院"));
+        assert_eq!(view.accepts, vec![BotAccept::Text]);
+        assert!(!view.noticed);
+        assert!(view.needs_review.is_none());
     }
 }

@@ -43,6 +43,8 @@ pub struct ConfigFile {
     pub ui: Option<UiFile>,
     pub history: Option<HistoryFile>,
     pub update: Option<UpdateFile>,
+    /// `[bots]`: another subject's bots (bot-contacts-design §5.8).
+    pub bots: Option<BotsFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
 }
@@ -52,6 +54,22 @@ pub struct ConfigFile {
 pub struct UiFile {
     /// Write the model's reasoning into the scrollback, dimmed.
     pub show_thinking: Option<bool>,
+}
+
+/// `[bots]`: external bots (bot-contacts-design §5.8).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct BotsFile {
+    /// The entry for adding another subject's bot, and `bots/preview`, `bots/add`.
+    pub external: Option<bool>,
+    /// The development switch for an A2A service on this computer: loopback over HTTP, and no
+    /// system proxy for it. Not a feature (D-718); it has no settings row.
+    pub allow_local: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BotsSettings {
+    pub external: bool,
+    pub allow_local: bool,
 }
 
 /// `[history]`: what was typed in the interactive mode.
@@ -582,6 +600,8 @@ pub struct Config {
     pub spatial: SpatialSettings,
     /// Refresh model lists and the public catalog in the background (`[models] network`).
     pub models_network: bool,
+    /// Another subject's bots (bot-contacts-design §5.8).
+    pub bots: BotsSettings,
     /// The configured servers by name, names filled in; not yet validated.
     pub mcp_servers: Vec<McpServerConfig>,
 }
@@ -711,6 +731,13 @@ impl Config {
             web_search,
             spatial,
             models_network: file.models.and_then(|m| m.network).unwrap_or(true),
+            bots: file
+                .bots
+                .map(|bots| BotsSettings {
+                    external: bots.external.unwrap_or(false),
+                    allow_local: bots.allow_local.unwrap_or(false),
+                })
+                .unwrap_or_default(),
             mcp_servers: file
                 .mcp_servers
                 .unwrap_or_default()
