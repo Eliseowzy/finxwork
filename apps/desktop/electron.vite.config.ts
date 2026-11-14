@@ -96,6 +96,18 @@ export default defineConfig({
     plugins: [react(), pdfjsAssets(), standInFontAssets()],
     worker: { format: "es" },
     resolve: { dedupe: ["react", "react-dom"] },
+    // The 3D view is loaded lazily: found only when it opens, three would make the dev server re-optimize then and
+    // fail the view's import (504 Outdated Optimize Dep), leaving the window blank.
+    optimizeDeps: {
+      include: [
+        "three",
+        "three/examples/jsm/controls/OrbitControls.js",
+        "three/examples/jsm/loaders/GLTFLoader.js",
+        "three/examples/jsm/loaders/OBJLoader.js",
+        "three/examples/jsm/loaders/PLYLoader.js",
+        "three/examples/jsm/loaders/STLLoader.js",
+      ],
+    },
     build: { outDir: path.join(out, "renderer") },
   },
 });
