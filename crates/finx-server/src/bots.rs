@@ -685,13 +685,8 @@ impl Server {
         let id = uuid::Uuid::now_v7().to_string();
         let credential = params.credential.unwrap_or_default();
         auth_with(&card.auth, &credential)?;
-        if auth_kind(&card.auth) != BotAuth::None {
-            let (name, value) = (format!("bot.{id}"), credential.clone());
-            tokio::task::spawn_blocking(move || finx_llm::credentials::set(&name, &value))
-                .await
-                .map_err(|e| RpcError::internal(e.to_string()))?
-                .map_err(|why| errors::bot_auth_required(format!("cannot keep the credential: {why}")))?;
-        }
+        // The icon and the avatar can fail: nothing is kept until they are done, so a failed
+        // add leaves no credential behind (bot-contacts-design §5.6).
         let icon = finx_a2a::card::icon(&card, &options).await;
         let avatar = match icon {
             Some(png) => {
@@ -749,9 +744,29 @@ impl Server {
         registry.with(|bots| bots.insert(id.clone(), Bot::new(file)));
         if let Err(err) = self.made(&id) {
             registry.with(|bots| bots.remove(&id));
-            let name = format!("bot.{id}");
-            let _ = tokio::task::spawn_blocking(move || finx_llm::credentials::delete(&name)).await;
             return Err(err);
+        }
+        // Last, once the bot is on disk: a credential that cannot be kept takes the bot with it,
+        // so the list never shows one that cannot answer.
+        if auth_kind(&card.auth) != BotAuth::None {
+            let (name, value) = (format!("bot.{id}"), credential.clone());
+            let kept = tokio::task::spawn_blocking(move || finx_llm::credentials::set(&name, &value)).await;
+            let failed = match kept {
+                Ok(Ok(())) => false,
+                Ok(Err(why)) => {
+                    tracing::warn!(bot = %id, "cannot keep the bot's credential: {why}");
+                    true
+                }
+                Err(err) => {
+                    tracing::warn!(bot = %id, "cannot keep the bot's credential: {err}");
+                    true
+                }
+            };
+            if failed {
+                registry.with(|bots| bots.remove(&id));
+                let _ = std::fs::remove_dir_all(self.0.home.bot_dir(&id));
+                return Err(errors::bot_auth_required("this bot's credential could not be saved"));
+            }
         }
         registry.announce(&[&id], Vec::new());
         Ok(BotResult { bot: registry.row(&id)? })

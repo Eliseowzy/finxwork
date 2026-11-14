@@ -55,6 +55,46 @@ fn kind(error: RpcError) -> String {
     error.data.and_then(|data| data["kind"].as_str().map(str::to_string)).unwrap_or_default()
 }
 
+/// Every file's text under `dir`, for finding a secret where it must not be.
+fn files_under(dir: &std::path::Path) -> Vec<String> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if let Ok(text) = std::fs::read_to_string(&path) {
+                out.push(text);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out);
+    out
+}
+
+/// A server with debug logging, its stderr read to the end by a thread.
+async fn spawn_logged(env: &TestEnv) -> (tokio::process::Child, Client, IncomingRx, tokio::task::JoinHandle<String>) {
+    let mut child = env
+        .finx(&["serve", "--stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("RUST_LOG", "finx=debug,finx_a2a=debug")
+        .spawn()
+        .expect("spawn finx with logs");
+    let mut stderr = child.stderr.take().expect("stderr");
+    let logs = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt as _;
+        let mut text = String::new();
+        let _ = stderr.read_to_string(&mut text).await;
+        text
+    });
+    let stdout = child.stdout.take().expect("stdout");
+    let stdin = child.stdin.take().expect("stdin");
+    let (client, incoming) = Client::connect(stdout, stdin);
+    (child, client, incoming, logs)
+}
+
 async fn say(client: &Client, session: &str, text: &str) {
     client
         .request(
@@ -179,8 +219,8 @@ async fn a_card_is_added_and_its_conversation_carries_on_across_a_restart() {
 
     // The application restarts; the conversation is resumed and carries on.
     drop(client);
-    let _ = child.kill();
-    let _ = child.wait();
+    let _ = child.kill().await;
+    let _ = child.wait().await;
     let (_child2, client2, incoming2) = env.spawn_rpc(&["serve", "--stdio"]);
     native_init(&client2).await;
     let mut events2 = route(incoming2);
@@ -259,20 +299,110 @@ async fn a_credential_stays_out_of_the_bot_file_and_its_answers() {
     let file = std::fs::read_to_string(env.home.path().join("bots").join(&bot).join("bot.json")).unwrap();
     assert!(!file.contains("test-key"), "the credential is not in bot.json: {file}");
     // It is in the credential store, under the bot's name.
-    fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
-        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(&path, out);
-            } else if let Ok(text) = std::fs::read_to_string(&path) {
-                out.push(text);
-            }
-        }
-    }
-    let mut files = Vec::new();
-    walk(env.home.path(), &mut files);
     assert!(
-        files.iter().any(|text| text.contains("bot.") && text.contains("test-key")),
+        files_under(env.home.path()).iter().any(|text| text.contains("bot.") && text.contains("test-key")),
         "the credential was kept by the credential store"
     );
+}
+#[tokio::test]
+async fn a_failed_add_leaves_no_credential_behind() {
+    let env = TestEnv::new("manual", CONFIG).await;
+    let fake = fake(&["--auth"]);
+    let (_child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let card = preview(&client, &fake.url).await;
+
+    // The bot's folder cannot be made: `bots` is a file. The avatar step fails after the card
+    // was read, before any credential is kept (bot-contacts-design §5.6).
+    let bots = env.home.path().join("bots");
+    let _ = std::fs::remove_dir_all(&bots);
+    std::fs::write(&bots, b"not a folder").unwrap();
+    let failed = client
+        .request(
+            "bots/add",
+            json!({"url": fake.url, "card_sha256": card["card_sha256"], "credential": "test-key"}),
+        )
+        .await
+        .unwrap_err();
+    assert!(!failed.message.contains("test-key"));
+    assert!(
+        files_under(env.home.path()).iter().all(|text| !text.contains("test-key")),
+        "a failed add leaves no credential in the store"
+    );
+}
+
+#[tokio::test]
+async fn a_credential_is_never_written_to_the_logs_or_an_error() {
+    let env = TestEnv::new("manual", CONFIG).await;
+    let fake = fake(&["--auth"]);
+    let (mut child, client, incoming, logs) = spawn_logged(&env).await;
+    native_init(&client).await;
+    let mut events = route(incoming);
+
+    let card = preview(&client, &fake.url).await;
+    // A credential the card wants, left out: the error says so without echoing anything.
+    let missing = client
+        .request("bots/add", json!({"url": fake.url, "card_sha256": card["card_sha256"]}))
+        .await
+        .unwrap_err();
+    assert!(!missing.message.contains("test-key"));
+    assert!(!serde_json::to_string(&missing.data).unwrap().contains("test-key"));
+
+    let added = client
+        .request(
+            "bots/add",
+            json!({"url": fake.url, "card_sha256": card["card_sha256"], "credential": "test-key"}),
+        )
+        .await
+        .expect("added");
+    let bot = added["bot"]["id"].as_str().unwrap().to_string();
+    let opened = client
+        .request(
+            "bots/open",
+            json!({"bot_id": bot, "events": {"exclude": ["text_delta", "thinking_delta", "tool_call_delta", "tool_progress"]}}),
+        )
+        .await
+        .expect("opened");
+    let session = opened["session_id"].as_str().unwrap().to_string();
+    say(&client, &session, "你好").await;
+    let first = until_end(&mut events).await;
+    assert_eq!(sent(&first), ["hello (1)"]);
+
+    // The credential is replaced with one the other side refuses; the server comes back with it.
+    client
+        .request("credentials/set", json!({"name": format!("bot.{bot}"), "value": "wrong-secret-key"}))
+        .await
+        .expect("credential replaced");
+    drop(client);
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    let first_logs = logs.await.expect("the first server's logs");
+
+    let (mut child, client, incoming, logs) = spawn_logged(&env).await;
+    native_init(&client).await;
+    let mut events = route(incoming);
+    let opened = client
+        .request(
+            "bots/open",
+            json!({"bot_id": bot, "events": {"exclude": ["text_delta", "thinking_delta", "tool_call_delta", "tool_progress"]}}),
+        )
+        .await
+        .expect("opened again");
+    let session = opened["session_id"].as_str().unwrap().to_string();
+    say(&client, &session, "你好").await;
+    let failed = until_end(&mut events).await;
+    let end = failed.last().expect("an end");
+    assert_eq!(end["type"], "task_failed");
+    assert_eq!(end["error"]["kind"], "bot_auth_required");
+    let shown = serde_json::to_string(&failed).unwrap();
+    assert!(!shown.contains("test-key"), "the answer carries no credential: {shown}");
+    assert!(!shown.contains("wrong-secret-key"), "the answer carries no credential: {shown}");
+
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    let second_logs = logs.await.expect("the second server's logs");
+    for text in [first_logs, second_logs] {
+        assert!(!text.contains("test-key"), "the logs hold no credential");
+        assert!(!text.contains("wrong-secret-key"), "the logs hold no credential");
+    }
 }
