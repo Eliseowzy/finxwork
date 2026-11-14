@@ -268,6 +268,7 @@
     "offeredName": "They now call it “{{name}}”",
     "adoptName": "Use this name",
     "moved": "Their card points at another address; the last one is still in use.",
-    "unreachable": "Their card has not been readable for a while; the last one is still in use."
+    "unreachable": "Their card has not been readable for a while; the last one is still in use.",
+    "noImages": "{{name}} cannot take pictures"
   }
 }

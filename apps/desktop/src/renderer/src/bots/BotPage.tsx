@@ -734,6 +734,11 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
   const setup = bot.default && !bot.last && !st.botSetupDone;
   const send = async () => {
     const sent = draft;
+    // The card says what it can receive: a picture it cannot take is stopped here (§4.5).
+    if (external && !(bot.source?.accepts ?? []).includes("image") && sent.attachments.some((a) => a.kind === "image")) {
+      st.show(t("external.noImages", { name: bot.name }), undefined, true);
+      return;
+    }
     change({ text: "", attachments: [] });
     if (external && unsendable(sent.attachments)) {
       st.show(t("external.wordsOnly"), undefined, true);
