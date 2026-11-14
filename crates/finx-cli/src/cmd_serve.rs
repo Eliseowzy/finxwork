@@ -36,6 +36,7 @@ pub(crate) fn start(overrides: &[String]) -> anyhow::Result<(Server, Option<trac
         overrides,
         mcp_servers: mcp.servers.clone(),
         doc_worker: finx_docs::Launcher::this_program(),
+        word_save: None,
     })?;
     spawn_signal_handler(server.clone());
     Ok((server, guard))

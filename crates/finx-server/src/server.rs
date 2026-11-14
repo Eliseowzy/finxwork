@@ -76,6 +76,8 @@ pub struct ServerOptions {
     pub mcp_servers: Vec<McpServerConfig>,
     /// How documents' PDFium worker runs: `finx doc-worker`, or a thread in tests.
     pub doc_worker: finx_docs::Launcher,
+    /// Who writes .docx files; None: what `FINX_WORD_SAVE` says.
+    pub word_save: Option<finx_docs::word::SaveEngine>,
 }
 
 /// Protocol-neutral arguments for a new session.
@@ -190,7 +192,11 @@ impl Server {
             finx_docs::deck::DeckLauncher::like(&options.doc_worker),
         ));
         let docx_host = Arc::new(crate::docx_host::DocxHost::default());
-        let words = Arc::new(finx_docs::word::WordStore::new(options.home.root().join("docx"), &decks, docx_host.clone()));
+        let mut words = finx_docs::word::WordStore::new(options.home.root().join("docx"), &decks, docx_host.clone());
+        if let Some(engine) = options.word_save {
+            words = words.with_engine(engine);
+        }
+        let words = Arc::new(words);
         let docs = Arc::new(finx_docs::DocStore::new(options.home.root().join("docs"), options.doc_worker));
         let bots = Arc::new(crate::bots::Registry::new(options.home.clone()));
         let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());
@@ -1105,6 +1111,7 @@ mod tests {
             overrides: Vec::new(),
             mcp_servers: Vec::new(),
             doc_worker: finx_docs::Launcher::Thread,
+            word_save: None,
         })
         .unwrap();
         let id = "0193f0c2-7c1e-7d3a-9b1f-4c2d8e6a5b10".to_string();
