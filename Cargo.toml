@@ -65,13 +65,13 @@ async-trait = "0.1"
 # Back to upstream once all of these are merged there and a release carries them. No font packs
 # (fonts-latin, fonts-intl, fonts-cjk): every face comes from the machine (finx-slide's
 # SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
-betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "750289644704dcd2017f214c52fbe3beca74d82b", default-features = false, features = ["raster", "fonts"] }
+betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "6fd4920644e2b69884a0a7ee5280d144d225d602", default-features = false, features = ["raster", "fonts"] }
 # Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
-betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "750289644704dcd2017f214c52fbe3beca74d82b", default-features = false, features = ["raster", "fonts", "pdf"] }
-docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "750289644704dcd2017f214c52fbe3beca74d82b", features = ["metafile", "tiff"] }
-ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "750289644704dcd2017f214c52fbe3beca74d82b", features = ["svg"] }
+betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "6fd4920644e2b69884a0a7ee5280d144d225d602", default-features = false, features = ["raster", "fonts", "pdf"] }
+docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "6fd4920644e2b69884a0a7ee5280d144d225d602", features = ["metafile", "tiff"] }
+ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "6fd4920644e2b69884a0a7ee5280d144d225d602", features = ["svg"] }
 # The .docx written from the session in Rust: the fork's port of the JS engine's saveYrsDocx.
-docx-native-save = { package = "betteroffice-docx-native-save", git = "https://github.com/Eliseowzy/betteroffice", rev = "750289644704dcd2017f214c52fbe3beca74d82b" }
+docx-native-save = { package = "betteroffice-docx-native-save", git = "https://github.com/Eliseowzy/betteroffice", rev = "6fd4920644e2b69884a0a7ee5280d144d225d602" }
 base64 = "0.22"
 bytes = "1"
 calamine = "0.38"
