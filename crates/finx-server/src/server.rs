@@ -143,6 +143,8 @@ pub(crate) struct Inner {
     pub(crate) feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
     pub(crate) defaults: SessionDefaults,
+    /// `[bots]`: another subject's bots (bot-contacts-design §5.8).
+    pub(crate) bot_settings: finx_core::config::BotsSettings,
     /// The 自定义 page's subscriptions and file watching (crate::customize).
     pub(crate) customize: crate::customize::State,
     /// What the file panel watches (crate::files).
@@ -211,6 +213,7 @@ impl Server {
             bots,
             routines,
             defaults,
+            bot_settings: workspace.config.bots,
             store: Arc::new(JsonlStore::new(options.home.sessions_dir())),
             home: options.home,
             overrides: options.overrides,
@@ -246,6 +249,7 @@ impl Server {
         server.follow_word_changes();
         server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
+    spawn_bot_sweep(&server.0);
         Ok(server)
     }
 
@@ -607,6 +611,17 @@ impl Server {
                 no_project,
             },
         };
+        // Another subject's bot: its service is built again from the bot's source (§5.3).
+        let peer = match header.peer.as_ref() {
+            Some(_) => {
+                let bot = header.bot.as_ref().ok_or_else(|| errors::bot_not_found(id))?;
+                Some(self.peer_connection(&bot.id)?.ok_or_else(|| errors::bot_not_found(&bot.id))?)
+            }
+            None => None,
+        };
+        if let Some((peer, _)) = &peer {
+            deps.peer = Some(peer.clone());
+        }
         let options = ResumeOptions {
             session: SessionRef::Path(location),
             model: overrides.model,
@@ -619,7 +634,7 @@ impl Server {
             interactive_approvals: true,
             // A bot's conversation learns a name given while it was not loaded.
             bot_name: header.bot.as_ref().and_then(|bot| self.0.bots.name(&bot.id)),
-            peer: None,
+            peer: peer.map(|(peer, _)| peer),
         };
         let kernel = Kernel::resume(options, deps)
             .await
@@ -1028,6 +1043,45 @@ const UPKEEP_EVERY: Duration = Duration::from_secs(2);
 
 /// Returns free memory to the system when the service goes quiet: after its last running task
 /// ends, or after sessions close. The allocator would otherwise keep the pages of the peak.
+/// A task an external bot had not finished when the process stopped is picked up again at
+/// startup, so its result arrives as unread (§5.5). The other side is asked, not kept on a
+/// standing connection (D-707).
+fn spawn_bot_sweep(inner: &Arc<Inner>) {
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let inner = inner.clone();
+    let server = Server(inner.clone());
+    runtime.spawn(async move {
+        let sessions = inner.bots.remote_sessions();
+        for session in sessions {
+            let store = inner.store.clone();
+            let reference = SessionRef::Id(session.clone());
+            let unfinished = tokio::task::spawn_blocking(move || {
+                store.read(&reference).ok().is_some_and(|(_, entries)| {
+                    entries.iter().rev().find_map(|entry| match &entry.kind {
+                        finx_core::store::EntryKind::Task { status, .. } => Some(*status == finx_core::store::TaskStatus::Started),
+                        _ => None,
+                    }).unwrap_or(false)
+                })
+            })
+            .await
+            .unwrap_or(false);
+            if unfinished {
+                let overrides = ResumeOverrides {
+                    model: None,
+                    thinking: None,
+                    permission_mode: None,
+                    mcp_servers: Vec::new(),
+                };
+                if let Err(err) = server.load_session(&session, overrides, None).await {
+                    tracing::warn!(session = %session, kind = %err.message, "cannot pick up an external bot's task");
+                }
+            }
+        }
+    });
+}
+
 fn spawn_memory_upkeep(inner: &Arc<Inner>) {
     let Ok(runtime) = tokio::runtime::Handle::try_current() else {
         return;

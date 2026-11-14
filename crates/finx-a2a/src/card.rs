@@ -614,3 +614,15 @@ mod tests {
         assert_ne!(Card::hash(&first), Card::hash(&changed));
     }
 }
+
+/// The card's icon, downloaded with the same limits as the card itself and kept only when it is
+/// a PNG (§5.2). `None` when there is none, or it cannot be used: a bot simply has no icon.
+pub async fn icon(card: &Card, options: &CardOptions) -> Option<Vec<u8>> {
+    const ICON_MAX: u64 = 1024 * 1024;
+    let url = reqwest::Url::parse(card.icon_url.as_deref()?).ok()?;
+    net::check_url(&url, options.allow_local).ok()?;
+    let http = net::client(options.allow_local, url.host_str().is_some_and(net::is_loopback_host)).ok()?;
+    let response = http.get(url).send().await.ok()?.error_for_status().ok()?;
+    let bytes = net::read_body(response, ICON_MAX).await.ok()?;
+    bytes.starts_with(b"\x89PNG\r\n\x1a\n").then_some(bytes)
+}

@@ -9,6 +9,7 @@ pub mod peer;
 
 pub use card::Card;
 pub use card::CardError;
+pub use card::icon;
 pub use card::CardOptions;
 pub use client::Auth;
 pub use client::Client;

@@ -24,6 +24,46 @@ pub fn bot_invalid(message: impl Into<String>) -> RpcError {
     RpcError::with_kind(error_code::BOT_INVALID, "bot_invalid", message)
 }
 
+/// `bots/preview`, `bots/add`: the other side's card, as `finx-a2a` refused it (§5.2, §7).
+pub fn from_card(error: finx_a2a::CardError) -> RpcError {
+    use finx_a2a::CardError as C;
+    let (code, kind) = match &error {
+        C::Unreachable(_) => (error_code::BOT_CARD_UNREACHABLE, "bot_card_unreachable"),
+        C::Invalid(_) => (error_code::BOT_CARD_INVALID, "bot_card_invalid"),
+        C::Unsupported(_) => (error_code::BOT_CARD_UNSUPPORTED, "bot_card_unsupported"),
+        C::Moved(_) => (error_code::BOT_CARD_MOVED, "bot_card_moved"),
+    };
+    let mut data = serde_json::json!({ "kind": kind });
+    if let Some(host) = error.host() {
+        data["host"] = serde_json::json!(host);
+    }
+    RpcError {
+        code,
+        message: error.to_string(),
+        data: Some(data),
+    }
+}
+
+pub fn bot_card_changed() -> RpcError {
+    RpcError::with_kind(
+        error_code::BOT_CARD_CHANGED,
+        "bot_card_changed",
+        "the bot's card changed since it was shown; read it again",
+    )
+}
+
+pub fn bot_auth_required(message: impl Into<String>) -> RpcError {
+    RpcError::with_kind(error_code::BOT_AUTH_REQUIRED, "bot_auth_required", message)
+}
+
+pub fn bot_not_supported() -> RpcError {
+    RpcError::with_kind(
+        error_code::BOT_NOT_SUPPORTED,
+        "bot_not_supported",
+        "this does not work for another subject's bot, or adding one is turned off (bots.external)",
+    )
+}
+
 pub fn routine_not_found(id: &str) -> RpcError {
     RpcError::with_kind(error_code::ROUTINE_NOT_FOUND, "routine_not_found", format!("routine or run {id} not found"))
 }

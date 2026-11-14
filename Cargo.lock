@@ -2163,6 +2163,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "chrono",
+ "finx-a2a",
  "finx-browser",
  "finx-connections",
  "finx-core",

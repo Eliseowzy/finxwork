@@ -859,7 +859,7 @@ async fn resume_peer(
 }
 
 /// What the log calls the model of an external bot's session: the other side, not a model.
-pub(crate) const A2A_MODEL: &str = "a2a";
+pub const A2A_MODEL: &str = "a2a";
 
 impl Kernel {
     /// What the kernel's tools keep for the session, while it runs.

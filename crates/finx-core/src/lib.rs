@@ -62,6 +62,7 @@ pub use hooks::Gate;
 pub use hooks::Hooks;
 pub use hooks::SessionView;
 pub use hooks::TurnDecision;
+pub use kernel::A2A_MODEL;
 pub use kernel::Kernel;
 pub use kernel::KernelClosed;
 pub use kernel::KernelDeps;

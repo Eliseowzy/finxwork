@@ -19,6 +19,7 @@ let auth = false;
 let streaming = true;
 let provider = false;
 let icon = false;
+let images = false;
 
 for (let i = 0; i < args.length; i += 1) {
   switch (args[i]) {
@@ -28,6 +29,7 @@ for (let i = 0; i < args.length; i += 1) {
     case '--no-streaming': streaming = false; break;
     case '--provider': provider = true; break;
     case '--icon': icon = true; break;
+    case '--images': images = true; break;
     default: usage(`unknown argument: ${args[i]}`);
   }
 }
@@ -451,7 +453,7 @@ function cardFor(interfaceUrl) {
     version: '1.0.0',
     supportedInterfaces: [{ url: interfaceUrl, protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
     capabilities: { streaming },
-    defaultInputModes: ['text/plain'],
+    defaultInputModes: images ? ['text/plain', 'image/png', 'image/jpeg'] : ['text/plain'],
     defaultOutputModes: ['text/plain', 'application/pdf'],
     skills: [
       { id: 'echo', name: 'Echo', description: 'Answers hello and remembers what was said.', tags: ['test'] },
@@ -534,6 +536,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/card-elsewhere') {
       return json(res, 200, cardFor('http://example.com/a2a'));
+    }
+    if (req.method === 'GET' && url.pathname === '/bad-card') {
+      return json(res, 200, { hello: 'not a card' });
     }
     if (req.method === 'GET' && url.pathname === '/redirect') {
       res.writeHead(302, { Location: 'http://example.com/' });

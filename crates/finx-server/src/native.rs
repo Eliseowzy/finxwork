@@ -716,6 +716,32 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::BOTS_PREVIEW => match finx_rpc::params::<finx_protocol::bot::BotPreviewParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        let reply_id = id.clone();
+                        match server.bots_preview(p).await {
+                            Ok(result) => conn.send(finx_rpc::response(&reply_id, &serde_json::json!(result))),
+                            Err(err) => conn.send_error(Some(&reply_id), &err),
+                        }
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_ADD => match finx_rpc::params::<finx_protocol::bot::BotAddParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        let reply_id = id.clone();
+                        match server.bots_add(p).await {
+                            Ok(result) => conn.send(finx_rpc::response(&reply_id, &serde_json::json!(result))),
+                            Err(err) => conn.send_error(Some(&reply_id), &err),
+                        }
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::BOTS_UPDATE => match finx_rpc::params::<BotUpdateParams>(params) {
                 Ok(p) => {
                     let (conn, id) = (conn.clone(), id.clone());
