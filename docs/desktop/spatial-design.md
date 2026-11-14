@@ -4,7 +4,7 @@
 |---|---|
 | 版本 | v0.1 |
 | 日期 | 2026-11-13 |
-| 状态 | 方案已确认，未实现 |
+| 状态 | 一到三期已实现（单元测试通过，§10 的端到端未做）；内核的行业耦合清理进度见 spatial-kernel-audit.md |
 | 关系 | 取代 feat/voxel-phase1-wip 上 voxel-design.md 的设计；该分支的 dicom.rs、import.rs、brick.rs 可复用（§11） |
 
 ## 0. 背景与结论

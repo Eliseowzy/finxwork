@@ -362,10 +362,10 @@ struct SliceArgs {
     /// Number of consecutive slices to tile into one image (1..=9, default: 1).
     #[serde(default)]
     count: Option<u32>,
-    /// Value window [low, high] mapped from black to white (default: profile's first window or [-1000, 1000]).
+    /// Value window [low, high] mapped from black to white (default: the profile's first window, else the least to the greatest value shown).
     #[serde(default)]
     window: Option<[f64; 2]>,
-    /// Named window from the document's profile (e.g. "lung", "mediastinum", "bone").
+    /// Named window from the document's profile.
     #[serde(default)]
     window_name: Option<String>,
     /// Patient LPS point [x, y, z] in mm to zoom around.
@@ -380,6 +380,17 @@ struct SliceArgs {
 }
 
 struct SpatialSlice;
+
+/// The least and the greatest of `values`, the value that stands for no data left out; `(0, 1)`
+/// when they are all alike, so the window has a width.
+fn value_range(values: impl Iterator<Item = i16>) -> (f64, f64) {
+    let (mut lo, mut hi) = (i16::MAX, i16::MIN);
+    for v in values.filter(|v| *v != finx_spatial::volume::NODATA) {
+        lo = lo.min(v);
+        hi = hi.max(v);
+    }
+    if lo >= hi { (0.0, 1.0) } else { (lo as f64, hi as f64) }
+}
 
 fn lps_label(v: [f64; 3]) -> &'static str {
     let ax = v[0].abs();
@@ -528,18 +539,16 @@ impl TypedTool for SpatialSlice {
         let end = (start + count).min(max_slices);
 
         let window = if let Some([lo, hi]) = args.window {
-            (lo, hi)
+            Some((lo, hi))
         } else if let Some(name) = &args.window_name {
             let found = layers
                 .profile
                 .as_ref()
                 .and_then(|p| p.windows.iter().find(|(n, _, _)| n.eq_ignore_ascii_case(name)))
                 .ok_or_else(|| ToolError::InvalidArgs(format!("unknown window name: {name}")))?;
-            (found.2 - found.1 / 2.0, found.2 + found.1 / 2.0)
-        } else if let Some((_, w, l)) = layers.profile.as_ref().and_then(|p| p.windows.first()) {
-            (*l - *w / 2.0, *l + *w / 2.0)
+            Some((found.2 - found.1 / 2.0, found.2 + found.1 / 2.0))
         } else {
-            (-1000.0, 1000.0)
+            layers.profile.as_ref().and_then(|p| p.windows.first()).map(|(_, w, l)| (*l - *w / 2.0, *l + *w / 2.0))
         };
 
         let region = center_ijk.map(|ijk| {
@@ -557,14 +566,12 @@ impl TypedTool for SpatialSlice {
 
         let size = args.size.unwrap_or(512).clamp(128, 1024);
         let flip_v = plane != Plane::Axial && vol_info.direction[2][2] > 0.0;
-        let opts = RenderOptions { window, region, size, flip_v };
         let spacing = (vol_info.spacing[u_ax], vol_info.spacing[v_ax]);
-
-        let mut images = Vec::with_capacity((end - start) as usize);
-        for idx in start..end {
-            let pv = render::cut(bricks, plane, idx).map_err(|e| ToolError::Failed(e.to_string()))?;
-            images.push(render::render(&pv, spacing, &opts));
-        }
+        let planes = (start..end).map(|idx| render::cut(bricks, plane, idx)).collect::<std::io::Result<Vec<_>>>().map_err(|e| ToolError::Failed(e.to_string()))?;
+        // No window asked for and none in the profile: the whole range of what is shown.
+        let window = window.unwrap_or_else(|| value_range(planes.iter().flat_map(|p| &p.values).copied()));
+        let opts = RenderOptions { window, region, size, flip_v };
+        let images: Vec<_> = planes.iter().map(|pv| render::render(pv, spacing, &opts)).collect();
 
         let png_refs: Vec<&[u8]> = images.iter().map(|i| i.png.as_slice()).collect();
         let png = tile_pngs(&png_refs)?;

@@ -2270,7 +2270,7 @@
         },
         "window": {
           "default": null,
-          "description": "Value window [low, high] mapped from black to white (default: profile's first window or [-1000, 1000]).",
+          "description": "Value window [low, high] mapped from black to white (default: the profile's first window, else the least to the greatest value shown).",
           "items": {
             "type": "number"
           },
@@ -2280,7 +2280,7 @@
         },
         "window_name": {
           "default": null,
-          "description": "Named window from the document's profile (e.g. \"lung\", \"mediastinum\", \"bone\").",
+          "description": "Named window from the document's profile.",
           "type": "string"
         }
       },
@@ -2909,7 +2909,7 @@
     }
   },
   {
-    "description": "Run a Python script over a volume document (a CT). The script reads the volume with `from finx_spatial import load, submit` (load().hu is int16 HU shaped k,j,i; .spacing (dk,dj,di) mm; .segment(name) a bool mask; .slice_of_image(n); .k_towards_head) and submits results with submit.candidates / marker / structure / finding. It runs with no network and can write only its work folder. The first run downloads Python and the skill's packages (about 120 MB); say so to the user before. Prefer a skill's own script (`skill_script`); write `script` only when none fits. Returns stdout, what was submitted and accepted, or the end of the error.",
+    "description": "Run a Python script over a volume document. The script reads the volume with `from finx_spatial import load, submit` (load().values is the int16 array shaped k,j,i, in load().unit; .spacing (dk,dj,di) mm; .direction; .segment(name) a bool mask of a structure already in the document; .slice_of_image(n)) and submits results with submit.candidates / marker / structure / finding. It runs with no network and can write only its work folder. The first run of a skill's environment downloads Python and that skill's packages (often over 100 MB); say so to the user before. Prefer a skill's own script (`skill_script`); write `script` only when none fits, and then name the `skill` whose Python environment it runs in. Returns stdout, what was submitted and accepted, or the end of the error.",
     "group": "spatial",
     "kind": "mutating",
     "loaded": false,
@@ -2936,12 +2936,12 @@
         },
         "skill": {
           "default": null,
-          "description": "For `script`: whose Python environment it runs in (default `medical-imaging`).",
+          "description": "For `script`, required: the skill whose Python environment (its `pyproject.toml`) it runs in.",
           "type": "string"
         },
         "skill_script": {
           "default": null,
-          "description": "A script that comes with a skill, as `<skill>/scripts/<file>.py`, e.g. `medical-imaging/scripts/lung_nodule_candidates.py`. Runs without asking.",
+          "description": "A script that comes with a skill, as `<skill>/scripts/<file>.py`, Runs without asking.",
           "type": "string"
         },
         "timeout_s": {

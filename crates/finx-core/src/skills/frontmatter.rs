@@ -13,6 +13,8 @@ pub(crate) struct Header {
     pub allowed_tools: bool,
     /// What to type after `/name`, e.g. `[file]`.
     pub argument_hint: Option<String>,
+    /// `metadata.suggest-for`: kinds of document, as a list or one string of them.
+    pub suggest_for: Vec<String>,
 }
 
 /// Parses the header at the start of `text`.
@@ -42,6 +44,14 @@ pub(crate) fn parse(text: &str) -> Result<Header, String> {
         disable_model_invocation: get("disable-model-invocation").is_some_and(truthy),
         allowed_tools: get("allowed-tools").is_some(),
         argument_hint: string("argument-hint"),
+        suggest_for: match get("metadata") {
+            Some(Yaml::Hash(meta)) => match meta.get(&Yaml::String("suggest-for".into())) {
+                Some(Yaml::String(kinds)) => kinds.split([',', ' ']).filter(|k| !k.is_empty()).map(str::to_string).collect(),
+                Some(Yaml::Array(kinds)) => kinds.iter().filter_map(|k| k.as_str().map(str::to_string)).collect(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        },
     })
 }
 
@@ -173,6 +183,15 @@ mod tests {
         }
         let header = parse("---\ndescription: d\ndisable-model-invocation: no\n---\n").unwrap();
         assert!(!header.disable_model_invocation);
+    }
+
+    #[test]
+    fn suggest_for_is_a_list_or_one_string() {
+        let one = parse("---\nname: a\nmetadata:\n  suggest-for: spatial-volume\n---\n").unwrap();
+        assert_eq!(one.suggest_for, ["spatial-volume"]);
+        let list = parse("---\nname: a\nmetadata:\n  suggest-for: [spatial-volume, spatial-mesh]\n---\n").unwrap();
+        assert_eq!(list.suggest_for, ["spatial-volume", "spatial-mesh"]);
+        assert!(parse("---\nname: a\n---\n").unwrap().suggest_for.is_empty());
     }
 
     #[test]

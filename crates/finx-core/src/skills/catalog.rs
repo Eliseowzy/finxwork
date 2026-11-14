@@ -304,6 +304,7 @@ mod tests {
             source: None,
             removable: false,
             default_enabled: true,
+            suggest_for: Vec::new(),
         }
     }
 

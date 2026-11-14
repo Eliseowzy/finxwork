@@ -1,11 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NODATA, edges, grey, paint, sideOf, sliceAt, sliceOfSlab, slicePlane, snap, toMm, toVoxel, unshuffle, windowsOf, type Geometry } from "./volume.ts";
+import { NODATA, edges, fit, grey, paint, sideOf, sliceAt, sliceOfSlab, slicePlane, snap, toMm, toVoxel, unshuffle, windowsOf, type Geometry } from "./volume.ts";
 
 test("profile windows: the well-formed ones in order, a default when none", () => {
   const w = windowsOf([["肺窗", 1500, -600], ["坏的", 0, 1], ["纵隔窗", 400, 40], [3, 2, 1]]);
   assert.deepEqual(w.map((x) => x.name), ["肺窗", "纵隔窗"]);
   assert.equal(windowsOf(undefined).length, 1);
+});
+
+test("with no profile windows the window fits the values shown, whatever their scale", () => {
+  const [auto] = windowsOf(undefined);
+  const w = fit(Int16Array.from([NODATA, 10, 200, 60]), auto);
+  assert.deepEqual([w.width, w.level], [190, 105]);
+  assert.equal(grey(10, w), 0);
+  assert.equal(grey(200, w), 255);
+  const lung = { name: "肺窗", width: 1500, level: -600 };
+  assert.equal(fit(Int16Array.from([0, 255]), lung), lung);
 });
 
 test("a window maps its level to mid grey and clamps outside", () => {

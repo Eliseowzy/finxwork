@@ -47,7 +47,7 @@ pub(crate) const NAME: &str = "spatial_script";
 pub(crate) trait ScriptData: Send + Sync {
     /// Writes `volume.npy` (int16, shape k,j,i), `meta.json` and `masks/<id>.npy` (bool) into
     /// `dir` (§13). [`write_npy_i16`] and [`write_npy_bool`] write the arrays. `meta.json`:
-    /// `{"spacing": [dk,dj,di], "origin": [..], "direction": [..9], "unit": "HU",
+    /// `{"spacing": [dk,dj,di], "origin": [..], "direction": [..9], "unit": <the volume's unit>,
     ///   "image_numbers": [one per k], "k_towards_head": bool, "masks": {"<id>": "masks/<id>.npy"}}`.
     fn export(&self, doc_id: &str, dir: &Path) -> Result<(), String>;
     /// Turns checked submissions into document operations (one revision). Structure masks are
@@ -172,7 +172,6 @@ pub(crate) fn tool() -> Arc<dyn Tool> {
     Arc::new(Typed::new(SpatialScript))
 }
 
-const DEFAULT_SKILL: &str = "medical-imaging";
 const MIRROR_INDEX: &str = "https://mirrors.aliyun.com/pypi/simple/";
 const MIRROR_FILES: &str = "https://mirrors.aliyun.com/pypi/packages/";
 const MIRROR_PYTHON: &str = "https://registry.npmmirror.com/-/binary/python-build-standalone";
@@ -180,7 +179,7 @@ const OFFICIAL_INDEX: &str = "https://pypi.org/simple";
 const OFFICIAL_FILES: &str = "https://files.pythonhosted.org/packages/";
 const STALL: Duration = Duration::from_secs(60);
 const SYNC_LIMIT: Duration = Duration::from_secs(30 * 60);
-const FIRST_DOWNLOAD: &str = "about 120 MB (Python 3.12 and numpy, scipy, scikit-image, SimpleITK), about 350 MB on disk";
+const FIRST_DOWNLOAD: &str = "often over 100 MB, more on disk";
 const MAX_LINES: usize = 2000;
 const MAX_TEXT: usize = 2000;
 const STDOUT_HEAD: usize = 6000;
@@ -194,13 +193,13 @@ pub(crate) struct Args {
     /// One plain sentence saying what the script does and why, shown to the user first.
     pub purpose: String,
     /// A script that comes with a skill, as `<skill>/scripts/<file>.py`,
-    /// e.g. `medical-imaging/scripts/lung_nodule_candidates.py`. Runs without asking.
+    /// Runs without asking.
     #[serde(default)]
     pub skill_script: Option<String>,
     /// Python code you wrote; the user approves it. Give this or `skill_script`, not both.
     #[serde(default)]
     pub script: Option<String>,
-    /// For `script`: whose Python environment it runs in (default `medical-imaging`).
+    /// For `script`, required: the skill whose Python environment (its `pyproject.toml`) it runs in.
     #[serde(default)]
     pub skill: Option<String>,
     /// Passed to the script as one JSON string in argv[1].
@@ -213,7 +212,7 @@ pub(crate) struct Args {
 
 struct SpatialScript;
 
-const DESCRIPTION: &str = "Run a Python script over a volume document (a CT). The script reads the volume with `from finx_spatial import load, submit` (load().hu is int16 HU shaped k,j,i; .spacing (dk,dj,di) mm; .segment(name) a bool mask; .slice_of_image(n); .k_towards_head) and submits results with submit.candidates / marker / structure / finding. It runs with no network and can write only its work folder. The first run downloads Python and the skill's packages (about 120 MB); say so to the user before. Prefer a skill's own script (`skill_script`); write `script` only when none fits. Returns stdout, what was submitted and accepted, or the end of the error.";
+const DESCRIPTION: &str = "Run a Python script over a volume document. The script reads the volume with `from finx_spatial import load, submit` (load().values is the int16 array shaped k,j,i, in load().unit; .spacing (dk,dj,di) mm; .direction; .segment(name) a bool mask of a structure already in the document; .slice_of_image(n)) and submits results with submit.candidates / marker / structure / finding. It runs with no network and can write only its work folder. The first run of a skill's environment downloads Python and that skill's packages (often over 100 MB); say so to the user before. Prefer a skill's own script (`skill_script`); write `script` only when none fits, and then name the `skill` whose Python environment it runs in. Returns stdout, what was submitted and accepted, or the end of the error.";
 
 #[async_trait]
 impl TypedTool for SpatialScript {
@@ -312,7 +311,10 @@ async fn run(handle: &ScriptHandle, args: Args, ctx: &ToolCtx) -> Result<ToolOut
             let code = std::fs::read_to_string(&file).map_err(|e| ToolError::Failed(format!("{path}: {e}")))?;
             (skill, Some(file), code)
         }
-        (None, Some(code)) => (args.skill.clone().unwrap_or_else(|| DEFAULT_SKILL.into()), None, code.clone()),
+        (None, Some(code)) => {
+            let skill = args.skill.clone().ok_or_else(|| ToolError::InvalidArgs("`script` needs `skill`: the skill whose Python environment it runs in".into()))?;
+            (skill, None, code.clone())
+        }
         (None, None) => return Err(ToolError::InvalidArgs("give `skill_script` or `script`".into())),
     };
     let skill_dir = find_skill(handle, &skill).ok_or_else(|| ToolError::Failed(format!("no skill `{skill}`")))?;

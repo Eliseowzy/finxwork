@@ -39,8 +39,8 @@ export default function SpatialDocView({ rpc, session, tab, jump }: { rpc: RpcCl
     setWin((prev) => windows.find((w) => w.name === prev.name && w.width === prev.width && w.level === prev.level) ?? windows[0]);
   }, [windows]);
 
-  // Prompt to enable medical-imaging skill when opening a volume and it is off.
-  const [disabledSkillDir, setDisabledSkillDir] = useState<string | null>(null);
+  // A skill that is off and says it helps with volumes (`metadata.suggest-for`): offer to turn it on.
+  const [suggested, setSuggested] = useState<{ dir: string; name: string } | null>(null);
   const [enablingSkill, setEnablingSkill] = useState(false);
   useEffect(() => {
     if (spatial?.kind !== "volume") return;
@@ -49,8 +49,8 @@ export default function SpatialDocView({ rpc, session, tab, jump }: { rpc: RpcCl
       .request("skills/list", {})
       .then((res) => {
         if (gone) return;
-        const med = res.skills.find((s) => s.name === "medical-imaging" || /[\\/]medical-imaging[\\/]SKILL\.md$/i.test(s.path));
-        setDisabledSkillDir(med && med.state === "disabled" ? med.path.replace(/[\\/]SKILL\.md$/i, "") : null);
+        const skill = res.skills.find((s) => s.state === "disabled" && s.suggest_for?.includes("spatial-volume"));
+        setSuggested(skill ? { dir: skill.path.replace(/[\\/]SKILL\.md$/i, ""), name: skill.name } : null);
       })
       .catch(() => {});
     return () => {
@@ -58,12 +58,12 @@ export default function SpatialDocView({ rpc, session, tab, jump }: { rpc: RpcCl
     };
   }, [rpc, spatial?.kind]);
 
-  const enableMedicalSkill = () => {
-    if (!disabledSkillDir || enablingSkill) return;
+  const enableSuggested = () => {
+    if (!suggested || enablingSkill) return;
     setEnablingSkill(true);
     void rpc
-      .request("skills/set_enabled", { path: disabledSkillDir, enabled: true })
-      .then(() => setDisabledSkillDir(null))
+      .request("skills/set_enabled", { path: suggested.dir, enabled: true })
+      .then(() => setSuggested(null))
       .finally(() => setEnablingSkill(false));
   };
 
@@ -325,10 +325,10 @@ export default function SpatialDocView({ rpc, session, tab, jump }: { rpc: RpcCl
 
   return (
     <div className="spv">
-      {disabledSkillDir && (
+      {suggested && (
         <div className="spv-skill-banner">
-          <span>{t("spatial.enableSkillHint")}</span>
-          <button className="btn sm on" disabled={enablingSkill} onClick={enableMedicalSkill}>
+          <span>{t("spatial.enableSkillHint", { name: suggested.name })}</span>
+          <button className="btn sm on" disabled={enablingSkill} onClick={enableSuggested}>
             {t("spatial.enableSkill")}
           </button>
         </div>

@@ -1,6 +1,8 @@
 ---
 name: medical-imaging
 description: Help a person understand their own CT or MRI study and its report. Use when the user attaches or mentions a CT/MRI DICOM zip, folder or files, asks where something in an imaging report is (a nodule, a shadow, a lesion), or types /ct. Opens the scan beside the conversation, builds a 3D chest model, and locates report findings on the slices.
+metadata:
+  suggest-for: spatial-volume
 ---
 <!-- Shipped disabled by default (design: docs/desktop/spatial-design.md §6). The user enables it from the DICOM file card or Customize. The "/ct" command is this skill. -->
 
@@ -8,7 +10,7 @@ description: Help a person understand their own CT or MRI study and its report. 
 
 You help a person understand **their own** scan and **their doctor's report**. You are not their doctor: conclusions belong to the doctor. Answer in the user's language, in plain words.
 
-Tools: the `spatial_*` group (load with `tool_search` if not loaded): `spatial_open`, `spatial_info`, `spatial_slice`, `spatial_stats`, `spatial_mark`, `spatial_measure`, `spatial_finding`, `spatial_view`, `spatial_snapshot`, `spatial_script`. If they are missing, 3D is switched off in settings (三维): tell the user and stop.
+Tools: the `spatial_*` group (load with `tool_search` if not loaded): `spatial_open`, `spatial_info`, `spatial_slice`, `spatial_stats`, `spatial_mark`, `spatial_measure`, `spatial_finding`, `spatial_view`, `spatial_script`. If they are missing, 3D is switched off in settings (三维): tell the user and stop.
 
 Principles: **the kernel gives facts, you make judgements. Find things by computing; use pictures only to check.** Never parse DICOM yourself with scripts; use the tools.
 

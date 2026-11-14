@@ -18209,6 +18209,13 @@
         },
         "state": {
           "$ref": "#/definitions/SkillState"
+        },
+        "suggest_for": {
+          "description": "Kinds of document the skill is of help with, from the header's `metadata.suggest-for` (`spatial-volume`): a view of one offers to turn the skill on when it is off.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [

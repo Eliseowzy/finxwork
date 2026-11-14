@@ -4168,6 +4168,8 @@ export type SkillEntry = {
   /** Where finx installed it from (`.finx-source.json`). */
   source?: SkillSource | null;
   state: SkillState;
+  /** Kinds of document the skill is of help with, from the header's `metadata.suggest-for` (`spatial-volume`): a view of one offers to turn the skill on when it is off. */
+  suggest_for?: string[];
 };
 
 export type SkillFileInfo = {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SpatialSeries, SpatialVolume } from "@finx/protocol";
-import { BrickSource, NODATA, edges, paint, snap, type Dims, type Side, type Vec3, type Window } from "./volume";
+import { BrickSource, NODATA, edges, fit, paint, snap, type Dims, type Side, type Vec3, type Window } from "./volume";
 
 // Original slice view (spatial-design §4.2, §13): reads axial slices from BrickSource,
 // renders coarse-first when uncached, supports window presets, hover HU/value readout,
@@ -93,7 +93,7 @@ export function SliceView({
     }
     const g = c.getContext("2d")!;
     const img = g.createImageData(lw, lh);
-    paint(values, win, img.data);
+    paint(values, fit(values, win), img.data);
     g.putImageData(img, 0, 0);
     shown.current = { k: at, level, dims, values };
     onCanvasDrawn?.();

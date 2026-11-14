@@ -125,7 +125,7 @@ fn a_small_mask_is_measured_where_it_is() {
 /// A scan that ends inside a structure says so.
 #[test]
 fn a_partial_scan_says_which_end_is_cut() {
-    for (name, want) in [("no_lung_base", "inferior"), ("no_trachea_top", "superior")] {
+    for (name, want) in [("no_lung_base", "-z"), ("no_trachea_top", "+z")] {
         let v = phantom::family().into_iter().find(|v| v.name == name).unwrap();
         let vol = phantom::volume(&v);
         let p = Phantom::with(v);

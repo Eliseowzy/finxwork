@@ -174,8 +174,8 @@ impl Mask {
     }
 }
 
-/// The ends of the head-foot axis a mask touches (`"superior"`, `"inferior"`): it goes on beyond
-/// what was scanned, so its volume is of the scanned part only.
+/// The ends of the volume a mask touches along the axis nearest the source's z (`"+z"`, `"-z"`):
+/// it goes on beyond what was scanned, so its volume is of the scanned part only.
 pub fn cut_off(mask: &Mask) -> Vec<&'static str> {
     let g = &mask.grid;
     let axis = (0..3).max_by(|a, b| g.direction[*a][2].abs().total_cmp(&g.direction[*b][2].abs())).unwrap_or(2);
@@ -183,10 +183,10 @@ pub fn cut_off(mask: &Mask) -> Vec<&'static str> {
     let up = g.direction[axis][2] > 0.0;
     let mut out = Vec::new();
     if hi[axis] + 1 == g.dims[axis] {
-        out.push(if up { "superior" } else { "inferior" });
+        out.push(if up { "+z" } else { "-z" });
     }
     if lo[axis] == 0 {
-        out.push(if up { "inferior" } else { "superior" });
+        out.push(if up { "-z" } else { "+z" });
     }
     out
 }
@@ -471,12 +471,12 @@ mod tests {
             m
         };
         assert!(cut_off(&slab(3, 6)).is_empty());
-        assert_eq!(cut_off(&slab(0, 4)), ["inferior"]);
-        assert_eq!(cut_off(&slab(5, 10)), ["superior"]);
-        assert_eq!(cut_off(&slab(0, 10)), ["superior", "inferior"]);
+        assert_eq!(cut_off(&slab(0, 4)), ["-z"]);
+        assert_eq!(cut_off(&slab(5, 10)), ["+z"]);
+        assert_eq!(cut_off(&slab(0, 10)), ["+z", "-z"]);
         // Slices stored feet last: the first slice is the head end.
         let mut down = slab(0, 4);
         down.grid.direction[2][2] = -1.0;
-        assert_eq!(cut_off(&down), ["superior"]);
+        assert_eq!(cut_off(&down), ["+z"]);
     }
 }

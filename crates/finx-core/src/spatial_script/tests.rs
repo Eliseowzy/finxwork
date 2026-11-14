@@ -1,4 +1,7 @@
 use super::*;
+
+/// The skill whose environment the tests run in.
+const DEFAULT_SKILL: &str = "medical-imaging";
 use finx_tools::{FileTracker, LocalEnvironment, OutputLimits, PathLocks, ProgressSink, SessionState};
 use std::sync::{Mutex, OnceLock};
 use tokio_util::sync::CancellationToken;

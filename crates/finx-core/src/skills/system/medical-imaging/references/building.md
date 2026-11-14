@@ -36,7 +36,7 @@ One JSON object, every field optional:
 | Slice spacing 3 mm or more | Thick slices | Only trachea and main bronchi can be expected; small vessels break up. A small airway is expected: say detail is limited. If a thinner series exists, it should have been picked: check the series list. |
 | Small extents, body volume a fraction of an adult's, age in the description | Child | `expect_scale` about the body volume ratio to an adult's (often 0.2–0.4). A child's airway is a few mL. |
 | Much volume below −950 HU inside the lungs (histogram bins −1000..−950 hold a litre or more beyond the outside air) | Emphysema or deep inspiration | The airway leaks early (its note says "leaked at −950"). If it is flagged, `airway_range: [-970, -900]`. Large lungs are expected here, not an error. |
-| Lungs or airway run into the superior/inferior end; extent along S/I under ~250 mm | Partial scan | Normal for a targeted scan. No whole-organ volumes. |
+| Lungs or airway run into the +z (superior) or -z (inferior) end of the volume; extent along S/I under ~250 mm | Partial scan | Normal for a targeted scan. No whole-organ volumes. |
 | The airway note says no enclosed air was found at the top | The scan starts below the trachea | `skip: ["airway"]`, and say the trachea is not in the scan. |
 | Values above 2500 HU in the histogram | Metal (pacemaker, wires, implant) | Structures near it are distorted by streaks: say so. |
 | The lungs together well under expectation, or one lung clearly smaller than the other while still holding hundreds of mL, with everything else plausible | May be real: fluid, collapse, surgery | Do **not** tune the input until the numbers look normal. Report what was measured and that the doctor's report explains it. |

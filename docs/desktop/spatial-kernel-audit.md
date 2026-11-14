@@ -6,6 +6,18 @@
 
 行号均已逐条与当前工作区文件核对。
 
+## 处理进度
+
+2026-11-14 已处理小结里的五项（行号是审计当时的，改后有偏移）：
+
+1. `spatial_script.rs` 的 `DEFAULT_SKILL` 已删，`script` 模式必须传 `skill`；工具描述去掉 "(a CT)"、HU、`k_towards_head`；下载说明不再列医学包。
+2. `finx_spatial/__init__.py` 的 lungs / 左右肺回退已删（建模脚本本来就交回 `lungs`、`lung_right`、`lung_left`，回退是死代码）；数组改名 `values`（`hu` 留作别名），`unit` 不再默认 "HU"。
+3. 界面不再按名字找医学 skill：skill 在 `SKILL.md` 头部写 `metadata.suggest-for: spatial-volume`，经 `SkillEntry.suggest_for` 传到界面，提示文案改成通用的。
+4. `algo::cut_off` 输出 `+z` / `-z`，由 skill 的 `references/building.md` 解释成 superior / inferior。
+5. 兜底窗位改为所显示数据的最小值到最大值（`spatial_slice` 和界面的层面视图都是）。
+
+其余中、低各条未动。
+
 ## 发现明细
 
 | 文件:行号 | 内容摘录 | 为什么算行业专有 | 严重程度 | 建议 |

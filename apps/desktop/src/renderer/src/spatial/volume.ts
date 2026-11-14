@@ -132,17 +132,31 @@ export class BrickSource {
 
 // ── windows ──
 
-/** A window preset: its name, width and level, in the volume's unit. */
-export type Window = { name: string; width: number; level: number };
+/** A window preset: its name, width and level, in the volume's unit. `auto`: fitted to the values shown instead. */
+export type Window = { name: string; width: number; level: number; auto?: true };
 
-/** `profile.windows` (`[[name, width, level]]`), the well-formed ones; a plain grey window when there are none. */
+/** `profile.windows` (`[[name, width, level]]`), the well-formed ones; one fitted to the values shown when there are none. */
 export function windowsOf(raw: readonly (readonly unknown[])[] | null | undefined, fallback = "默认"): Window[] {
   const out: Window[] = [];
   for (const w of raw ?? []) {
     const [name, width, level] = w;
     if (typeof name === "string" && typeof width === "number" && typeof level === "number" && width > 0) out.push({ name, width, level });
   }
-  return out.length ? out : [{ name: fallback, width: 2000, level: 0 }];
+  return out.length ? out : [{ name: fallback, width: 1, level: 0, auto: true }];
+}
+
+/** `w`, or for an `auto` window the one from the least to the greatest of `values` (no data left out). */
+export function fit(values: Int16Array, w: Window): Window {
+  if (!w.auto) return w;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v === NODATA) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return lo < hi ? { ...w, width: hi - lo, level: (lo + hi) / 2 } : w;
 }
 
 /** A value's grey level (0–255) through a window. */

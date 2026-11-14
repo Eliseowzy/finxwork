@@ -1,7 +1,7 @@
 """Reads a volume the kernel prepared and submits results back (spatial-design §5.3, §13).
 
 `spatial_script` runs a script in a work directory holding
-  volume.npy        int16 HU, shape (k, j, i)
+  volume.npy        int16, shape (k, j, i), in meta.json's "unit" (none: raw grey levels)
   meta.json         {"spacing": [dk, dj, di], "origin", "direction", "unit",
                      "image_numbers": [one per k], "k_towards_head": bool,
                      "masks": {"<id>": "masks/<id>.npy"}}
@@ -30,40 +30,32 @@ class Volume:
         self.root = root
         with open(os.path.join(root, "meta.json"), encoding="utf-8") as f:
             self.meta = json.load(f)
-        self.hu = np.load(os.path.join(root, "volume.npy"), mmap_mode="r")
+        self.values = np.load(os.path.join(root, "volume.npy"), mmap_mode="r")
         self.spacing = tuple(float(v) for v in self.meta["spacing"])
         self.origin = tuple(self.meta.get("origin", (0.0, 0.0, 0.0)))
         self.direction = self.meta.get("direction")
-        self.unit = self.meta.get("unit", "HU")
+        self.unit = self.meta.get("unit")
         self.k_towards_head = bool(self.meta.get("k_towards_head", True))
         self.image_numbers = list(self.meta.get("image_numbers") or [])
         self._masks = dict(self.meta.get("masks") or {})
 
     @property
+    def hu(self):
+        """The values, under the name scripts for CT use."""
+        return self.values
+
+    @property
     def shape(self):
-        return tuple(self.hu.shape)
+        return tuple(self.values.shape)
 
     def segments(self):
-        """Names of the masks the kernel provided (structures built by a recipe)."""
+        """Names of the masks the kernel provided: the document's structures."""
         return sorted(self._masks)
 
     def segment(self, name):
-        """The bool mask of a structure, shape (k, j, i). `lungs` falls back to
-        lung_right | lung_left, and each side to its half of `lungs`."""
+        """The bool mask of a structure, shape (k, j, i)."""
         if name in self._masks:
             return np.load(os.path.join(self.root, self._masks[name]), mmap_mode="r")
-        if name == "lungs" and {"lung_right", "lung_left"} <= set(self._masks):
-            return self.segment("lung_right") | self.segment("lung_left")
-        if name in ("lung_right", "lung_left") and "lungs" in self._masks:
-            # Patient's right is the image's left half (low i) in LPS-oriented volumes.
-            lungs = np.asarray(self.segment("lungs"))
-            half = lungs.shape[2] // 2
-            out = np.zeros_like(lungs)
-            if name == "lung_right":
-                out[:, :, :half] = lungs[:, :, :half]
-            else:
-                out[:, :, half:] = lungs[:, :, half:]
-            return out
         raise KeyError(f"no segment {name!r}; have {self.segments()}")
 
     def slice_of_image(self, n):
@@ -74,7 +66,7 @@ class Volume:
                 return self.image_numbers.index(n)
             raise KeyError(f"no image number {n}")
         k = n - 1
-        if not 0 <= k < self.hu.shape[0]:
+        if not 0 <= k < self.values.shape[0]:
             raise KeyError(f"no image number {n}")
         return k
 

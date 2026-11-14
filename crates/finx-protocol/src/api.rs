@@ -1696,6 +1696,10 @@ pub struct SkillEntry {
     /// `.claude/skills`, which `skills.opt_in` turns on. Then `disabled` means "off by default".
     #[serde(default = "yes")]
     pub default_enabled: bool,
+    /// Kinds of document the skill is of help with, from the header's `metadata.suggest-for`
+    /// (`spatial-volume`): a view of one offers to turn the skill on when it is off.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suggest_for: Vec<String>,
 }
 
 impl SkillEntry {
