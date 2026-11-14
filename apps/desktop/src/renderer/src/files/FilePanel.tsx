@@ -16,6 +16,7 @@ import { ContentScope } from "../session/scope";
 import { usePanelWidth } from "../panelWidth";
 import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, takePresentationDisk, takeWordDisk, useFiles, type SessionFiles, type Tab } from "./state";
 import { FileCard, FileLoading as Loading } from "./FileCard";
+import { ViewBoundary } from "./ViewBoundary";
 import { ImageView } from "./ImageView";
 import { isGrid, isLegacyWord, isMarkdown, isPresentation, isSpatial, isSvg, isWord, previewable } from "./kind";
 import { SpatialFile } from "../spatial/SpatialFile";
@@ -148,6 +149,7 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
               const doc = docOf(x);
               return doc && (
                 <div key={doc.info.doc_id} className="dcp-viewer" hidden={x !== tab}>
+                  <ViewBoundary path={x.path} rel={x.rel} text={(message) => t("files.viewFailed", { message })}>
                   {doc.info.layout === "space" ? (
                     <Suspense fallback={<Loading />}>
                       <SpatialDocView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
@@ -157,10 +159,15 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
                   ) : (
                     <PdfView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
                   )}
+                  </ViewBoundary>
                 </div>
               );
             })}
-          {tab && !tab.opened?.docId && <Body s={s} tab={tab} />}
+          {tab && !tab.opened?.docId && (
+            <ViewBoundary key={tab.path} path={tab.path} rel={tab.rel} text={(message) => t("files.viewFailed", { message })}>
+              <Body s={s} tab={tab} />
+            </ViewBoundary>
+          )}
         </div>}
         {(bare || s.tree === true) && <Tree s={s} />}
       </div>

@@ -545,6 +545,7 @@
     "refusedEncoding": "This file isn't UTF-8 text; saving it here would change its encoding",
     "binary": "This file isn't text, so it isn't shown here",
     "tooLarge": "This file is {{size}}, too large to show here",
+    "viewFailed": "This file could not be shown: {{message}}",
     "openDefault": "Open in Default App",
     "closeTab": "Close {{name}}",
     "unsavedClose": "{{name}} has changes that aren't saved. Choose what to do below first.",

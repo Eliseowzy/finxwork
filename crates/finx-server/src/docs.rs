@@ -30,7 +30,15 @@ use crate::server::Server;
 fn rpc_error(e: DocError) -> RpcError {
     match e {
         DocError::Password => RpcError::with_kind(error_code::DOC_PASSWORD, "doc_password", e.to_string()),
-        DocError::NotFound(_) | DocError::Unsupported(_) | DocError::TooLarge(_) | DocError::Unreadable(..) => {
+        // Not a document finx opens (a zip that is not a study, say): the panel shows it as any other file.
+        DocError::Unsupported(_) => {
+            let mut r = RpcError::with_kind(error_code::DOC_UNAVAILABLE, "doc_unavailable", e.to_string());
+            if let Some(serde_json::Value::Object(data)) = r.data.as_mut() {
+                data.insert("unsupported".into(), true.into());
+            }
+            r
+        }
+        DocError::NotFound(_) | DocError::TooLarge(_) | DocError::Unreadable(..) => {
             RpcError::with_kind(error_code::DOC_UNAVAILABLE, "doc_unavailable", e.to_string())
         }
         DocError::NotOpen(_) | DocError::NoPage { .. } | DocError::NotEditable(_) => RpcError::invalid_params(e),
