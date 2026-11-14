@@ -766,6 +766,9 @@ pub struct ServerCapabilities {
     pub session_delete: bool,
     pub resource_read: bool,
     pub event_filter: bool,
+    /// Adding another subject's bot: `bots/preview`, `bots/add` (`[bots] external`).
+    #[serde(default)]
+    pub bots_external: bool,
     /// `sessions/subscribe`, `sessions/changed`, and the state fields of SessionSummary.
     #[serde(default)]
     pub sessions_subscribe: bool,

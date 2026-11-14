@@ -238,6 +238,7 @@ impl NativeProtocol {
                             message_resend: true,
                             workbooks: true,
                             bots: true,
+                            bots_external: server.0.bot_settings.external,
                             routines: true,
                         },
                     })

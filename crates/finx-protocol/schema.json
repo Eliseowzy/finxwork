@@ -17244,6 +17244,11 @@
           "description": "Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).",
           "type": "boolean"
         },
+        "bots_external": {
+          "default": false,
+          "description": "Adding another subject's bot: `bots/preview`, `bots/add` (`[bots] external`).",
+          "type": "boolean"
+        },
         "custom_endpoints": {
           "default": false,
           "description": "Services added by their address (docs/kernel/custom-endpoint-design.md §9): `providers/add`, `providers/update`, `providers/remove`, `models/configure`, `custom` on providers and `canonical` on models.",

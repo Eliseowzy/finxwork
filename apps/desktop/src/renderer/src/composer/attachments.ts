@@ -187,6 +187,30 @@ export function toInput(text: string, atts: Attachment[]): UserContent[] {
   return out;
 }
 
+/**
+ * What goes to another subject's bot (bot-contacts-design §5.4): the words, pictures, and parts of
+ * this conversation as plain Markdown quotes. Nothing of this computer goes along (no attached
+ * files, open documents, notes on pages): none of it means anything to the other side, and the
+ * paths are not its business.
+ */
+export function externalInput(text: string, atts: Attachment[]): UserContent[] {
+  const out: UserContent[] = [];
+  const quoted = atts
+    .filter((a): a is SaidAttachment => a.kind === "said")
+    .map((a) => a.quote.text.trim().split("\n").map((line) => (line ? `> ${line}` : ">")).join("\n"))
+    .join("\n\n");
+  const words = text.trim();
+  const body = quoted ? (words ? `${quoted}\n\n${words}` : quoted) : words;
+  if (body) out.push({ type: "text", text: body });
+  for (const a of atts) if (a.kind === "image") out.push({ type: "image", mime_type: a.mime_type, data: a.data });
+  return out;
+}
+
+/** The attachments of an external bot's message that cannot go: anything but a picture or a quote. */
+export function unsendable(atts: Attachment[]): number {
+  return atts.filter((a) => a.kind !== "image" && a.kind !== "said").length;
+}
+
 let returnedCount = 0;
 
 /** A message's content back as the composer had it (toInput the other way): for what a stopped task hands back, a waiting message taken back to edit, or a sent one written again. */

@@ -7,7 +7,7 @@ import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
 import { Code } from "./Code";
 import { codeMenu, copyText, editorList, fileMenu, linkMenu, openLink, openRef, opensAsPage, otherView, showPage, terminalWith } from "./contentMenus";
-import { DraftContext, useFileInfo, useScope, type Scope } from "./scope";
+import { DraftContext, OwnFilesOnly, useFileInfo, useScope, type Scope } from "./scope";
 
 // What a conversation's content does (content-actions-design): the files and web pages a reply
 // points at, and its code blocks. Read from the Markdown as it renders; nothing here acts
@@ -26,8 +26,11 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const { t } = useTranslation("session");
   const st = useStore();
   const info = useFileInfo(scope.cwd, target.path);
+  const own = useContext(OwnFilesOnly);
   useEffect(() => void editorList(), []);
   if (code !== undefined && !info?.kind) return <code>{code}</code>;
+  // Another subject's bot names a file: only its own folder means a file of ours (§8).
+  if (own && !inSession(scope.cwd, info?.path ?? target.path)) return <span>{children ?? target.path}</span>;
   const missing = info?.kind === null;
   const folder = info ? info.kind === "folder" : /[\\/]$/.test(target.path);
   const where = info ? (info.rel ?? info.path) : target.path;

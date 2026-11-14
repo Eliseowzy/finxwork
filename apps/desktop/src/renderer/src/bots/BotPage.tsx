@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, routineDot, type BotItem, type WorkingAgent, type SessionView } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
-import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
+import { addAttachments, externalInput, fromInput, toInput, unsendable, type Attachment } from "../composer/attachments";
 import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
 import { needsKey } from "../composer/KeySetup";
@@ -20,7 +20,7 @@ import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
 import { useSidePanels, SidePanelButtons, SidePanelViews } from "../session/SidePanels";
-import { ContentScope, LocalImages } from "../session/scope";
+import { ContentScope, LocalImages, OwnFilesOnly } from "../session/scope";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
 import { thingsText } from "./actions";
@@ -87,7 +87,10 @@ export function BotPage({ bot }: { bot: BotSummary }) {
             onClick={() => st.set({ ...OPEN_SETTINGS, botPanel: !settings })}
           >
             <BotAvatar bot={bot} size={22} busy={busy} />
-            <span className="bhead-n">{bot.name}</span>
+            <span className="bhead-n">
+              {bot.name}
+              {bot.source && <span className="bhead-h mono">{bot.source.host}</span>}
+            </span>
             <Icon name="chevR" className="bhead-go" />
           </button>
           <span className="bhead-gap" />
@@ -107,8 +110,10 @@ export function BotPage({ bot }: { bot: BotSummary }) {
           <div className="dwrap" onContextMenu={() => selectionMenu(st)}>
             <div className="dmain">
               {view && session ? (
-                <LocalImages.Provider value={true}>
-                  <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} />
+                <LocalImages.Provider value={!bot.source}>
+                  <OwnFilesOnly.Provider value={!!bot.source}>
+                    <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} />
+                  </OwnFilesOnly.Provider>
                 </LocalImages.Provider>
               ) : needsKey(st) ? (
                 <NoModel />
@@ -180,6 +185,44 @@ function FullAccessNote({ onSettings, onClose }: { onSettings: () => void; onClo
 }
 
 /**
+ * Another subject's bot gets what the owner types: said once, before the first message (§4.3).
+ */
+function ExternalNotice({ bot }: { bot: BotSummary }) {
+  const { t } = useTranslation("bots");
+  const st = useStore();
+  const host = bot.source?.host ?? "";
+  const local = /^(localhost|127\.|\[::1\]|::1)/.test(host);
+  return (
+    <div className="knote" role="status">
+      <div className="knote-h">
+        <Icon name="globe" className="knote-i" />
+        <b>{t("external.firstTitle", { name: bot.name })}</b>
+      </div>
+      <p className="knote-b">{t(local ? "external.firstLocal" : "external.firstBody", { host })}</p>
+      <div className="appr-f">
+        <span className="appr-sp" />
+        <button className="btn primary" onClick={() => void st.run(() => st.call("bots/update", { bot_id: bot.id, noticed: true }))}>
+          {t("external.gotIt")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The other side has been quiet for two minutes: the owner need not wait (§5.5, DD-186). */
+function WaitingNote({ name, onStop }: { name: string; onStop: () => void }) {
+  const { t } = useTranslation("bots");
+  return (
+    <div className="waitline" role="status">
+      <span>{t("external.waiting", { name })}</span>
+      <button type="button" className="link" onClick={onStop}>
+        {t("external.stopWaiting")}
+      </button>
+    </div>
+  );
+}
+
+/**
  * The default bot was made for the owner, so nobody has chosen its model yet: the first time, before
  * anything is sent (bot-mode-design §6.4). Bots the owner makes chose theirs in the form.
  */
@@ -230,6 +273,7 @@ function useMarkRead(bot: BotSummary) {
 function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: SessionView; session: string; loadEarlier: () => Promise<void> }) {
   const { t } = useTranslation("bots");
   const st = useStore();
+
   const items = useMemo(() => botChat(view), [view]);
   const busy = busyBubble(view);
   const [dock, setDock] = useState(0);
@@ -631,7 +675,7 @@ function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: 
   );
 }
 
-/** What the owner had written to each bot and not sent yet. */
+/** What the owner had written to each bot and not sent yet, kept across restarts. */
 const drafts = new Map<string, { text: string; attachments: Attachment[] }>();
 /** What failed tasks handed back that is in a composer already. */
 const handed = new WeakSet<UserMessage[]>();
@@ -641,6 +685,17 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
   const asking = pendingApproval(view);
   const { t } = useTranslation("bots");
   const st = useStore();
+  const external = !!bot.source;
+  // The other side may be a hung service: after two minutes, the owner may stop waiting (§5.5).
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    if (!external || !bot.typing) {
+      setWaited(false);
+      return;
+    }
+    const at = setTimeout(() => setWaited(true), 120_000);
+    return () => clearTimeout(at);
+  }, [external, bot.typing]);
   const [draft, setDraft] = useState(() => drafts.get(bot.id) ?? { text: "", attachments: [] });
   const change = (d: { text: string; attachments: Attachment[] }) => {
     setDraft(d);
@@ -680,9 +735,14 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
   const send = async () => {
     const sent = draft;
     change({ text: "", attachments: [] });
-    const input = toInput(sent.text, sent.attachments);
+    if (external && unsendable(sent.attachments)) {
+      st.show(t("external.wordsOnly"), undefined, true);
+    }
+    // Another subject's bot gets the words, pictures and quotes, and nothing of this computer
+    // (bot-contacts-design §5.4).
+    const input = external ? externalInput(sent.text, sent.attachments) : toInput(sent.text, sent.attachments);
     // What the file panel shows goes along, so "this page" or "these cells" means something (document-editor-design §7.4).
-    const viewing = viewingBlock(session, st.files);
+    const viewing = external ? null : viewingBlock(session, st.files);
     if (viewing && input.length) input.push(viewing);
     // While it answers, a message waits for the step under way and is answered next (bot-design §3.1).
     const ok = await st.op(session, { type: "prompt", input, mode: view.live ? "steer" : undefined });
@@ -693,11 +753,17 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       form={{
         mode: "bot",
         // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
-        above: asking
-          ? <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />
-          : setup
-          ? <ModelSetup bot={bot} view={view} session={session} onDone={() => st.set({ botSetupDone: true })} />
-          : !st.botAccessSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessNote onSettings={() => st.set(OPEN_SETTINGS)} onClose={() => st.set({ botAccessSeen: true })} />,
+        above: asking ? (
+          <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />
+        ) : setup ? (
+          <ModelSetup bot={bot} view={view} session={session} onDone={() => st.set({ botSetupDone: true })} />
+        ) : (
+          <>
+            {external && !bot.source?.noticed && <ExternalNotice bot={bot} />}
+            {waited && <WaitingNote name={bot.name} onStop={() => void st.op(session, { type: "interrupt" })} />}
+            {!st.botAccessSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessNote onSettings={() => st.set(OPEN_SETTINGS)} onClose={() => st.set({ botAccessSeen: true })} />}
+          </>
+        ),
         onHeight,
       }}
       value={draft.text}
@@ -706,7 +772,8 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       onAttachments={(attachments) => change({ ...draft, attachments })}
       onSend={() => void send()}
       canSend={!setup}
-      commands={commands}
+      commands={external ? [] : commands}
+      files={!external}
       placeholder={t("chat.placeholder", { name: bot.name })}
     />
   );

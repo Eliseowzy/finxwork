@@ -3909,6 +3909,8 @@ export type ServerCapabilities = {
   auth: boolean;
   /** Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4). */
   bots: boolean;
+  /** Adding another subject's bot: `bots/preview`, `bots/add` (`[bots] external`). */
+  bots_external: boolean;
   /** Services added by their address (docs/kernel/custom-endpoint-design.md §9): `providers/add`, `providers/update`, `providers/remove`, `models/configure`, `custom` on providers and `canonical` on models. */
   custom_endpoints: boolean;
   /** The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6). */

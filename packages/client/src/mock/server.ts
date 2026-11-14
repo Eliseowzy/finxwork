@@ -1055,7 +1055,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, custom_endpoints: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, routines: true };
+        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, custom_endpoints: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, bots_external: true, routines: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
