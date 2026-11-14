@@ -69,6 +69,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     }
 }
 
@@ -103,6 +104,7 @@ async fn bot_on(store: Option<Arc<dyn SessionStore>>, name: &str, mode: Permissi
             id: "b1".into(),
             name: name.into(),
         }),
+        peer: None,
     };
     let mut deps = deps(&api, &folder, &home);
     if let Some(store) = store {
@@ -1093,6 +1095,7 @@ async fn what_an_agent_told_the_owner_survives_a_restart() {
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps(&h.api, &h.folder, &h.home)).await.unwrap();
     let told = kernel.transcript().into_iter().find_map(|item| match item {
@@ -1146,6 +1149,7 @@ async fn a_new_bot_prompt_reaches_a_resumed_bot_once() {
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let prompts = || {
         let store = JsonlStore::new(h.home.sessions_dir());
@@ -1202,6 +1206,7 @@ async fn a_resumed_bot_keeps_send_to_user_and_learns_its_new_name() {
         trusted: false,
         interactive_approvals: false,
         bot_name: Some("运维".into()),
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps(&h.api, &h.folder, &h.home)).await.unwrap();
     let result = kernel.run(prompt("你叫什么")).await.unwrap();

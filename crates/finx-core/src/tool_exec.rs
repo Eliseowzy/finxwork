@@ -194,7 +194,7 @@ pub(crate) fn reject_all(session: &Session, calls: &[ToolCall], text: &str) -> V
 }
 
 /// The tool_started event, with the tool's own description of the call.
-fn started(session: &Session, call: &ToolCall, tool: Option<&dyn Tool>) -> EventMsg {
+pub(crate) fn started(session: &Session, call: &ToolCall, tool: Option<&dyn Tool>) -> EventMsg {
     let description = match tool {
         Some(tool) => tool.describe(&call.arguments.to_value(), session.env.as_ref()),
         None => ToolDescription::named(&call.name),
@@ -412,6 +412,18 @@ async fn run_tool(
             text.shrink_to_fit();
         }
     }
+    completed(session, &call, output, Some(started.elapsed().as_millis() as u64))
+}
+
+/// The result of a call that ran: built, recorded in the event stream, and handed back for the
+/// history. Shared by the agent loop and an external bot's task, which the other side answers
+/// with what `send_to_user` would have carried (bot-contacts-design §5.3).
+pub(crate) fn completed(
+    session: &Session,
+    call: &ToolCall,
+    output: ToolOutput,
+    duration_ms: Option<u64>,
+) -> Arc<ToolResultMessage> {
     let result = Arc::new(ToolResultMessage {
         call_id: call.id.clone(),
         tool_name: call.name.clone(),
@@ -419,7 +431,7 @@ async fn run_tool(
         is_error: output.is_error,
         details: output.details.map(JsonText::from),
         ts: now_ms(),
-        duration_ms: Some(started.elapsed().as_millis() as u64),
+        duration_ms,
     });
     session.emit(EventMsg::ToolCompleted {
         call_id: call.id.clone(),

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/finx-llm",
     "crates/finx-connections",
+    "crates/finx-a2a",
     "crates/finx-tools",
     "crates/finx-protocol",
     "crates/finx-core",
@@ -32,6 +33,7 @@ publish = false
 [workspace.dependencies]
 finx-llm = { path = "crates/finx-llm" }
 finx-connections = { path = "crates/finx-connections", default-features = false }
+finx-a2a = { path = "crates/finx-a2a" }
 finx-tools = { path = "crates/finx-tools" }
 finx-protocol = { path = "crates/finx-protocol" }
 finx-core = { path = "crates/finx-core" }

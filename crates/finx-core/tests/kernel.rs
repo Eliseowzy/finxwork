@@ -68,6 +68,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     }
 }
 
@@ -107,6 +108,7 @@ async fn start(
         trusted: false,
         interactive_approvals: interactive,
         bot: None,
+        peer: None,
     };
     let mut deps = deps(&api, &work, &home);
     if !extra.is_empty() {
@@ -541,6 +543,7 @@ async fn interrupting_a_running_tool_keeps_history_valid_and_resumes() {
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &h.work, &h.home)).await.unwrap();
     let started = until(&mut kernel, |m| matches!(m, EventMsg::SessionStarted { .. })).await;
@@ -1166,6 +1169,7 @@ async fn a_session_whose_provider_was_removed_resumes_on_the_configured_model() 
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps).await.unwrap();
     let events = until(&mut kernel, |m| matches!(m, EventMsg::SessionStarted { .. })).await;
@@ -1223,6 +1227,7 @@ async fn resumed(home: &FinxHome, work: &Path, session_id: &str, api: &Arc<Scrip
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     Kernel::resume(options, deps(api, work, home)).await.unwrap()
 }

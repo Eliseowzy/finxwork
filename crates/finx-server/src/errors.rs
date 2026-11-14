@@ -140,6 +140,9 @@ pub fn no_model() -> RpcError {
 pub fn from_kernel(err: KernelError, id: &str) -> RpcError {
     match err {
         KernelError::NoModel => no_model(),
+        // The bot this conversation belonged to is gone, or is no longer an external one
+        // (bot-contacts-design §5.3). The service layer gives it its own code in §7.
+        KernelError::PeerMissing => RpcError::invalid_params(err),
         KernelError::Store(err) => from_store(err, id),
         KernelError::Model(err) => match &err {
             // A provider that is gone (a removed or disconnected connection): clients say so in

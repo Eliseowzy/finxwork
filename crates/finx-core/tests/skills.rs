@@ -82,6 +82,7 @@ fn deps(api: &Arc<ScriptedApi>, env: &Env, tools: &[&str]) -> KernelDeps {
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     }
 }
 
@@ -99,6 +100,7 @@ async fn start(env: &Env, api: &Arc<ScriptedApi>, mode: PermissionMode, config: 
         trusted: false,
         interactive_approvals: false,
         bot: None,
+        peer: None,
     };
     Kernel::start(options, deps(api, env, tools)).await.unwrap()
 }
@@ -237,6 +239,7 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &env, ALL_TOOLS)).await.unwrap();
     kernel.run(prompt("again")).await.unwrap();
@@ -586,6 +589,7 @@ async fn compaction_keeps_the_skills_in_use_and_resume_rebuilds_them() {
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &env, ALL_TOOLS)).await.unwrap();
     kernel.run(prompt("and now")).await.unwrap();

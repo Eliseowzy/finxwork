@@ -1788,6 +1788,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "finx-a2a"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "eventsource-stream",
+ "finx-core",
+ "finx-llm",
+ "finx-protocol",
+ "finx-tools",
+ "futures",
+ "reqwest",
+ "ring",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
 name = "finx-acp"
 version = "0.2.0"
 dependencies = [
@@ -1934,6 +1960,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "betteroffice-metafile",
+ "bytes",
  "chrono",
  "dicom-core",
  "dicom-dictionary-std",

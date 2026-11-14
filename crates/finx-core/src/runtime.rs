@@ -246,6 +246,7 @@ pub fn kernel_deps(
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     })
 }
 

@@ -99,6 +99,7 @@ impl Harness {
             trusted: false,
             interactive_approvals: interactive,
             bot: None,
+            peer: None,
         };
         let kernel = Kernel::start(options, deps).await.unwrap();
         Harness {
@@ -171,6 +172,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &std::path::Path, home: &FinxHome) -> Kern
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     }
 }
 
@@ -934,6 +936,7 @@ async fn a_message_wakes_the_idle_main_agent_and_the_report_still_follows() {
             trusted: false,
             interactive_approvals: false,
             bot_name: None,
+            peer: None,
         };
         match Kernel::resume(options, deps(&api, &work, &home)).await {
             Ok(kernel) => break kernel,
@@ -1438,6 +1441,7 @@ async fn a_resumed_session_knows_its_earlier_agents_as_their_logs_left_them() {
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let kernel = Kernel::resume(options, deps(&api, &work, &home)).await.unwrap();
     let mut h = Harness { kernel, api, lanes, work, home, _dir };
@@ -1499,6 +1503,7 @@ async fn sub_agents_can_be_turned_off() {
             trusted: false,
             interactive_approvals: false,
             bot: None,
+            peer: None,
         },
         KernelDeps {
             llm: Arc::new(registry),
@@ -1512,6 +1517,7 @@ async fn sub_agents_can_be_turned_off() {
             decks: None,
             words: None,
             routines: None,
+            peer: None,
         },
     )
     .await

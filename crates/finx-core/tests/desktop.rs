@@ -97,6 +97,7 @@ async fn harness(mode: PermissionMode) -> Harness {
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     };
     let options = StartOptions {
         model: "test/scripted".into(),
@@ -109,6 +110,7 @@ async fn harness(mode: PermissionMode) -> Harness {
         trusted: true,
         interactive_approvals: true,
         bot: None,
+        peer: None,
     };
     let kernel = Kernel::start(options, deps).await.unwrap();
     Harness {

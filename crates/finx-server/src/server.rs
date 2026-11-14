@@ -522,6 +522,7 @@ impl Server {
             config: Arc::new(workspace.config),
             interactive_approvals: true,
             bot: None,
+            peer: None,
         };
         let kernel = Kernel::start(options, deps)
             .await
@@ -618,6 +619,7 @@ impl Server {
             interactive_approvals: true,
             // A bot's conversation learns a name given while it was not loaded.
             bot_name: header.bot.as_ref().and_then(|bot| self.0.bots.name(&bot.id)),
+            peer: None,
         };
         let kernel = Kernel::resume(options, deps)
             .await

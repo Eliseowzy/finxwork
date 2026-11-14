@@ -42,7 +42,14 @@ pub const SEND_TO_USER: &str = "send_to_user";
 /// The tools a bot's session gets on top of a session's. Its sub-agents have a `send_to_user` of
 /// their own (agent-messaging-design §17).
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
-    vec![Arc::new(Typed::new(SendToUser)), crate::routine::tool()]
+    vec![send_tool(), crate::routine::tool()]
+}
+
+/// The tool itself: an external bot's task describes its calls with it, so that the events a
+/// local bot produces and those of the other side's reply are the same (bot-contacts-design
+/// §5.3).
+pub(crate) fn send_tool() -> Arc<dyn Tool> {
+    Arc::new(Typed::new(SendToUser))
 }
 
 /// What a bot about to end its turn still owes its owner.
@@ -200,7 +207,7 @@ fn invalid(message: impl Into<String>) -> ToolError {
 /// A file's entry in the result's details, for user interfaces: where it is, how large, and for
 /// an image the panel can show (by its contents, like the file panel) its size. Or why it cannot
 /// be sent. Looked at when the call runs: the model may make the file in the same step.
-async fn sent_file(env: &dyn Environment, raw: &str) -> Result<Value, String> {
+pub(crate) async fn sent_file(env: &dyn Environment, raw: &str) -> Result<Value, String> {
     if raw.starts_with("http://") || raw.starts_with("https://") {
         return Err(format!("{raw}: a web address, save it to a file first"));
     }

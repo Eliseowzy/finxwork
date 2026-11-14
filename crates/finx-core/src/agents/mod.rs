@@ -604,6 +604,7 @@ impl AgentTree {
                 decks: self.deps.decks.clone(),
                 words: self.deps.words.clone(),
                 routines: None,
+                peer: None,
             },
             home: self.deps.home.clone(),
             config: self.deps.config.clone(),

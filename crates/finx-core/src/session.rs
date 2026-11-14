@@ -295,6 +295,10 @@ pub(crate) struct Session {
     pub(crate) locks: Arc<PathLocks>,
     /// The sub-agents of a main session. `None` for a sub-agent, which cannot start any.
     pub(crate) agents: Option<Arc<AgentTree>>,
+    /// An external bot's session: the service that answers (bot-contacts-design §5.3).
+    pub(crate) peer: Option<Arc<dyn crate::peer::Peer>>,
+    /// An external bot's session: the other side, for the log and for the replies' model.
+    pub(crate) peer_ref: Option<crate::peer::PeerRef>,
     /// A sub-agent's session.
     pub(crate) sub_agent: bool,
     /// What it can do about other agents.
@@ -343,6 +347,14 @@ impl Session {
         });
     }
 
+    /// An external bot's session: the host the words go to.
+    pub(crate) fn peer_host(&self) -> String {
+        self.peer_ref
+            .as_ref()
+            .map(|peer| peer.host.clone())
+            .unwrap_or_else(|| crate::kernel::A2A_MODEL.to_string())
+    }
+
     pub(crate) fn allocate_id(&self) -> String {
         self.state.lock().history.new_id()
     }
@@ -387,7 +399,9 @@ impl Session {
             mail: None,
             skills: uses,
         });
-        if self.state.lock().bot.is_some() {
+        // An external bot's session has no model to nudge: the other side answers
+        // (bot-contacts-design §5.3, D-716).
+        if self.state.lock().bot.is_some() && self.peer.is_none() {
             self.record(EntryKind::ReplyNudge);
         }
     }
@@ -819,6 +833,11 @@ impl Session {
 
     /// Takes effect immediately when idle, otherwise at the next turn boundary.
     pub(crate) fn set_model(&self, reference: &str, thinking: Option<ThinkingLevel>) {
+        // The other side's model is not ours to choose (bot-contacts-design §5.3).
+        if self.peer.is_some() {
+            self.warn("an external bot has no model to set on this side");
+            return;
+        }
         let resolved = match self.llm.resolve(reference) {
             Ok(resolved) => resolved,
             Err(err) => {
@@ -860,6 +879,11 @@ impl Session {
     }
 
     pub(crate) fn set_permission_mode(&self, mode: PermissionMode) {
+        // It has no tools here, so there are no permissions to choose (bot-contacts-design §5.3).
+        if self.peer.is_some() {
+            self.warn("an external bot has no permissions on this computer");
+            return;
+        }
         let previous = std::mem::replace(&mut self.state.lock().permission_mode, mode);
         self.record(EntryKind::Settings {
             model: None,
