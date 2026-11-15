@@ -122,3 +122,12 @@
   - `tools/a2a-fake --evil` 与群批次里的 `drop` 触发；`finx-mock` 在群信件里遇到 `pwned.txt` 时先调 `web_search` 再 `write`。
 - `d8be0276 Groups: open group files and show external stateless`：`GroupSummary` 增加 `files_dir`，群消息里的文件可点开（按 DD-185 只对群文件夹里的文件生成的标签）；`GroupMember` 增加 `stateless`，群设置里显示外部成员的“记不记得上下文”。
 - 已知覆盖：桌面端外部确认页和保险丝 3 确认卡的**桌面 e2e/截图**仍未做（功能已实现，Rust e2e 覆盖服务和审批事件）；这一期不做话题更早回复的分页，记入方案 v0.2 的“以后做”。
+
+## 删掉保险丝 1 — `e2f8443b`
+
+- 去掉 `[groups]` 的 `bot_per_minute`、`bot_run_without_owner`、`daily_tokens`、`daily_peer_calls`；保留 `quiet_secs`、`max_wait_secs`、`lazy_secs`、`lazy_count`、`recent_count`、`summary_after`。
+- 协议删掉 `GroupFuse`、`GroupStop`、`GroupStopReason`、`GroupSummary.fuse/stopped`、`GroupUpdateParams.resume`、`GROUP_STOPPED` 错误码；服务删掉计数、停群、`owner_spoke`/`bot_said`/`add_tokens`/`add_peer_call`；桌面删掉保险丝提示条、继续按钮、停止行和 `fuse.png`；e2e 删掉保险丝 1 的测试。
+- 保险丝 2、3 和文件边界不动。
+- 文档：brief §4.8 删保险丝 1、验收第 13 条删除并重排；design v0.2 的 D-721/§2.2/Q-414 改成“只留两根保险丝，保险丝 1 这一期不做”，Q-413/415/416/417 写结论，话题更早回复分页记“以后做”，M8 记成主人手动验证群规。
+- 验收：`cargo check --workspace --all-targets` 通过（只有 `tests/bot.rs` 既有 unused_mut 警告）；`cargo test -p finx-core --test group` 11、`cargo test -p finx-cli --test e2e_groups` 4、`--test e2e_groups_external` 6 通过；`pnpm typecheck` 通过；`pnpm test` 通过；`node apps/desktop/e2e/bot-group.mjs` 通过（“谁在想”那一步不再等一个线程里的回答，后面单独记）。
+- 自己定的事：`GroupsSettings` 里只留投递节奏和摘要/窗口参数；保险丝 1 的旧 `fuse` 存储字段直接不再读写（未发布，不管旧数据）；桌面 e2e 里“谁在想”截图后不再等慢回答，因为回答会进话题，页面不一定展开它。
