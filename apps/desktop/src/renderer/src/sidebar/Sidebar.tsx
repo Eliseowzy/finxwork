@@ -26,6 +26,7 @@ export function Sidebar() {
   const st = useStore();
   const { t } = useTranslation("common");
   const { t: tb } = useTranslation("bots");
+  const { t: tg } = useTranslation("groups");
   const bots = st.mode === "bots";
   const now = useNow(30_000);
   const sessions = useLists((l) => l.sessions);
@@ -59,11 +60,17 @@ export function Sidebar() {
       </div>
       <nav className="side-nav">
         {bots ? (
-          <button className="nav-i" onClick={() => st.set({ botSheet: { kind: "new" } })}>
-            <Icon name="plus" />
-            <span>{tb("nav.newBot")}</span>
-            <span className="kbd">⌘N</span>
-          </button>
+          <>
+            <button className="nav-i" onClick={() => st.set({ botSheet: { kind: "new" } })}>
+              <Icon name="plus" />
+              <span>{tb("nav.newBot")}</span>
+              <span className="kbd">⌘N</span>
+            </button>
+            <button className="nav-i" onClick={() => st.set({ groupSheet: { kind: "new" } })}>
+              <Icon name="chats" />
+              <span>{tg("nav.newGroup")}</span>
+            </button>
+          </>
         ) : (
           <button className={`nav-i ${st.selection.kind === "new" ? "sel" : ""}`} onClick={() => st.set({ selection: { kind: "new" } })}>
             <Icon name="plus" />
@@ -84,7 +91,7 @@ export function Sidebar() {
       {bots ? (
         <>
           <div className="side-lh">
-            <span className="side-lh-t">{tb("list.title")}</span>
+            <span className="side-lh-t">{tg("list.title")}</span>
           </div>
           <BotList />
         </>

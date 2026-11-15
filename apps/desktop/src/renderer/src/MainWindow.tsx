@@ -15,6 +15,8 @@ import { useOverlay } from "./overlays";
 import { useLists, useStore } from "./store";
 import { BotPage } from "./bots/BotPage";
 import { BotSheet } from "./bots/BotSheet";
+import { GroupPage } from "./groups/GroupPage";
+import { GroupSheet } from "./groups/GroupSheet";
 
 /** A clicked system notification opens what it is about, in its mode. The page may have just started for it. */
 function useOpenTarget() {
@@ -54,10 +56,17 @@ export function MainWindow() {
   const bot = useLists((l) => (sel.kind === "bot" ? l.bots.find((b) => b.id === sel.id) : undefined));
   const botsLoaded = useLists((l) => l.botsLoaded);
   const next = useLists((l) => (l.bots.find((b) => b.id === st.lastBot) ?? l.bots[0])?.id);
+  // A group shows in the same place (bot-group-chat-dev-brief §5); one deleted makes way for a bot.
+  const group = useLists((l) => (sel.kind === "group" ? l.groups.find((g) => g.id === sel.id) : undefined));
+  const groupsLoaded = useLists((l) => l.groupsLoaded);
   useEffect(() => {
-    if (st.mode !== "bots" || !botsLoaded || sel.kind === "customize" || bot) return;
+    if (st.mode !== "bots" || !botsLoaded || sel.kind === "customize" || sel.kind === "group" || bot) return;
     if (next) st.selectBot(next);
   }, [st.mode, botsLoaded, sel, bot, next]);
+  useEffect(() => {
+    if (st.mode !== "bots" || !groupsLoaded || sel.kind !== "group" || group) return;
+    st.set({ selection: { kind: "new" }, groupThread: null, groupPanel: false });
+  }, [st.mode, groupsLoaded, sel, group]);
   // A peek ends when it fits again, when another session or page is chosen, and with Esc.
   usePeekEnd(st);
   useEffect(() => {
@@ -86,7 +95,7 @@ export function MainWindow() {
         {sel.kind === "customize" ? (
           <Customize />
         ) : st.mode === "bots" ? (
-          bot ? <BotPage key={bot.id} bot={bot} /> : <div className="empty"><span className="mini-spin" /></div>
+          group ? <GroupPage key={group.id} group={group} /> : bot ? <BotPage key={bot.id} bot={bot} /> : <div className="empty"><span className="mini-spin" /></div>
         ) : session ? (
           <SessionPage key={session.session_id} s={session} />
         ) : (
@@ -100,6 +109,7 @@ export function MainWindow() {
       {settingsOpen && <div className="settings-dim" />}
       <SheetHost />
       {st.botSheet && <BotSheet />}
+      {st.groupSheet && <GroupSheet />}
       <KeySheet />
     </div>
   );

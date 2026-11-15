@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { handedTabBlock, handedTabsBlock, listView, mergeBots, mergeSessions, RpcError, RpcClient, sortBots, type ListSession, type ListView } from "@finx/client";
+import { handedTabBlock, handedTabsBlock, listView, mergeBots, mergeGroups, mergeSessions, RpcError, RpcClient, sortBots, sortGroups, type ListSession, type ListView } from "@finx/client";
 import { draftThinking } from "./format";
-import type { BotSummary, Methods, ModelsListResult, Op, PermissionMode, ServerCapabilities, ThinkingLevel, UserContent } from "@finx/protocol";
+import type { BotSummary, GroupSummary, Methods, ModelsListResult, Op, PermissionMode, ServerCapabilities, ThinkingLevel, UserContent } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
 import { i18n, language } from "../../shared/i18n";
 import { modelsIn } from "../../shared/model-names";
@@ -15,13 +15,16 @@ import type { Peek } from "./layout";
 // open sheet, toast). A session's conversation is its page's
 // (session/useSession.ts).
 
-export type Selection = { kind: "new" } | { kind: "session"; id: string } | { kind: "customize" } | { kind: "bot"; id: string };
+export type Selection = { kind: "new" } | { kind: "session"; id: string } | { kind: "customize" } | { kind: "bot"; id: string } | { kind: "group"; id: string };
 
 /** Which of the two ways the window is used: projects and their sessions, or bots (bot-mode-design §6.1). */
 export type Mode = "sessions" | "bots";
 
 /** The form that makes a bot or changes its name and avatar (bot-mode-design §6.3). */
 export type BotSheet = { kind: "new" };
+
+/** The form that makes a group (bot-group-chat-dev-brief §5): its name, members and note. */
+export type GroupSheet = { kind: "new" };
 
 /**
  * Where the 自定义 page is (customize-design §10.1): skills or connectors, the person's own or
@@ -52,7 +55,14 @@ type UI = {
   /** What each mode showed last, to go back to it (bot-mode-design §6.1). */
   lastSession: Selection;
   lastBot: string | null;
+  /** The group chosen last in Bot mode's list. */
+  lastGroup: string | null;
   botSheet: BotSheet | null;
+  groupSheet: GroupSheet | null;
+  /** A group's settings beside its conversation. */
+  groupPanel: boolean;
+  /** The thread open beside a group, by the id of its first message. */
+  groupThread: string | null;
   /** A bot's settings beside its conversation (bot-mode-design §6.5.1). */
   botPanel: boolean;
   /** A bot's routines beside its conversation, and which of them is open (bot-mode-design §6.21); null when closed. */
@@ -125,6 +135,7 @@ export type Store = UI & {
   set: (patch: Partial<UI>) => void;
   select: (id: string) => void;
   selectBot: (id: string) => void;
+  selectGroup: (id: string) => void;
   /** Switches mode, back to what that mode showed last. */
   setMode: (mode: Mode) => void;
   /** Runs a change against finx; failures become a toast. Resolves to whether it worked. */
@@ -161,10 +172,13 @@ export type Lists = {
   /** Bot mode's bots, in the list's order. */
   bots: BotSummary[];
   botsLoaded: boolean;
+  /** Groups, in the list's order, beside the bots. */
+  groups: GroupSummary[];
+  groupsLoaded: boolean;
 };
 
 class ListStore {
-  private value: Lists = { sessions: [], loaded: false, bots: [], botsLoaded: false };
+  private value: Lists = { sessions: [], loaded: false, bots: [], botsLoaded: false, groups: [], groupsLoaded: false };
   private readonly subs = new Set<() => void>();
   readonly get = (): Lists => this.value;
   readonly subscribe = (f: () => void) => {
@@ -201,7 +215,7 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Saved = Pick<UI, "selection" | "mode" | "lastSession" | "lastBot" | "botDefaulted" | "botAccessSeen" | "botSetupDone" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
+type Saved = Pick<UI, "selection" | "mode" | "lastSession" | "lastBot" | "lastGroup" | "botDefaulted" | "botAccessSeen" | "botSetupDone" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
 
 function saved(): Partial<Saved> {
   if (location.hash.startsWith("#settings")) return {};
@@ -235,7 +249,11 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       mode: s.mode === "sessions" ? "sessions" : s.mode === "bots" ? "bots" : (window.finx?.defaultMode ?? "bots"),
       lastSession: s.lastSession ?? { kind: "new" },
       lastBot: s.lastBot ?? null,
+      lastGroup: s.lastGroup ?? null,
       botSheet: null,
+      groupSheet: null,
+      groupPanel: false,
+      groupThread: null,
       botPanel: false,
       botRoutines: null,
       botDefaulted: s.botDefaulted ?? {},
@@ -333,42 +351,88 @@ export function FinxProvider({ children }: { children: ReactNode }) {
         lists.update(() => ({ bots: sortBots(r.bots), botsLoaded: true }));
       })
       .catch(() => {});
+    // The groups beside the bots (bot-group-chat-dev-brief §5): the rows finx pushes, who is
+    // answering now, and each new message so a row's last line is never a push behind.
+    const sameTyping = (old: GroupSummary | undefined, next: GroupSummary) =>
+      next.stopped ? { ...next, typing: [] } : old?.typing?.length && !next.typing?.length ? { ...next, typing: old.typing } : next;
+    const offGroups = rpc.on("groups/changed", (c) =>
+      lists.update((l) => {
+        const next = mergeGroups(l.groups, c.groups, c.deleted ?? []).map((g) => sameTyping(l.groups.find((old) => old.id === g.id), g));
+        return { groups: sortGroups(next) };
+      }),
+    );
+    const offGroupMessage = rpc.on("group/message", ({ group_id, message }) => {
+      const images = message.files?.filter((f) => f.media_type?.startsWith("image/")).length ?? 0;
+      const file = message.files?.find((f) => !f.media_type?.startsWith("image/"))?.name;
+      const spoke = message.from.kind === "bot" ? message.from.bot_id : null;
+      lists.update((l) => ({
+        groups: l.groups.map((g) =>
+          g.id === group_id
+            ? { ...g, last: { from: message.from, text: message.text.slice(0, 1000), images, file, ts: message.ts }, ...(spoke ? { typing: (g.typing ?? []).filter((id) => id !== spoke) } : {}) }
+            : g,
+        ),
+      }));
+    });
+    const offGroupActivity = rpc.on("group/activity", ({ group_id, bot_id, busy }) =>
+      lists.update((l) => ({
+        groups: l.groups.map((g) => {
+          if (g.id !== group_id) return g;
+          const typing = busy ? [...new Set([...(g.typing ?? []), bot_id])] : (g.typing ?? []).filter((id) => id !== bot_id);
+          return { ...g, typing };
+        }),
+      })),
+    );
+    rpc
+      .request("groups/subscribe", {})
+      .then((r) => {
+        if (stop) return;
+        lists.update(() => ({ groups: sortGroups(r.groups), groupsLoaded: true }));
+      })
+      .catch(() => {});
     return () => {
       stop = true;
       off();
       offModels();
       offDocs();
       offBots();
+      offGroups();
+      offGroupMessage();
+      offGroupActivity();
     };
   }, [rpc, lists]);
   const kernelState: KernelState = status?.state === "failed" ? "down" : kernel;
 
   useEffect(() => {
     if (location.hash.startsWith("#settings")) return;
-    const v: Saved = { selection: ui.selection, mode: ui.mode, lastSession: ui.lastSession, lastBot: ui.lastBot, botDefaulted: ui.botDefaulted, botAccessSeen: ui.botAccessSeen, botSetupDone: ui.botSetupDone, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
+    const v: Saved = { selection: ui.selection, mode: ui.mode, lastSession: ui.lastSession, lastBot: ui.lastBot, lastGroup: ui.lastGroup, botDefaulted: ui.botDefaulted, botAccessSeen: ui.botAccessSeen, botSetupDone: ui.botSetupDone, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
     try {
       localStorage.setItem("main-view", JSON.stringify(v));
     } catch {
       // The window's layout is a convenience; without storage it just doesn't stick.
     }
-  }, [ui.selection, ui.mode, ui.lastSession, ui.lastBot, ui.botDefaulted, ui.botAccessSeen, ui.botSetupDone, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
+  }, [ui.selection, ui.mode, ui.lastSession, ui.lastBot, ui.lastGroup, ui.botDefaulted, ui.botAccessSeen, ui.botSetupDone, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);
   const select = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "session", id } })), []);
   const selectBot = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "bot", id }, lastBot: id })), []);
+  const selectGroup = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "group", id }, lastGroup: id })), []);
   const setMode = useCallback(
     (mode: Mode) =>
       setUI((u) => {
         if (u.mode === mode) return u;
         if (mode === "bots") {
           const list = lists.get().bots;
+          const groups = lists.get().groups;
           const bot = list.find((b) => b.id === u.lastBot) ?? list[0];
-          const lastSession = u.selection.kind === "bot" ? u.lastSession : u.selection;
-          return { ...u, mode, lastSession, selection: bot ? { kind: "bot", id: bot.id } : u.selection.kind === "customize" ? u.selection : { kind: "new" } };
+          const group = groups.find((g) => g.id === u.lastGroup);
+          const lastSession = u.selection.kind === "bot" || u.selection.kind === "group" ? u.lastSession : u.selection;
+          const keep = u.selection.kind === "group" || u.selection.kind === "bot" ? u.selection : null;
+          return { ...u, mode, lastSession, selection: keep ?? (group ? { kind: "group", id: group.id } : bot ? { kind: "bot", id: bot.id } : u.selection.kind === "customize" ? u.selection : { kind: "new" }) };
         }
         const lastBot = u.selection.kind === "bot" ? u.selection.id : u.lastBot;
-        return { ...u, mode, lastBot, selection: u.lastSession.kind === "bot" ? { kind: "new" } : u.lastSession };
+        const lastGroup = u.selection.kind === "group" ? u.selection.id : u.lastGroup;
+        return { ...u, mode, lastBot, lastGroup, selection: u.lastSession.kind === "bot" || u.lastSession.kind === "group" ? { kind: "new" } : u.lastSession };
       }),
     [lists],
   );
@@ -427,8 +491,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   );
 
   const store = useMemo<Store>(
-    () => ({ ...ui, rpc, kernel: kernelState, status, server, capabilities, lists: lists.get, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start }),
-    [ui, rpc, kernelState, status, server, capabilities, lists, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start],
+    () => ({ ...ui, rpc, kernel: kernelState, status, server, capabilities, lists: lists.get, width, models, set, select, selectBot, selectGroup, setMode, run, show, call, op, refreshModels, giveOffered, start }),
+    [ui, rpc, kernelState, status, server, capabilities, lists, width, models, set, select, selectBot, selectGroup, setMode, run, show, call, op, refreshModels, giveOffered, start],
   );
   return (
     <ListsCtx.Provider value={lists}>

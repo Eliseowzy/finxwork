@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { GroupSummary } from "@finx/protocol";
-import { groupLine, groupTime, mergeGroups, sortGroups, threadMessages } from "./groups.ts";
+import { collageMembers, groupLine, groupTime, insertMention, mentionChoices, mergeGroups, sortGroups, threadMessages, typingMention } from "./groups.ts";
 
 const member = (bot_id: string, name: string) => ({ bot_id, name, avatar: { kind: "mono" as const, hue: "slate" as const }, mode: "normal" as const });
 const group = (patch: Partial<GroupSummary> = {}): GroupSummary => ({
@@ -54,4 +54,24 @@ test("thread replies come in order", () => {
     { id: "x", seq: 3 },
   ];
   assert.deepEqual(threadMessages(messages, "r").map((m) => m.id), ["1", "2"]);
+});
+
+test("a collage takes at most four members, in the group's order", () => {
+  const members = ["a", "b", "c", "d", "e"].map((id) => member(id, id.toUpperCase()));
+  assert.deepEqual(collageMembers(members).map((m) => m.bot_id), ["a", "b", "c", "d"]);
+  assert.deepEqual(collageMembers(members, 2).map((m) => m.bot_id), ["a", "b"]);
+});
+
+test("an @ at the end of the text is a mention being typed, and is replaced", () => {
+  assert.deepEqual(typingMention("请 @Al"), { start: 2, end: 5, query: "Al" });
+  assert.deepEqual(typingMention("@"), { start: 0, end: 1, query: "" });
+  assert.equal(typingMention("邮件 a@b"), null);
+  assert.equal(typingMention("请 @Alice 看看"), null);
+  assert.deepEqual(insertMention("请 @Al", { start: 2, end: 5, query: "Al" }, "Alice"), "请 @Alice ");
+});
+
+test("the @ menu puts names that start with the query first", () => {
+  const members = [member("a", "张三"), member("b", "阿里"), member("c", "小阿")];
+  assert.deepEqual(mentionChoices(members, "阿").map((m) => m.bot_id), ["b", "c"]);
+  assert.deepEqual(mentionChoices(members, "").map((m) => m.bot_id), ["a", "b", "c"]);
 });

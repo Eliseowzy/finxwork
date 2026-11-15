@@ -13,6 +13,17 @@ const server = "crates/finx-server/src/";
 
 export const scripts = {
   appearance: { covers: [`${renderer}appearance`, `${renderer}main.tsx`, `${renderer}styles/tokens.css`, `${renderer}settings/Settings`, `${main}preferences`, "apps/desktop/src/preload/index.ts"] },
+  "bot-group": {
+    covers: [
+      `${renderer}groups/`,
+      `${renderer}bots/BotList`,
+      `${renderer}sidebar/Sidebar`,
+      `${renderer}store`,
+      `${renderer}styles/bots.css`,
+      `${client}groups`,
+      `${server}groups`,
+    ],
+  },
   "bot-external": {
     covers: [
       `${renderer}bots/BotSheet`,

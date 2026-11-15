@@ -1,4 +1,4 @@
-import type { GroupLast, GroupSummary } from "@finx/protocol";
+import type { GroupLast, GroupMember, GroupSummary } from "@finx/protocol";
 import { plain } from "./bots.ts";
 
 // What the group list shows (docs/kernel/bot-group-chat-dev-brief.md §5): rows worked out
@@ -62,4 +62,39 @@ export function lastLine(last: GroupLast): { text: string; files: string[] } {
 /** The messages under a thread's first message, oldest first. */
 export function threadMessages<T extends { id: string; seq: number; thread?: string | null }>(messages: T[], root: string): T[] {
   return messages.filter((m) => m.thread === root).sort((a, b) => a.seq - b.seq);
+}
+
+/** The members whose avatars a group's row shows, at most `max` (its collage). The owner is not a member. */
+export function collageMembers(members: GroupMember[], max = 4): GroupMember[] {
+  return members.slice(0, max);
+}
+
+/** An `@` being typed at the end of the composer's text. `start` is the `@`, `end` the end of the text. */
+export type MentionTyping = { start: number; end: number; query: string };
+
+/**
+ * The mention being typed, if the text ends with one: `@` after nothing or a space, then letters,
+ * digits, `_` or `-`. What a member's name may hold, as the service's own mention parser takes it.
+ */
+export function typingMention(text: string): MentionTyping | null {
+  const at = text.lastIndexOf("@");
+  if (at < 0) return null;
+  if (at > 0 && !/\s/.test(text[at - 1]!)) return null;
+  const query = text.slice(at + 1);
+  if (!/^[\p{L}\p{N}_-]*$/u.test(query)) return null;
+  return { start: at, end: text.length, query };
+}
+
+/** The text with the mention being typed replaced by `@name ` and the caret left after it. */
+export function insertMention(text: string, typing: MentionTyping, name: string): string {
+  return `${text.slice(0, typing.start)}@${name} ${text.slice(typing.end)}`;
+}
+
+/** The members an `@` menu offers: those whose name starts with the query, then those that contain it. */
+export function mentionChoices(members: GroupMember[], query: string): GroupMember[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return members;
+  const starts = members.filter((m) => m.name.toLowerCase().startsWith(q));
+  const has = members.filter((m) => !starts.includes(m) && m.name.toLowerCase().includes(q));
+  return [...starts, ...has];
 }

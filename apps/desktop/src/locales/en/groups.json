@@ -1,0 +1,93 @@
+{
+  "nav": {
+    "newGroup": "New group"
+  },
+  "list": {
+    "title": "Bots and groups",
+    "label": "Bots and groups",
+    "loading": "Loading…"
+  },
+  "row": {
+    "empty": "Nothing said yet",
+    "typing": "Thinking…",
+    "stopped": "Paused",
+    "members": "{{count}} members"
+  },
+  "head": {
+    "settings": "Group settings",
+    "members": "{{count}} members",
+    "external": "Has external members"
+  },
+  "sheet": {
+    "title": "New group",
+    "sub": "Give the group a name and add some bots.",
+    "name": "Name",
+    "namePlaceholder": "For example: Renovation",
+    "note": "Group notes (optional)",
+    "notePlaceholder": "What this group is for, and what the bots should keep to.",
+    "members": "Members",
+    "noBots": "No bots yet. Add one first.",
+    "localOnly": "For now, only bots on this Mac can join.",
+    "cancel": "Cancel",
+    "create": "Create group",
+    "creating": "Creating…"
+  },
+  "page": {
+    "log": "Group chat",
+    "placeholder": "Message the group",
+    "empty": "Say the first thing in this group.",
+    "typing": "{{names}} thinking…",
+    "you": "You",
+    "replyThread": "Reply in thread",
+    "quote": "Quote",
+    "threadReplies": "{{count}} replies · {{time}}",
+    "threadTitle": "Thread",
+    "threadClose": "Close thread",
+    "threadPlaceholder": "Reply in this thread",
+    "threadEmpty": "No replies yet.",
+    "fuseTitle": "A fuse stopped the group",
+    "continue": "Continue",
+    "stopped": "This group is paused: {{detail}}",
+    "memberCount": "{{count}} members",
+    "files": "Files"
+  },
+  "mention": {
+    "title": "Mention a member"
+  },
+  "panel": {
+    "title": "Group settings",
+    "close": "Close",
+    "name": "Name",
+    "note": "Notes",
+    "notePlaceholder": "What this group is for.",
+    "save": "Save",
+    "saved": "Saved",
+    "members": "Members",
+    "add": "Add member",
+    "addPlaceholder": "Pick a bot",
+    "remove": "Remove",
+    "mode": "How much it receives",
+    "modes": {
+      "mentions": "Only mentions",
+      "normal": "Watches the group",
+      "lazy": "Rarely checks"
+    },
+    "external": "External member",
+    "externalNote": "What is said here goes to the other side's service.",
+    "delete": "Delete group",
+    "deleteTitle": "Delete this group?",
+    "deleteBody": "Its messages go too. This cannot be undone.",
+    "deleteCancel": "Cancel",
+    "deleteConfirm": "Delete",
+    "empty": "No bots in this group yet.",
+    "pinned": "Pin to top"
+  },
+  "approval": {
+    "title": "{{name}} needs your confirmation",
+    "cause": "Set off by {{name}}",
+    "causeEarlier": "There were external messages in this group",
+    "external": "an external member",
+    "allow": "Allow once",
+    "deny": "Deny"
+  }
+}

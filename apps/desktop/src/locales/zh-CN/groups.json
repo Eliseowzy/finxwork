@@ -1,0 +1,93 @@
+{
+  "nav": {
+    "newGroup": "新建群"
+  },
+  "list": {
+    "title": "Bot 和群",
+    "label": "Bot 和群列表",
+    "loading": "正在载入…"
+  },
+  "row": {
+    "empty": "还没说过话",
+    "typing": "正在想…",
+    "stopped": "已暂停",
+    "members": "{{count}} 个成员"
+  },
+  "head": {
+    "settings": "群设置",
+    "members": "{{count}} 个成员",
+    "external": "有外部成员"
+  },
+  "sheet": {
+    "title": "新建群",
+    "sub": "给群起个名字，拉几个 Bot 进来。",
+    "name": "群名",
+    "namePlaceholder": "例如：装修群",
+    "note": "群说明（可空）",
+    "notePlaceholder": "这个群用来做什么，Bot 们在群里该守什么规矩。",
+    "members": "成员",
+    "noBots": "还没有 Bot，先去添加一个。",
+    "localOnly": "现在只能拉这台电脑上的 Bot。",
+    "cancel": "取消",
+    "create": "建群",
+    "creating": "正在建群…"
+  },
+  "page": {
+    "log": "群聊",
+    "placeholder": "发消息给群里的 Bot",
+    "empty": "在这个群里说第一句话。",
+    "typing": "{{names}} 正在想…",
+    "you": "你",
+    "replyThread": "在话题中回复",
+    "quote": "引用",
+    "threadReplies": "{{count}} 条回复 · {{time}}",
+    "threadTitle": "话题",
+    "threadClose": "关闭话题",
+    "threadPlaceholder": "在这个话题里回复",
+    "threadEmpty": "还没有回复。",
+    "fuseTitle": "保险丝停了群",
+    "continue": "继续",
+    "stopped": "这个群暂停了：{{detail}}",
+    "memberCount": "{{count}} 个成员",
+    "files": "文件"
+  },
+  "mention": {
+    "title": "提到成员"
+  },
+  "panel": {
+    "title": "群设置",
+    "close": "关闭",
+    "name": "群名",
+    "note": "群说明",
+    "notePlaceholder": "这个群用来做什么。",
+    "save": "保存",
+    "saved": "已保存",
+    "members": "成员",
+    "add": "添加成员",
+    "addPlaceholder": "选择一个 Bot",
+    "remove": "移出群",
+    "mode": "接收档位",
+    "modes": {
+      "mentions": "只看 @ 我的",
+      "normal": "常看群",
+      "lazy": "不常看群"
+    },
+    "external": "外部成员",
+    "externalNote": "外部成员的消息会发到对方的服务。",
+    "delete": "删除群",
+    "deleteTitle": "删除这个群？",
+    "deleteBody": "群里的消息会一起删掉，不能撤回。",
+    "deleteCancel": "取消",
+    "deleteConfirm": "删除",
+    "empty": "群里还没有 Bot。",
+    "pinned": "置顶"
+  },
+  "approval": {
+    "title": "{{name}} 需要你确认",
+    "cause": "由 {{name}} 的话引起",
+    "causeEarlier": "此前群里有外部消息",
+    "external": "外部成员",
+    "allow": "允许这一次",
+    "deny": "拒绝"
+  }
+}

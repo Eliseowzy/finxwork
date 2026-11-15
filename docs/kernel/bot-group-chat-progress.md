@@ -45,3 +45,21 @@
   - `fuse.day` 换日清零；`groups/open` 的 `group.fuse`/`group.stopped` 已带出。
 - 验收：`cargo test -p finx-cli --test e2e_groups`（7 通过，含：主人沉默 12 条停群并恢复、每日 token 停 + resume、每分钟上限、normal 静默、@ 立即/自动话题、mentions 档、三人群）。
 - 自己定的：每分钟计数按 Bot 说出的条数算，超过后跳过后面的投递而不撤回已说的；`resume` 把 `fuse.tokens`/`peer_calls` 清零（再给一份）；`bot_run_without_owner` 默认 12；system 行文字为“群暂停了：…”；`daily_peer_calls` 的计数入口留给 M6。
+
+## M5 — `bb9cdc9b`（桌面端群聊，只有本地 Bot）
+
+- `packages/client`：`groups.ts` 补 `collageMembers`、`typingMention`、`insertMention`、`mentionChoices` 四个纯函数；`groups.test.ts` 补对应用例。协议未改。
+- `store.tsx`：`Lists` 加 `groups`/`groupsLoaded`；订阅 `groups/subscribe`，处理 `groups/changed`、`group/message`、`group/activity`（thinking 由 activity 维护，`groups/changed` 里不清空）；`Selection` 加 `{ kind: "group"; id }`，加 `selectGroup`；保存/恢复 `lastGroup`；加 `groupSheet`、`groupPanel`、`groupThread` 状态。切换模式时群和 Bot 互相保留。
+- 侧栏 / `bots/BotList.tsx`：群和 Bot 同一个列表，按置顶、最近活动排序；群行头像是成员头像拼图（最多 4 个），有外部成员带地球标记；未读、置顶、最近消息/正在想/暂停三态；`Sidebar` 在“添加 Bot”旁加“新建群”，列表标题改为“Bot 和群”。
+- `groups/GroupSheet.tsx`：起名、勾现有本地 Bot、群说明（可空）；不列外部 Bot（确认页留 M7）。
+- `groups/GroupPage.tsx`：主消息流，每条发送者头像/名字，外部 Bot 带标记；system 行居中灰字；顶栏群名、成员拼图、设置按钮；`groups/read` 已读；`group/activity` 的“X 正在想…”；保险丝停止行 + “继续”（`groups/update { resume: true }`）；话题第一条下“N 条回复 · 最后一条时间”，点开右侧面板，面板有自己的输入框并发 `thread`；悬停“在话题中回复”“引用”，引用卡显示原文、点了滚回原消息并闪一下；`@` 弹成员列表，选中插入 `@名字`；发送支持 `thread`/`reply_to`。
+- `groups/GroupPanel.tsx`：改名、群说明、置顶、每个成员的接收档位、添加/移出成员、删除群；外部成员暂时只显示标记和说明。
+- 文案：新增 `apps/desktop/src/locales/{zh-CN,en}/groups.json`，并在 `shared/i18n.ts` 注册 `groups` 命名空间。样式追加到 `styles/bots.css`，复用 Bot 的列表行、气泡、面板和确认卡视觉。
+- M7 预留：`GroupPage` 监听 `group/approval`，在输入框上方弹卡，写 cause 的 `name`/`text`，只提供“允许这一次”和“拒绝”；答复走 `session/resume` → `session/op`（approval）→ `session/detach`。
+- 验收：
+  - `pnpm typecheck`：通过（protocol / client / desktop 全部）。
+  - `pnpm test`：通过（client 149、desktop 274，布局/单元测试全过）。
+  - `node apps/desktop/e2e/bot-group.mjs`：通过；连续跑 3 次都过（真实 `finx serve` + 脚本化 OpenAI 兼容本地模型 + 临时 HOME）。
+  - 截图：`docs/kernel/bot-group-chat-shots/` 的 `create.png`、`chat.png`、`mention.png`、`thread.png`、`quote.png`、`typing.png`、`fuse.png`、`settings.png`。
+  - Rust 未改：确认已有 `target/debug/finx`（`finx 0.2.0`）可用，未重新 `cargo build`（同分支上 M6 正在改 crates）。
+- 自己定的：M5 的建群表单只列本地 Bot，外部 Bot 的确认页和入群前记录设置留给 M7；话题面板直接用页面已加载的群消息和 `group/message` 事件渲染，不额外调 `groups/thread`（更早的话题分页以后接）；群设置多一个置顶开关；群里收到的文件只显示文件名，不做打开/预览（M5 范围外）；保险丝“继续”不再额外弹 toast。
