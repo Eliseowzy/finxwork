@@ -105,7 +105,7 @@ jobs:
 
   build-macos:
     needs: prepare
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -113,6 +113,21 @@ jobs:
         arch: ${{ fromJSON(needs.prepare.outputs.archs_json) }}
     steps:
       - uses: actions/checkout@v4
+
+      # Icon Composer's compiler also needs the matching macOS 26 frameworks.
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Activate pinned Rust toolchain and build target
+        run: |
+          rustc --version
+          rustup target add ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-${{ matrix.arch }}
+          cache-workspace-crates: true
+          cache-on-failure: true
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
