@@ -101,6 +101,43 @@ struct PeerFile {
     stateless: bool,
     /// By stream: `main`, or the first message of a thread.
     contexts: BTreeMap<String, ContextFile>,
+    /// Whether the member list went to this bot; sent again after a member changes.
+    #[serde(default)]
+    members_sent: bool,
+}
+
+/// What the group needs to know about an external member (brief §4.7).
+#[derive(Clone, Debug)]
+pub(crate) struct ExternalMember {
+    pub bot_id: String,
+    pub name: String,
+    pub mode: GroupMemberMode,
+    pub history: GroupHistory,
+    pub joined_seq: u64,
+    pub stateless: bool,
+}
+
+/// An external member's delivery state, copied out of `group.json`.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PeerState {
+    pub stateless: bool,
+    pub members_sent: bool,
+    /// By stream: `main`, or the first message of a thread.
+    pub contexts: BTreeMap<String, PeerContext>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PeerContext {
+    pub context_id: String,
+    pub sent_seq: u64,
+}
+
+/// A file the other side gave, not yet written into the group's folder.
+#[derive(Clone, Debug)]
+pub(crate) struct PeerIncomingFile {
+    pub name: String,
+    pub media_type: Option<String>,
+    pub bytes: Bytes,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -192,6 +229,8 @@ pub(crate) struct Registry {
     bot_minute: Mutex<BTreeMap<(String, String), (i64, u32)>>,
     /// Fuse 1's messages since the owner's last message, by group.
     consecutive: Mutex<BTreeMap<String, u32>>,
+    /// What set each seat's current turn on, for a confirmation card.
+    seat_causes: Mutex<BTreeMap<(String, String), GroupApprovalCause>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -215,6 +254,7 @@ impl Registry {
             seat_turns: Mutex::new(BTreeMap::new()),
             bot_minute: Mutex::new(BTreeMap::new()),
             consecutive: Mutex::new(BTreeMap::new()),
+            seat_causes: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -383,7 +423,7 @@ impl Registry {
         }
     }
 
-    fn row(&self, id: &str) -> Result<GroupSummary, RpcError> {
+    pub(crate) fn row(&self, id: &str) -> Result<GroupSummary, RpcError> {
         self.with(|groups| groups.get(id).map(|g| self.summary(g))).ok_or_else(|| errors::group_not_found(id))
     }
 
@@ -767,6 +807,35 @@ impl Registry {
         writeln!(file, "{line}").map_err(io_error)
     }
 
+    /// A seat's call waits for the owner: send it to the group page.
+    pub(crate) fn on_seat_approval(&self, group: &str, bot: &str, session: &str, call_id: String, name: String, args: Value, summary: String, reason: Option<String>) {
+        let cause = self
+            .seat_causes
+            .lock()
+            .get(&(group.to_string(), bot.to_string()))
+            .cloned()
+            .unwrap_or(GroupApprovalCause {
+                kind: GroupCauseKind::Earlier,
+                name: None,
+                message_id: None,
+                text: "此前群里有外部消息".into(),
+            });
+        self.feed.send(Bytes::from(finx_rpc::notification(
+            method::GROUP_APPROVAL,
+            &GroupApprovalParams {
+                group_id: group.to_string(),
+                bot_id: bot.to_string(),
+                session_id: session.to_string(),
+                call_id,
+                name,
+                args,
+                summary,
+                reason,
+                cause,
+            },
+        )));
+    }
+
     /// The owner spoke: fuse 1's "since the owner's last message" count starts again, and an
     /// owner-silence stop is lifted (brief §4.8).
     pub(crate) fn owner_spoke(&self, id: &str) -> Result<(), RpcError> {
@@ -1014,6 +1083,200 @@ impl Registry {
             ts: m.ts.clone(),
         }
     }
+
+    /// Whether an external member takes part in a thread: it spoke there, someone mentioned
+    /// it there, or the thread was opened by a message that mentioned it (brief §4.7).
+    pub(crate) fn peer_in_thread(&self, id: &str, bot_id: &str, root: &str) -> Result<bool, RpcError> {
+        self.with_group(id, |g| {
+            g.ensure_messages(&self.home)?;
+            let messages = g.messages.as_ref().expect("read above");
+            let root_message = messages.iter().find(|m| m.id == root && m.thread.is_none());
+            if root_message.is_some_and(|m| m.mentions.iter().any(|id| id == bot_id)) {
+                return Ok(true);
+            }
+            Ok(messages.iter().filter(|m| m.thread.as_deref() == Some(root)).any(|m| {
+                m.mentions.iter().any(|id| id == bot_id)
+                    || matches!(&m.from, FromFile::Bot { bot_id: from } if from == bot_id)
+            }))
+        })
+    }
+
+    /// The external members of a group, with what a batch needs (brief §4.7).
+    pub(crate) fn external_members(&self, id: &str) -> Result<Vec<ExternalMember>, RpcError> {
+        let (members, peers) = self
+            .with(|groups| groups.get(id).map(|g| (g.file.members.clone(), g.file.peers.clone())))
+            .ok_or_else(|| errors::group_not_found(id))?;
+        Ok(members
+            .into_iter()
+            .filter_map(|m| {
+                let info = self.bots.member_info(&m.bot_id)?;
+                if !info.external {
+                    return None;
+                }
+                Some(ExternalMember {
+                    stateless: peers.get(&m.bot_id).is_some_and(|peer| peer.stateless),
+                    bot_id: m.bot_id,
+                    name: info.name,
+                    mode: m.mode,
+                    history: m.history,
+                    joined_seq: m.joined_seq,
+                })
+            })
+            .collect())
+    }
+
+    /// One external member's contexts and read positions.
+    pub(crate) fn peer_state(&self, id: &str, bot_id: &str) -> Result<PeerState, RpcError> {
+        let peer = self
+            .with(|groups| groups.get(id).map(|g| g.file.peers.get(bot_id).cloned()))
+            .ok_or_else(|| errors::group_not_found(id))?;
+        Ok(match peer {
+            Some(peer) => PeerState {
+                stateless: peer.stateless,
+                members_sent: peer.members_sent,
+                contexts: peer
+                    .contexts
+                    .into_iter()
+                    .map(|(stream, context)| {
+                        (
+                            stream,
+                            PeerContext {
+                                context_id: context.context_id,
+                                sent_seq: context.sent_seq,
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+            None => PeerState::default(),
+        })
+    }
+
+    /// Records the context the other side gave for a stream.
+    pub(crate) fn set_peer_context(&self, id: &str, bot_id: &str, stream: &str, context_id: &str) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            let peer = g.file.peers.entry(bot_id.to_string()).or_default();
+            let context = peer.contexts.entry(stream.to_string()).or_insert(ContextFile {
+                context_id: String::new(),
+                sent_seq: 0,
+            });
+            context.context_id = context_id.to_string();
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    /// Moves a stream's read position, after the other side accepted the batch (brief §4.7).
+    pub(crate) fn advance_peer_sent(&self, id: &str, bot_id: &str, stream: &str, sent_seq: u64) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            let peer = g.file.peers.entry(bot_id.to_string()).or_default();
+            let context = peer.contexts.entry(stream.to_string()).or_insert(ContextFile {
+                context_id: String::new(),
+                sent_seq: 0,
+            });
+            context.sent_seq = context.sent_seq.max(sent_seq);
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    pub(crate) fn mark_peer_members_sent(&self, id: &str, bot_id: &str) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            g.file.peers.entry(bot_id.to_string()).or_default().members_sent = true;
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    /// A member joined or left: every external member hears the new list next time.
+    pub(crate) fn reset_peer_members_seen(&self, id: &str) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            for peer in g.file.peers.values_mut() {
+                peer.members_sent = false;
+            }
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    pub(crate) fn set_peer_stateless(&self, id: &str, bot_id: &str, stateless: bool) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            g.file.peers.entry(bot_id.to_string()).or_default().stateless = stateless;
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    /// Every message in the group, oldest first, as the client sees it.
+    pub(crate) fn messages(&self, id: &str) -> Result<Vec<GroupMessage>, RpcError> {
+        self.with_group(id, |g| {
+            g.ensure_messages(&self.home)?;
+            let all = g.messages.as_ref().expect("read above");
+            Ok(all.iter().map(|m| self.message(m, all)).collect())
+        })
+    }
+
+    /// The rolling summary and the sequence it covers.
+    pub(crate) fn rolling_summary(&self, id: &str) -> Result<(u64, String), RpcError> {
+        self.with_group(id, |g| Ok((g.file.summary.upto_seq, g.file.summary.text.clone())))
+    }
+
+    pub(crate) fn set_summary(&self, id: &str, upto_seq: u64, text: String) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            g.file.summary.upto_seq = upto_seq;
+            g.file.summary.text = text;
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    /// A group's day gained one call to another subject's bot (brief §4.8, fuse 1).
+    pub(crate) fn add_peer_call(&self, id: &str, settings: &GroupsSettings) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            if day(&g.file.fuse) != today() {
+                g.file.fuse.day = today();
+                g.file.fuse.peer_calls = 0;
+                g.file.fuse.tokens = 0;
+            }
+            g.file.fuse.peer_calls = g.file.fuse.peer_calls.saturating_add(1);
+            Ok(())
+        })?;
+        self.save(id)?;
+        let calls = self.with(|groups| groups.get(id).map(|g| g.file.fuse.peer_calls).unwrap_or(0));
+        if calls >= settings.daily_peer_calls {
+            self.stop_group(id, GroupStopReason::DailyPeerCalls, "今天给外部 Bot 的调用额度用完了；主人可以在群设置里点继续")?;
+        }
+        Ok(())
+    }
+
+    /// Another subject's bot said something: its words go into the group like a local bot's,
+    /// with the files it gave written into the group's folder (brief §4.7).
+    pub(crate) fn append_external(
+        &self,
+        id: &str,
+        bot_id: &str,
+        text: String,
+        files: Vec<PeerIncomingFile>,
+        thread: Option<String>,
+        reply_to: Option<String>,
+    ) -> Result<GroupMessage, RpcError> {
+        let dir = self.home.group_files_dir(id);
+        private_dir(&dir).map_err(io_error)?;
+        let mut written = Vec::new();
+        for file in files {
+            let name = clean_file_name(&file.name);
+            let target = unique_file(&dir, &name);
+            let target_name = target.file_name().and_then(|n| n.to_str()).unwrap_or(&name).to_string();
+            std::fs::write(&target, &file.bytes).map_err(io_error)?;
+            written.push(GroupFile {
+                path: format!("files/{target_name}"),
+                name: target_name.clone(),
+                size: file.bytes.len() as u64,
+                media_type: file.media_type.or_else(|| media_type(&target_name).map(str::to_string)),
+            });
+        }
+        self.append_bot(id, bot_id, text, written, thread, reply_to)
+    }
 }
 
 fn batch_message(message: GroupMessage) -> finx_core::GroupBatchMessage {
@@ -1054,6 +1317,8 @@ fn clean_name(raw: &str) -> Result<String, RpcError> {
 }
 
 fn clean_file_name(raw: &str) -> String {
+    // Only the last path segment: a name from elsewhere never writes outside the group's folder.
+    let raw = raw.rsplit(['/', '\\']).next().unwrap_or(raw);
     let cleaned: String = raw
         .chars()
         .map(|c| if c.is_control() || c == '/' || c == '\\' { '_' } else { c })
@@ -1252,7 +1517,7 @@ fn unique_dir(parent: &Path, id: &str) -> PathBuf {
 }
 
 impl Server {
-    fn groups(&self) -> &Arc<Registry> {
+    pub(crate) fn groups(&self) -> &Arc<Registry> {
         &self.0.groups
     }
 
@@ -1341,7 +1606,7 @@ impl Server {
     }
 
     /// Sends a message to the seats that should hear it now, or after their quiet period.
-    async fn pass_on(&self, group_id: &str, sender: Option<&str>, message: GroupMessage) {
+    pub(crate) async fn pass_on(&self, group_id: &str, sender: Option<&str>, message: GroupMessage) {
         let Ok(members) = self.groups().local_members(group_id) else {
             return;
         };
@@ -1404,6 +1669,16 @@ impl Server {
                 }
             }
         }
+        // External members have no seat: the service talks to them itself (brief §4.7).
+        let external_members = self.groups().external_members(group_id);
+        if let Ok(external) = external_members {
+            for member in external {
+                if Some(member.bot_id.as_str()) == sender {
+                    continue;
+                }
+                self.queue_external(group_id, &member, message.clone()).await;
+            }
+        }
     }
 
     async fn deliver_to_seat(&self, group_id: &str, bot_id: &str, messages: Vec<GroupMessage>) -> Result<(), RpcError> {
@@ -1439,6 +1714,18 @@ impl Server {
                 you: false,
             },
         );
+        let cause = messages.iter().find(|m| matches!(m.from, GroupSpeaker::Bot { external: true, .. })).map(|m| {
+            let name = match &m.from { GroupSpeaker::Bot { name, .. } => name.clone(), _ => "外部成员".into() };
+            GroupApprovalCause {
+                kind: GroupCauseKind::Direct,
+                name: Some(name),
+                message_id: Some(m.id.clone()),
+                text: m.text.chars().take(200).collect(),
+            }
+        });
+        if let Some(cause) = cause {
+            self.groups().seat_causes.lock().insert((group_id.to_string(), bot_id.to_string()), cause);
+        }
         let mentioned = messages.iter().any(|m| m.mentions.iter().any(|id| id == bot_id));
         let thread = messages
             .iter()
@@ -1530,13 +1817,13 @@ impl Server {
         self.groups().stop_watching(conn.id);
     }
 
-    pub(crate) fn groups_create(&self, p: GroupCreateParams) -> Result<GroupSummary, RpcError> {
+    pub(crate) async fn groups_create(&self, p: GroupCreateParams) -> Result<GroupSummary, RpcError> {
         let row = self.groups().create(p)?;
-        let server = self.handle();
-        let id = row.id.clone();
-        tokio::spawn(async move {
-            let _ = server.ensure_group_seats(&id).await;
-        });
+        self.ensure_group_seats(&row.id).await?;
+        for member in self.groups().external_members(&row.id)? {
+            // A new external member's stateless probe (brief §4.7).
+            self.probe_stateless(&row.id, &member.bot_id).await;
+        }
         Ok(row)
     }
 
@@ -1548,18 +1835,23 @@ impl Server {
         self.groups().delete(&p.id)
     }
 
-    pub(crate) fn groups_add_member(&self, p: GroupAddMemberParams) -> Result<GroupSummary, RpcError> {
+    pub(crate) async fn groups_add_member(&self, p: GroupAddMemberParams) -> Result<GroupSummary, RpcError> {
+        let bot_id = p.bot_id.clone();
         let row = self.groups().add_member(p)?;
-        let server = self.handle();
-        let id = row.id.clone();
-        tokio::spawn(async move {
-            let _ = server.ensure_group_seats(&id).await;
-        });
+        self.ensure_group_seats(&row.id).await?;
+        self.groups().reset_peer_members_seen(&row.id)?;
+        if self.groups().external_members(&row.id)?.iter().any(|m| m.bot_id == bot_id) {
+            self.probe_stateless(&row.id, &bot_id).await;
+            // The new member's history choice may need the rolling summary: make it now.
+            let _ = self.maybe_summarize(&row.id).await;
+        }
         Ok(row)
     }
 
     pub(crate) fn groups_remove_member(&self, p: GroupRemoveMemberParams) -> Result<(), RpcError> {
-        self.groups().remove_member(p)
+        let id = p.id.clone();
+        self.groups().remove_member(p)?;
+        self.groups().reset_peer_members_seen(&id)
     }
 
     pub(crate) fn groups_set_member(&self, p: GroupSetMemberParams) -> Result<(), RpcError> {
@@ -1589,6 +1881,8 @@ impl Server {
         tokio::spawn(async move {
             let _ = server.ensure_group_seats(&group).await;
             server.pass_on(&group, None, message).await;
+            // The rolling summary is for the next external member; never in the way of a send.
+            let _ = server.maybe_summarize(&group).await;
         });
         Ok(result)
     }

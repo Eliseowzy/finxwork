@@ -6,7 +6,7 @@ The wire format is the one in `docs/kernel/bot-contacts-design.md` §5 and 附�
 ## Run
 
 ```sh
-node tools/a2a-fake/server.mjs [--port N] [--host H] [--auth] [--no-streaming] [--provider] [--icon]
+node tools/a2a-fake/server.mjs [--port N] [--host H] [--auth] [--no-streaming] [--provider] [--icon] [--images] [--group-ext] [--stateless]
 ```
 
 It prints exactly one line on stdout and then never writes to stdout again:
@@ -25,9 +25,13 @@ endpoint is the path of `PUBLIC_URL` (default `/a2a`); `POST /` is accepted as w
 | `--auth` | Card advertises an API key; a valid request needs `X-API-Key: test-key` |
 | `--no-streaming` | `capabilities.streaming` is false and `SendStreamingMessage` returns `UNSUPPORTED_OPERATION` |
 | `--provider` / `--icon` | Add `provider` / `iconUrl` to the card (`/icon.png` serves a 1×1 PNG) |
+| `--images` | The card accepts `image/png` and `image/jpeg` as well as text |
+| `--group-ext` | The card declares the finx group-chat extension; group batches get its header and metadata (below) |
+| `--stateless` | Contexts are not remembered: a follow-up with a `contextId` starts from nothing |
 
-Routes: `GET /.well-known/agent-card.json`, `POST /` and `POST /a2a`, `GET /redirect`
-(302 to `http://example.com/`), `GET /card-elsewhere` (card whose interface is on another host).
+Routes: `GET /.well-known/agent-card.json`, `POST /` and `POST /a2a`, `GET /requests`,
+`GET /redirect` (302 to `http://example.com/`), `GET /card-elsewhere` (card whose interface is
+on another host).
 
 Every JSON-RPC request must carry `A2A-Version: 1.0`. Errors look like 附录 B.2:
 
@@ -67,6 +71,22 @@ Context and task state are in-process, keyed by `contextId`; ids are UUIDs and s
 
 `GetTask` on an unknown id is `TASK_NOT_FOUND`; `CancelTask` on a finished task is
 `TASK_NOT_CANCELABLE`; `SubscribeToTask` on a finished task is `UNSUPPORTED_OPERATION`.
+
+## Groups
+
+`GET /requests` returns `{"requests": [...]}`: every JSON-RPC request seen, with its method,
+the `A2A-Version`/`A2A-Extensions` headers and the whole body. Tests use it to check that each
+group message went out once and what the batch contained.
+
+With `--group-ext` the card's `capabilities.extensions` names
+`https://finx.work/a2a/ext/group-chat/v1`. A request that carries that header and a message
+`metadata.group` is answered from its parts: the reply is `heard N messages from A, B`, using
+each part's `metadata.speaker.name`. If the first part's text is `silent`, the task completes
+with `metadata.silent: true` and no artifact. A text that picks a file scenario (`file`,
+`file2`, …) still returns that file.
+
+Without the extension the batch is one text part. If it holds a line that is only `PASS`
+(optionally after a `【speaker】` prefix), the reply is `PASS`; the client reads that as silence.
 
 ## Self-test
 

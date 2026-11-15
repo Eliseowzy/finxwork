@@ -63,3 +63,32 @@
   - 截图：`docs/kernel/bot-group-chat-shots/` 的 `create.png`、`chat.png`、`mention.png`、`thread.png`、`quote.png`、`typing.png`、`fuse.png`、`settings.png`。
   - Rust 未改：确认已有 `target/debug/finx`（`finx 0.2.0`）可用，未重新 `cargo build`（同分支上 M6 正在改 crates）。
 - 自己定的：M5 的建群表单只列本地 Bot，外部 Bot 的确认页和入群前记录设置留给 M7；话题面板直接用页面已加载的群消息和 `group/message` 事件渲染，不额外调 `groups/thread`（更早的话题分页以后接）；群设置多一个置顶开关；群里收到的文件只显示文件名，不做打开/预览（M5 范围外）；保险丝“继续”不再额外弹 toast。
+
+## M6 — `Groups: external bots in groups (M6)`（本提交）
+
+- `crates/finx-server/src/group_peers.rs`：外部成员不开席位会话，服务层直接走 A2A。
+  - 每个成员、每个流（`main` 或话题第一条 id）一个 contextId + `sent_seq`；只发 `sent_seq` 之后、属于该流、不是它自己的消息；成功接到任务后才推进 `sent_seq`。
+  - 投递时机照 brief §4.7：@ / 它参与的话题立即；`normal` 安静 `quiet_secs`、从第一条起最多 `max_wait_secs`；`lazy` 到 `lazy_secs` 或 `lazy_count` 条；正在回上一批时进 pending，结束再发，不并发。
+  - 它只收自己参与的话题（说过话、被 @、话题由 @ 它的消息开）。
+  - 批次是一个 A2A Message：声明扩展时多个 text part、part 的 `metadata.speaker`、Message 的 `group`/`seq`/`mentioned`/`members`；降级时一个 text part，每行 `【名字】内容`，首批带英文成员说明。
+  - 外部回复：每个 `Said` 写成群消息；文件按通讯录 §5.3 落 `groups/<id>/files/`（只取最后一段文件名、清洗、50 MB 上限）；`Asked` 写成普通消息并把 taskId 留给下一批；失败/验证/断线写 system 行，不重试，连续 3 次暂停这个成员的投递。
+  - `PASS`（trim、大小写不敏感）和正常结束没内容都算不说话，写 `silence.jsonl`，不进群消息。
+- stateless：`groups/create` / `groups/add_member` 现在是 async，加外部成员时用新 context 跑 KIWI 两问探测；回答含 `KIWI` 才算有状态，失败/超时按无状态。`groups/set_member` 的 `stateless` 手动改会生效；无状态成员每批带摘要 + 最近 `recent_count` 条 + 新消息，不带 contextId。
+- 入群前记录：`none` 不发旧消息/摘要；`summary` 只带摘要；`recent` 带摘要 + 最近 `recent_count` 条原文；拉进话题时带话题第一条 + 话题内最近 `recent_count` 条。
+- 滚动摘要：`crates/finx-server/src/prompts/group_summary.md`（英文、按话题、≤400 词），用主人默认模型（`Server::session_model` / `finx_llm`），在 `summary_after` 条之后异步把除最近 `recent_count` 条以外的部分并进摘要；没有默认模型时降级为只发最近窗口。没有外部成员的群不算摘要。
+- `crates/finx-a2a`：新增 `GroupMessage { id, parts, metadata, extension }` / `GroupPart` / `Client::send_group`，复用现有连接、凭证、SSE、大小上限、内网判断、超时和重连；直接聊的路径不变。名片解析出 `capabilities.extensions`，`bot.json` 的 source 增量记下（`extensions`，带默认值），供群聊判断是否声明扩展。
+- `tools/a2a-fake`：`--group-ext`（名片声明扩展，按 speaker 回 `heard N messages from A, B`，首条 `silent` 回 `metadata.silent`，`file`/`file2` 仍回文件）、`--stateless`（不记 context）、降级时 `PASS`、`GET /requests`；写进 README 和 `tests.mjs`。
+- 验收命令与结果：
+  - `node tools/a2a-fake/tests.mjs`：`all checks passed`。
+  - `cargo test -p finx-a2a -p finx-server`：通过（a2a 36 个 lib 测试，server 83 个 lib 测试和既有集成测试）。
+  - `cargo test -p finx-cli --test e2e_groups_external`：4 通过（增量/一成员一批、contextId 与话题、stateless 探测与手改、扩展/降级/PASS/silent、入群前 none/summary/recent、文件说明与外部文件落盘）。
+  - `cargo test -p finx-cli --test e2e_groups`：7 通过；`--test e2e_bot_external`：5 通过。
+  - `cargo check --workspace --all-targets`、`cargo build --bin finx`：通过（只有 `crates/finx-core/tests/bot.rs` 既有的 `unused_mut` 警告）。
+- 自己定的：
+  - 外部成员的 quiet 计时在“安静期后没有新消息”就发，不会因为 pending 本身非空而一直等到 `max_wait_secs` 之后；本地成员的 M3 计时未改。
+  - 话题首批按“话题第一条 + 最近 `recent_count` 条回复”截断；话题里更早的回复以后也不补发。
+  - 降级 `PASS` 只认整条回复等于 `PASS`（或 `【名字】PASS` 这种单行）；扩展模式以 `metadata.silent` / 没有内容为不说话。
+  - 外部成员的 `taskId` 只记在服务内存里，重启后不续（等待中的任务恢复留给后续）；`contextId` 和 `sent_seq` 落 `group.json`。
+  - 滚动摘要在“群里有外部成员”时才计算；加外部成员时会同步补算一次，避免 `summary`/`recent` 的首批没有摘要可用。
+  - 外部文件名的清洗先取路径最后一段再清洗，和直接聊的落盘规则一致。
+- 仍未做：外部成员等待中的 A2A 任务在服务重启后的补查/续接；M7 的确认页、外部标记和保险丝 3 界面（由别人做）。

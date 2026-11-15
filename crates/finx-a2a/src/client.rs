@@ -31,8 +31,28 @@ use crate::events::error_reason;
 use crate::net;
 
 const A2A_VERSION: &str = "1.0";
+/// The finx group-chat extension (brief §4.7, group-design §5.5).
+pub const GROUP_CHAT_EXTENSION: &str = "https://finx.work/a2a/ext/group-chat/v1";
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const RESUME_ATTEMPTS: u32 = 3;
+
+/// One message of a group batch: its words and, for a bot that declared the extension, who
+/// said it (brief §4.7).
+#[derive(Clone, Debug)]
+pub struct GroupPart {
+    pub text: String,
+    pub metadata: Option<Value>,
+}
+
+/// A group batch as one A2A message. `extension` asks for the finx group-chat extension: the
+/// `A2A-Extensions` header and the message's metadata.
+#[derive(Clone, Debug)]
+pub struct GroupMessage {
+    pub id: String,
+    pub parts: Vec<GroupPart>,
+    pub metadata: Option<Value>,
+    pub extension: bool,
+}
 
 /// Where one bot answers and, when the card names one, the tenant to put in each request.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -199,17 +219,67 @@ impl Client {
         cancel: CancellationToken,
     ) -> Result<BoxStream<'static, PeerEvent>, ClientError> {
         let params = self.message_params(message, &thread);
-        let reply = self.send_message(&params, &cancel).await?;
+        self.send_prepared(params, false, Assembler::default(), cancel).await
+    }
+
+    /// Sends one group batch (brief §4.7): several text parts in one message, each with its
+    /// speaker in `metadata` when the bot declared the finx extension. Otherwise the caller
+    /// puts the same words in one part. The rest is the same path as a direct conversation:
+    /// credentials, streaming, resume, timeouts and the size limits.
+    pub async fn send_group(
+        &self,
+        message: GroupMessage,
+        thread: PeerThread,
+        cancel: CancellationToken,
+    ) -> Result<BoxStream<'static, PeerEvent>, ClientError> {
+        let parts: Vec<Value> = message
+            .parts
+            .into_iter()
+            .map(|part| {
+                let mut value = json!({ "text": part.text });
+                if let Some(metadata) = part.metadata {
+                    value["metadata"] = metadata;
+                }
+                value
+            })
+            .collect();
+        let mut body = json!({
+            "messageId": message.id,
+            "role": "ROLE_USER",
+            "parts": parts,
+        });
+        if let Some(metadata) = message.metadata {
+            body["metadata"] = metadata;
+        }
+        if let Some(context_id) = thread.context_id.as_deref() {
+            body["contextId"] = json!(context_id);
+        }
+        if let Some(task_id) = thread.task_id.as_deref() {
+            body["taskId"] = json!(task_id);
+        }
+        let mut params = json!({ "message": body });
+        self.add_tenant(&mut params);
+        self.send_prepared(params, message.extension, Assembler::group(), cancel).await
+    }
+
+    async fn send_prepared(
+        &self,
+        params: Value,
+        extension: bool,
+        assembler: Assembler,
+        cancel: CancellationToken,
+    ) -> Result<BoxStream<'static, PeerEvent>, ClientError> {
+        let reply = self.send_message(&params, extension, &cancel).await?;
         let (tx, rx) = futures::channel::mpsc::unbounded();
         let client = self.clone();
         let worker_cancel = cancel.clone();
         tokio::spawn(async move {
             match reply {
                 Reply::Sse(stream) => {
-                    pump_sse(stream, Assembler::default(), tx, worker_cancel).await
+                    pump_sse(stream, assembler, tx, worker_cancel).await
                 }
                 Reply::Json(value) => {
-                    let mut assembler = Assembler::default();
+                    let mut assembler = assembler;
                     if !send_events(&tx, assembler.apply(&value)) {
                         return;
                     }
@@ -365,25 +435,30 @@ impl Client {
     async fn send_message(
         &self,
         params: &Value,
+        extension: bool,
         cancel: &CancellationToken,
     ) -> Result<Reply, ClientError> {
         let streaming = tokio::select! {
             _ = cancel.cancelled() => return Err(ClientError::Cancelled),
-            reply = self.rpc("SendStreamingMessage", params.clone()) => reply,
+            reply = self.rpc_with("SendStreamingMessage", params.clone(), extension) => reply,
         };
         match streaming {
             Ok(reply) => Ok(reply),
             Err(error) if streaming_unsupported(&error) => tokio::select! {
                 _ = cancel.cancelled() => Err(ClientError::Cancelled),
-                reply = self.rpc("SendMessage", params.clone()) => reply,
+                reply = self.rpc_with("SendMessage", params.clone(), extension) => reply,
             },
             Err(error) => Err(error),
         }
     }
 
     async fn rpc(&self, method: &str, params: Value) -> Result<Reply, ClientError> {
+        self.rpc_with(method, params, false).await
+    }
+
+    async fn rpc_with(&self, method: &str, params: Value, extension: bool) -> Result<Reply, ClientError> {
         let response = self
-            .request(method, params)
+            .request(method, params, extension)
             .send()
             .await
             .map_err(ClientError::http)?;
@@ -409,18 +484,22 @@ impl Client {
         }
     }
 
-    fn request(&self, method: &str, params: Value) -> reqwest::RequestBuilder {
+    fn request(&self, method: &str, params: Value, extension: bool) -> reqwest::RequestBuilder {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
         let body = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
         // The URL is fixed for the life of the client, and redirects are only followed within
         // its origin, so a credential cannot be sent to another host.
-        self.inner.auth.apply(
-            self.inner
-                .http
-                .post(self.inner.url.clone())
-                .header("A2A-Version", A2A_VERSION)
-                .json(&body),
-        )
+        let request = self
+            .inner
+            .http
+            .post(self.inner.url.clone())
+            .header("A2A-Version", A2A_VERSION);
+        let request = if extension {
+            request.header("A2A-Extensions", GROUP_CHAT_EXTENSION)
+        } else {
+            request
+        };
+        self.inner.auth.apply(request.json(&body))
     }
 }
 
@@ -602,6 +681,57 @@ mod tests {
     use wiremock::matchers::body_string_contains;
     use wiremock::matchers::header;
     use wiremock::matchers::method;
+
+    #[tokio::test]
+    async fn a_group_batch_carries_the_extension_header_parts_and_metadata() {
+        use serde_json::json;
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(header("A2A-Extensions", GROUP_CHAT_EXTENSION))
+            .and(body_string_contains("\"speaker\""))
+            .and(body_string_contains("\"group\""))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "jsonrpc": "2.0", "id": 1,
+                "result": { "task": {
+                    "id": "task-1", "contextId": "ctx-1",
+                    "status": {
+                        "state": "TASK_STATE_COMPLETED",
+                        "metadata": { "silent": true }
+                    }
+                } }
+            })))
+            .mount(&server)
+            .await;
+        let client = Client::new(
+            Endpoint { url: server.uri(), tenant: None },
+            Auth::None,
+            ClientOptions { allow_local: true },
+        )
+        .expect("client");
+        let mut events = client
+            .send_group(
+                GroupMessage {
+                    id: "m1".to_string(),
+                    parts: vec![GroupPart {
+                        text: "hello".to_string(),
+                        metadata: Some(json!({ "speaker": { "name": "Alice" } })),
+                    }],
+                    metadata: Some(json!({ "group": { "id": "g1", "name": "群" } })),
+                    extension: true,
+                },
+                PeerThread::default(),
+                CancellationToken::new(),
+            )
+            .await
+            .expect("sent");
+        let mut seen = Vec::new();
+        while let Some(event) = events.next().await {
+            seen.push(event);
+        }
+        assert!(matches!(seen.first(), Some(PeerEvent::Thread(_))), "{seen:?}");
+        assert!(matches!(seen.last(), Some(PeerEvent::Done)), "{seen:?}");
+        assert!(!seen.iter().any(|event| matches!(event, PeerEvent::Said { .. })), "{seen:?}");
+    }
 
     #[test]
     fn too_much_data_ends_the_task_but_a_lost_connection_is_retried() {

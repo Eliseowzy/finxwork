@@ -127,6 +127,9 @@ pub(crate) struct BotSourceFile {
     skills: Vec<BotSkill>,
     #[serde(default)]
     accepts: Vec<BotAccept>,
+    /// The extensions the card declares (bot-group-chat-dev-brief §4.7).
+    #[serde(default)]
+    extensions: Vec<String>,
     auth: BotAuth,
     /// The header the card puts an API key in (§5.6); `None` for no credential or a bearer one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -418,6 +421,7 @@ impl Registry {
             provider: None,
             skills: Vec::new(),
             accepts: vec![BotAccept::Text],
+            extensions: Vec::new(),
             auth: BotAuth::None,
             api_key_header: None,
             noticed: true,
@@ -792,6 +796,7 @@ impl Server {
                 provider: card.provider.clone(),
                 skills: skills_of(&card),
                 accepts: accepts_of(&card),
+                extensions: card.extensions.clone(),
                 auth: auth_kind(&card.auth),
                 api_key_header: match &card.auth {
                     finx_a2a::Auth::ApiKey { header, .. } => Some(header.clone()),
@@ -891,6 +896,7 @@ impl Server {
         source.provider = card.provider.clone();
         source.skills = skills_of(&card);
         source.accepts = accepts_of(&card);
+        source.extensions = card.extensions.clone();
         source.auth = auth_kind(&card.auth);
         source.api_key_header = match &card.auth {
             finx_a2a::Auth::ApiKey { header, .. } => Some(header.clone()),
@@ -925,6 +931,17 @@ impl Server {
     /// The service behind an external bot, with its credential from the keychain (§5.3, §5.6).
     /// `None` for this computer's own bots. Blocking I/O: the keychain.
     pub(crate) fn peer_connection(&self, id: &str) -> Result<Option<(Arc<dyn finx_core::Peer>, PeerRef)>, RpcError> {
+        let Some(source) = self.a2a_source(id)? else {
+            return Ok(None);
+        };
+        let host = source.host.clone();
+        let peer = finx_a2a::A2aPeer::new(source);
+        Ok(Some((Arc::new(peer), PeerRef { host })))
+    }
+
+    /// Where an external bot answers, with its credential: what a group batch needs for its own
+    /// A2A call (brief §4.7, finx-a2a's group interface).
+    pub(crate) fn a2a_source(&self, id: &str) -> Result<Option<finx_a2a::Source>, RpcError> {
         let Some(source) = self.bots().source(id) else {
             return Ok(None);
         };
@@ -941,19 +958,20 @@ impl Server {
             },
             BotAuth::Bearer => finx_a2a::Auth::Bearer { token: credential()? },
         };
-        let peer = finx_a2a::A2aPeer::new(finx_a2a::Source {
+        Ok(Some(finx_a2a::Source {
             endpoint: source.endpoint,
-            host: source.host.clone(),
+            host: source.host,
             tenant: source.tenant,
             auth,
             allow_local: self.0.bot_settings.allow_local,
-        });
-        Ok(Some((
-            Arc::new(peer),
-            PeerRef {
-                host: source.host,
-            },
-        )))
+        }))
+    }
+
+    /// Whether the bot's card declares the finx group-chat extension (brief §4.7).
+    pub(crate) fn group_extension(&self, id: &str) -> bool {
+        self.bots()
+            .source(id)
+            .is_some_and(|source| source.extensions.iter().any(|uri| uri == finx_a2a::client::GROUP_CHAT_EXTENSION))
     }
 
     /// The avatar to keep for `input`; an image is written to the bot's folder. Blocking I/O.

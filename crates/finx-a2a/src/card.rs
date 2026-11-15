@@ -53,6 +53,8 @@ pub struct Card {
     pub accepts: Vec<Accept>,
     pub skills: Vec<Skill>,
     pub streaming: bool,
+    /// The extensions the bot declares in `capabilities.extensions`, by URI (§5.5).
+    pub extensions: Vec<String>,
 }
 
 impl Card {
@@ -102,6 +104,7 @@ impl Card {
             tenant: &'a Option<String>,
             auth: String,
             accepts: Vec<&'static str>,
+            extensions: &'a [String],
             skills: Vec<HashedSkill<'a>>,
         }
 
@@ -130,6 +133,7 @@ impl Card {
                     Accept::Image => "image",
                 })
                 .collect(),
+            extensions: &card.extensions,
             skills: card
                 .skills
                 .iter()
@@ -246,6 +250,7 @@ fn parse_card(value: &Value, card_url: &Url) -> Result<Card, CardError> {
         .and_then(|capabilities| capabilities.get("streaming"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let extensions = declared_extensions(object);
     let accepts = input_modes(object)?;
     let auth = parse_auth(object)?;
     let endpoint = parse_endpoint(object, card_url)?;
@@ -260,7 +265,25 @@ fn parse_card(value: &Value, card_url: &Url) -> Result<Card, CardError> {
         accepts,
         skills,
         streaming,
+        extensions,
     })
+}
+
+/// The URIs the card declares in `capabilities.extensions` (A2A 1.0, §5.5).
+fn declared_extensions(object: &Map<String, Value>) -> Vec<String> {
+    object
+        .get("capabilities")
+        .and_then(|capabilities| capabilities.get("extensions"))
+        .and_then(Value::as_array)
+        .map(|extensions| {
+            extensions
+                .iter()
+                .filter_map(|extension| extension.get("uri").and_then(Value::as_str))
+                .filter(|uri| !uri.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn required_string(object: &Map<String, Value>, key: &str) -> Result<String, CardError> {

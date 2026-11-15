@@ -68,9 +68,21 @@ pub struct Assembler {
     unnamed: u64,
     terminal: bool,
     budget: Budget,
+    /// A group batch: no content is silence, not a failure, and `metadata.silent` is honoured.
+    group: bool,
+    /// The other side said this turn is silent (`metadata.silent`, brief §4.7).
+    silent: bool,
 }
 
 impl Assembler {
+    /// The assembler for a group batch: a rounded reply that says nothing is silence.
+    pub fn group() -> Self {
+        Self {
+            group: true,
+            ..Self::default()
+        }
+    }
+
     /// Applies one JSON-RPC response (an SSE `data:` payload or a whole JSON body).
     pub fn apply(&mut self, value: &Value) -> Vec<PeerEvent> {
         let mut out = Vec::new();
@@ -118,8 +130,13 @@ impl Assembler {
         if self.terminal {
             return out;
         }
+        if self.group && self.silent {
+            self.terminal = true;
+            out.push(PeerEvent::Done);
+            return out;
+        }
         self.flush_artifacts(&mut out);
-        if self.saw_content {
+        if self.saw_content || self.group {
             out.push(PeerEvent::Done);
         } else {
             out.push(PeerEvent::Failed(no_reply()));
@@ -187,6 +204,10 @@ impl Assembler {
                 out.push(PeerEvent::Working)
             }
             "TASK_STATE_SUBMITTED" | "TASK_STATE_WORKING" => {}
+            "TASK_STATE_COMPLETED" if self.group && self.silent => {
+                out.push(PeerEvent::Done);
+                self.terminal = true;
+            }
             "TASK_STATE_COMPLETED" => {
                 self.flush_artifacts(out);
                 if !self.saw_artifact_text
@@ -194,7 +215,7 @@ impl Assembler {
                 {
                     self.add_message(message, out);
                 }
-                if self.saw_content {
+                if self.saw_content || self.group {
                     out.push(PeerEvent::Done);
                 } else {
                     out.push(PeerEvent::Failed(no_reply()));
@@ -254,6 +275,12 @@ impl Assembler {
         let before = out.len();
         self.update_thread(update, out);
         let had_thread = out.len() > before;
+        if self.group && self.silent {
+            if !had_thread {
+                out.push(PeerEvent::Working);
+            }
+            return;
+        }
         let Some(artifact) = update.get("artifact") else {
             out.push(PeerEvent::Working);
             return;
@@ -291,8 +318,13 @@ impl Assembler {
 
     fn apply_message(&mut self, message: &Value, out: &mut Vec<PeerEvent>) {
         self.update_thread(message, out);
+        if self.group && self.silent {
+            out.push(PeerEvent::Done);
+            self.terminal = true;
+            return;
+        }
         self.add_message(message, out);
-        if self.saw_content {
+        if self.saw_content || self.group {
             out.push(PeerEvent::Done);
         } else {
             out.push(PeerEvent::Failed(no_reply()));
@@ -346,6 +378,9 @@ impl Assembler {
     }
 
     fn update_thread(&mut self, object: &Value, out: &mut Vec<PeerEvent>) {
+        if self.group && says_silent(object) {
+            self.silent = true;
+        }
         if let Some(context_id) = object
             .get("contextId")
             .and_then(Value::as_str)
@@ -366,6 +401,20 @@ impl Assembler {
             out.push(PeerEvent::Thread(self.thread.clone()));
         }
     }
+}
+
+/// `metadata.silent: true` on a message, status, task or status update (brief §4.7).
+fn says_silent(object: &Value) -> bool {
+    let silent = |value: &Value| {
+        value
+            .get("metadata")
+            .and_then(|metadata| metadata.get("silent"))
+            .and_then(Value::as_bool)
+            == Some(true)
+    };
+    silent(object)
+        || object.get("status").is_some_and(silent)
+        || object.get("message").is_some_and(silent)
 }
 
 fn no_reply() -> PeerError {
@@ -818,6 +867,31 @@ mod tests {
             ]
         );
         assert!(assembler.is_terminal());
+    }
+
+    #[test]
+    fn a_group_round_without_content_is_silence_not_a_failure() {
+        let mut assembler = Assembler::group();
+        let events = assembler.apply(&task("TASK_STATE_COMPLETED", None));
+        assert_eq!(labels(&events), ["thread:Some(\"ctx-1\")/Some(\"task-1\")", "done"]);
+        assert!(assembler.is_terminal());
+    }
+
+    #[test]
+    fn a_silent_metadata_keeps_the_reply_out() {
+        let mut assembler = Assembler::group();
+        let events = assembler.apply(&json!({
+            "jsonrpc": "2.0", "id": 1,
+            "result": { "task": {
+                "id": "task-1", "contextId": "ctx-1",
+                "status": {
+                    "state": "TASK_STATE_COMPLETED",
+                    "metadata": { "silent": true },
+                    "message": { "parts": [{ "text": "should not be a said" }] }
+                }
+            } }
+        }));
+        assert_eq!(labels(&events), ["thread:Some(\"ctx-1\")/Some(\"task-1\")", "done"]);
     }
 
     #[test]

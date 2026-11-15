@@ -858,7 +858,7 @@ impl NativeProtocol {
             method::GROUPS_CREATE => match finx_rpc::params::<GroupCreateParams>(params) {
                 Ok(p) => {
                     let (conn, id) = (conn.clone(), id.clone());
-                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_create(p))));
+                    tokio::spawn(async move { conn.send(reply(&id, server.groups_create(p).await)); });
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
@@ -879,7 +879,7 @@ impl NativeProtocol {
             method::GROUPS_ADD_MEMBER => match finx_rpc::params::<GroupAddMemberParams>(params) {
                 Ok(p) => {
                     let (conn, id) = (conn.clone(), id.clone());
-                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_add_member(p))));
+                    tokio::spawn(async move { conn.send(reply(&id, server.groups_add_member(p).await)); });
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },

@@ -16,5 +16,8 @@ pub use client::Client;
 pub use client::ClientError;
 pub use client::ClientOptions;
 pub use client::Endpoint;
+pub use client::GroupMessage;
+pub use client::GroupPart;
+pub use client::GROUP_CHAT_EXTENSION;
 pub use peer::A2aPeer;
 pub use peer::Source;

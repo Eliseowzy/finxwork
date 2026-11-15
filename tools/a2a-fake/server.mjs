@@ -9,7 +9,7 @@ const API_KEY = 'test-key';
 const args = process.argv.slice(2);
 
 function usage(message) {
-  process.stderr.write(`${message}\nusage: node server.mjs [--port N] [--host H] [--auth] [--no-streaming] [--provider] [--icon]\n`);
+  process.stderr.write(`${message}\nusage: node server.mjs [--port N] [--host H] [--auth] [--no-streaming] [--provider] [--icon] [--images] [--group-ext] [--stateless]\n`);
   process.exit(2);
 }
 
@@ -20,6 +20,8 @@ let streaming = true;
 let provider = false;
 let icon = false;
 let images = false;
+let groupExt = false;
+let stateless = false;
 
 for (let i = 0; i < args.length; i += 1) {
   switch (args[i]) {
@@ -30,6 +32,8 @@ for (let i = 0; i < args.length; i += 1) {
     case '--provider': provider = true; break;
     case '--icon': icon = true; break;
     case '--images': images = true; break;
+    case '--group-ext': groupExt = true; break;
+    case '--stateless': stateless = true; break;
     default: usage(`unknown argument: ${args[i]}`);
   }
 }
@@ -48,6 +52,10 @@ if (portOption) publicUrl.port = String(portOption);
 const contexts = new Map();
 /** taskId -> task */
 const tasks = new Map();
+/** Every JSON-RPC request, for tests that check what was sent (GET /requests). */
+const requests = [];
+
+const GROUP_EXTENSION = 'https://finx.work/a2a/ext/group-chat/v1';
 
 function contextFor(id) {
   let context = contexts.get(id);
@@ -252,7 +260,7 @@ function handleStreaming(req, res, id, params) {
     task = tasks.get(suppliedTask);
     if (!task) return fail(res, id, 'TASK_NOT_FOUND', 'Task not found');
   }
-  const contextId = task ? task.contextId : suppliedContext || randomUUID();
+  const contextId = task ? task.contextId : (stateless ? randomUUID() : suppliedContext || randomUUID());
   const context = contextFor(contextId);
   if (text) context.users.push(text);
   if (!task) task = newTask(contextId);
@@ -270,6 +278,49 @@ function handleStreaming(req, res, id, params) {
   }
 
   sendTask(res, id, task);
+
+  const wantsExtension = String(req.headers['a2a-extensions'] ?? '').includes(GROUP_EXTENSION);
+  if (wantsExtension && message.metadata?.group) {
+    const parts = message.parts ?? [];
+    const speakerNames = parts
+      .map((part) => part?.metadata?.speaker?.name)
+      .filter((name) => typeof name === 'string' && name);
+    const names = [...new Set(speakerNames)];
+    const first = parts.find((part) => typeof part?.text === 'string')?.text?.trim().toLowerCase() ?? '';
+    sendStatus(res, id, task, 'TASK_STATE_WORKING');
+    const groupFile = fileParts(first);
+    if (groupFile) {
+      task.artifacts = [{ artifactId: randomUUID(), name: 'files', parts: groupFile }];
+      emit(res, id, {
+        artifactUpdate: {
+          taskId: task.id,
+          contextId: task.contextId,
+          artifact: task.artifacts[0],
+          lastChunk: true,
+        },
+      });
+      complete(res, id, task, null);
+      return res.end();
+    }
+    if (first === 'silent') {
+      const silentStatus = { state: 'TASK_STATE_COMPLETED', timestamp: now(), metadata: { silent: true } };
+      task.state = 'TASK_STATE_COMPLETED';
+      task.finished = true;
+      emit(res, id, {
+        statusUpdate: {
+          taskId: task.id,
+          contextId: task.contextId,
+          status: silentStatus,
+          metadata: { silent: true },
+        },
+      });
+      return res.end();
+    }
+    const reply = names.length
+      ? `heard ${parts.length} messages from ${names.join(', ')}`
+      : `heard ${parts.length} messages`;
+    return streamReply(res, id, task, reply);
+  }
 
   if (task.finished) {
     sendStatus(res, id, task, task.state, task.statusMessage);
@@ -360,6 +411,9 @@ function handleStreaming(req, res, id, params) {
       return; // waits for CancelTask
 
     default:
+      if (!wantsExtension && /(^|\n)\s*(?:【[^】]*】)?\s*pass\s*$/i.test(text)) {
+        return streamReply(res, id, task, 'PASS');
+      }
       return streamReply(res, id, task, helloReply(lower, context));
   }
 }
@@ -452,7 +506,9 @@ function cardFor(interfaceUrl) {
     description: 'A scripted A2A 1.0 peer for transport tests.',
     version: '1.0.0',
     supportedInterfaces: [{ url: interfaceUrl, protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
-    capabilities: { streaming },
+    capabilities: groupExt
+      ? { streaming, extensions: [{ uri: GROUP_EXTENSION, description: 'finx group chat', required: false }] }
+      : { streaming },
     defaultInputModes: images ? ['text/plain', 'image/png', 'image/jpeg'] : ['text/plain'],
     defaultOutputModes: ['text/plain', 'application/pdf'],
     skills: [
@@ -516,6 +572,11 @@ async function handleRpc(req, res) {
   }
 
   const params = body?.params ?? {};
+  requests.push({
+    method: body?.method,
+    headers: { 'a2a-version': req.headers['a2a-version'], 'a2a-extensions': req.headers['a2a-extensions'] },
+    body,
+  });
   switch (body?.method) {
     case 'SendStreamingMessage':
       if (!streaming) return fail(res, id, 'UNSUPPORTED_OPERATION', 'Unsupported operation');
@@ -543,6 +604,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/redirect') {
       res.writeHead(302, { Location: 'http://example.com/' });
       return res.end();
+    }
+    if (req.method === 'GET' && url.pathname === '/requests') {
+      return json(res, 200, { requests });
     }
     if (req.method === 'GET' && url.pathname === '/icon.png' && icon) {
       res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': PNG.length });

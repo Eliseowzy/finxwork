@@ -175,6 +175,8 @@ pub(crate) struct Inner {
     pub(crate) group_seating: tokio::sync::Mutex<()>,
     /// `[groups]`: quiet periods, fuses and their numbers.
     pub(crate) group_settings: finx_core::config::GroupsSettings,
+    /// External members' batches: in flight, failures and waiting tasks (crate::group_peers).
+    pub(crate) group_peers: crate::group_peers::Peers,
     /// Their routines (crate::routines).
     pub(crate) routines: Arc<crate::routines::Routines>,
 }
@@ -234,6 +236,7 @@ impl Server {
             group_pending: Mutex::new(HashMap::new()),
             group_seating: tokio::sync::Mutex::new(()),
             group_settings: workspace.config.groups.clone(),
+            group_peers: crate::group_peers::Peers::default(),
             routines,
             defaults,
             bot_settings: workspace.config.bots,

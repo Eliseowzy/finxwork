@@ -350,7 +350,66 @@ async function main() {
   assert.deepEqual([...iconBytes.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
   await stop(decorated);
 
+
+  // ---- --group-ext -----------------------------------------------------------------
+  const groupServer = await start(['--group-ext']);
+  const groupCard = await (await fetch(`${groupServer.base}/.well-known/agent-card.json`)).json();
+  const GROUP_EXTENSION = 'https://finx.work/a2a/ext/group-chat/v1';
+  assert.equal(groupCard.capabilities.extensions[0].uri, GROUP_EXTENSION);
+  const groupParams = {
+    message: {
+      messageId: 'group-1',
+      role: 'ROLE_USER',
+      contextId: 'group-context',
+      metadata: { group: { id: 'g1', name: '群', thread: null }, seq: { from: 0, to: 1 }, mentioned: false },
+      parts: [
+        { text: 'hello', metadata: { speaker: { name: 'Alice', kind: 'owner', external: false } } },
+        { text: 'hi', metadata: { speaker: { name: 'Bob', kind: 'bot', external: true } } },
+      ],
+    },
+  };
+  const heard = await collect(await stream(groupServer.base, groupParams, { headers: { 'a2a-extensions': GROUP_EXTENSION } }));
+  assert.equal(artifactText(heard), 'heard 2 messages from Alice, Bob');
+  assert.equal(finalStatus(heard).status.state, 'TASK_STATE_COMPLETED');
+
+  const silentParams = {
+    message: {
+      messageId: 'group-2',
+      role: 'ROLE_USER',
+      contextId: 'group-context',
+      metadata: { group: { id: 'g1', name: '群', thread: null }, seq: { from: 2, to: 2 } },
+      parts: [{ text: 'silent', metadata: { speaker: { name: 'Alice' } } }],
+    },
+  };
+  const silent = await collect(await stream(groupServer.base, silentParams, { headers: { 'a2a-extensions': GROUP_EXTENSION } }));
+  assert.equal(silent.some((event) => event.result?.artifactUpdate), false, 'a silent reply has no artifact');
+  assert.equal(finalStatus(silent).status.state, 'TASK_STATE_COMPLETED');
+  assert.equal(finalStatus(silent).status.metadata.silent, true);
+  assert.equal(silent.at(-1).result.statusUpdate.metadata.silent, true);
+
+  const seen = await (await fetch(`${groupServer.base}/requests`)).json();
+  assert.ok(seen.requests.length >= 2, 'every request is kept');
+  assert.equal(seen.requests[0].headers['a2a-extensions'], GROUP_EXTENSION);
+  assert.equal(seen.requests[0].body.method, 'SendStreamingMessage');
+  await stop(groupServer);
+
+  // ---- fallback PASS and --stateless ----------------------------------------------
+  const passServer = await start();
+  const pass = await collect(await stream(passServer.base, message('【Owner】PASS')));
+  assert.equal(artifactText(pass), 'PASS');
+  await stop(passServer);
+
+  const statelessServer = await start(['--stateless']);
+  const remember = await collect(await stream(statelessServer.base, message('Remember the word KIWI. Reply only OK.')));
+  assert.equal(artifactText(remember), 'hello (1)');
+  const contextId = taskOf(remember).contextId;
+  const askedWord = await collect(await stream(statelessServer.base, message('What word did I ask you to remember? Reply with the word only.', { contextId })));
+  assert.equal(artifactText(askedWord), 'hello (1)', 'a stateless peer forgets the earlier context');
+  assert.ok(!artifactText(askedWord).includes('KIWI'));
+  await stop(statelessServer);
+
   console.log('all checks passed');
+
 }
 
 main()
