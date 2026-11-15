@@ -32,6 +32,7 @@
   <img src="https://img.shields.io/badge/Rust-1.89%2B-000000?style=for-the-badge&logo=rust" alt="Rust 1.89+" />
   <img src="https://img.shields.io/badge/Desktop-Electron%20%2B%20React%2019-47848F?style=for-the-badge&logo=electron" alt="Electron + React 19" />
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-555555?style=for-the-badge" alt="macOS and Linux" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-FinxWork%20License-1F6BFF?style=for-the-badge" alt="FinxWork License" /></a>
 </p>
 
 <p>
@@ -39,7 +40,8 @@
   <a href="#核心功能">核心功能</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#项目架构">项目架构</a> ·
-  <a href="#star-趋势与引用">Star 趋势与引用</a>
+  <a href="#star-趋势与引用">Star 趋势与引用</a> ·
+  <a href="#开源协议与商业授权">开源协议</a>
 </p>
 
 </div>
@@ -187,3 +189,17 @@ finxwork/
   url    = {https://github.com/finxwork/finxwork}
 }
 ```
+
+---
+
+## 开源协议与商业授权
+
+本项目基于 [FinxWork 许可证](LICENSE)（修改版 Apache License 2.0，附加商业与品牌保护条件）发布：
+
+- **免费使用**：允许个人及组织免费自部署与内部业务使用（单一组织单租户场景）。
+- **以下商业情形须事先取得书面商业授权**：
+  1. 运营多租户环境或向外部第三方提供 SaaS、云托管、多用户共享平台服务；
+  2. 直接或间接销售、出租、转售本软件或其衍生作品，或将其打包/预装于付费软硬件及付费部署运维服务中；
+  3. 在使用 `apps/desktop`、`apps/chrome-extension`、`assets/brand/` 等用户界面或品牌资产时移除、遮挡或篡改 FinxWork LOGO 及版权信息。
+
+如需申请商业授权、白标贴牌（OEM）或企业合作，请联系：[yipengfei329@gmail.com](mailto:yipengfei329@gmail.com)。

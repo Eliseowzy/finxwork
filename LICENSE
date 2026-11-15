@@ -1,0 +1,302 @@
+FinxWork 许可证 / FinxWork License
+
+Copyright (c) 2026 FinxWork
+
+FinxWork 基于修改版的 Apache License 2.0 授权：在 Apache License 2.0（全文附后）
+的基础上附加下列条件。如以下附加条件与 Apache License 2.0 存在任何冲突，以以下附加
+条件为准。
+
+一、商业使用与须取得书面授权的情形
+
+FinxWork 允许个人及组织免费使用（包括单一组织或企业内部的自部署与业务使用），但如涉
+及以下任一情形，必须事先取得 FinxWork 的书面商业授权：
+
+  1. 多租户与托管服务：
+     未经 FinxWork 事先书面授权，不得使用 FinxWork 源代码或其编译产物运营多租户
+     环境，或向外部第三方提供 SaaS、云服务、托管服务或多用户共享平台服务（无论
+     是否收费）。
+     - 租户定义：在 FinxWork 中，一个“租户（Tenant）”指面向外部独立个人、企业
+       或客户实体提供服务的独立工作空间、账户体系或隔离的数据与运行环境。
+
+  2. 禁止售卖、转售与商业捆绑：
+     未经 FinxWork 事先书面授权，不得直接或间接销售、出租、有偿转授权或转售
+     FinxWork（包括源代码、二进制安装包、修改版本或衍生作品），亦不得将其打包、
+     预装于付费软件、硬件设备中，或作为付费部署、付费安装、付费代运维服务的核心
+     交付物对外销售或变现。
+
+  3. LOGO 与版权信息：
+     在使用 FinxWork 的用户界面或品牌资产（包括 `apps/desktop` 桌面端、
+     `apps/chrome-extension` 浏览器扩展、`assets/brand/` 目录及相关构建或分发
+     产物）时，不得移除、遮挡或篡改 FinxWork 的 LOGO、产品名称或版权与署名声明。
+     （仅使用命令行或后端接口且不涉及 FinxWork 图形界面的场景不适用上述界面 LOGO
+     限制，但仍须保留源代码与分发物中的版权及许可声明。）
+
+二、再分发与衍生作品
+
+你可以依据本许可证分发 FinxWork 或其修改版本，但所有对外分发的修改版本及衍生作品
+必须继续适用本许可证（包括上述所有附加条件），不得改用其他许可条款，亦不得删除或
+削弱本许可证的附加限制。
+
+三、贡献者条款
+
+向本项目提交贡献（包括代码、文档、翻译等），即表示你有权提交该内容，并同意：
+  1. FinxWork 可根据需要调整本项目的许可协议（包括放宽或收紧相关条款）；
+  2. 你提交的贡献可由 FinxWork 用于商业用途，包括云服务运营及向第三方发放商业授权。
+
+四、其他
+  1. 如需商业授权、白标贴牌（OEM）、多租户 SaaS 授权或商业分发合作，请发送邮件至
+     yipengfei329@gmail.com 联系授权。
+  2. 本软件包含的第三方开源组件、字体、模型及依赖项仍适用其各自的许可证。
+  3. 本许可证适用中华人民共和国法律。中英文版本如有不一致，以中文版本为准。
+
+--------------------------------------------------------------------------------
+
+English Version
+
+FinxWork is licensed under a modified version of the Apache License 2.0 (full
+text attached below), with the following additional conditions. In the event of
+any conflict between these additional conditions and the Apache License 2.0,
+these additional conditions shall prevail.
+
+1. Commercial Use and Cases Requiring Written Authorization
+
+FinxWork may be used free of charge by individuals and organizations (including
+self-hosted deployment and internal business use within a single organization);
+however, a prior written commercial license must be obtained from FinxWork if
+any of the following conditions apply:
+
+  a. Multi-tenant and Hosted Services:
+     Unless explicitly authorized by FinxWork in writing, you may not use the
+     FinxWork source code or compiled artifacts to operate a multi-tenant
+     environment, or to provide SaaS, cloud hosting, or hosted multi-user
+     services to external third parties (whether paid or free).
+     - Tenant Definition: Within the context of FinxWork, a "Tenant" refers to
+       an independent workspace, account space, or isolated data and runtime
+       boundary serving a distinct external individual, enterprise, or customer
+       entity.
+
+  b. Prohibition on Sale, Resale, and Commercial Bundling:
+     Without prior written authorization from FinxWork, you may not directly or
+     indirectly sell, rent, lease, sublicense for a fee, or resell FinxWork
+     (including its source code, binary installers, modified versions, or
+     derivative works), nor bundle or pre-install it with paid software or
+     hardware devices, or offer it as a primary deliverable of paid deployment,
+     installation, or managed-operation services for third parties.
+
+  c. LOGO and Copyright Information:
+     When using FinxWork's user interface or brand assets (including
+     `apps/desktop`, `apps/chrome-extension`, `assets/brand/`, and built or
+     distributed artifacts thereof), you may not remove, obscure, or modify the
+     FinxWork LOGO, product name, or copyright and attribution notices.
+     (This UI LOGO restriction does not apply to headless CLI or backend-only
+     uses of FinxWork that do not expose FinxWork's graphical interface,
+     provided that copyright and license notices in the source and distributed
+     artifacts remain intact.)
+
+2. Redistribution and Derivative Works
+
+You may distribute FinxWork or its modified versions in accordance with this
+license, provided that all externally distributed modified versions and
+derivative works remain subject to this license (including all additional
+conditions above). You may not relicense them under other terms, nor remove or
+weaken these additional conditions.
+
+3. Contributions
+
+By submitting a contribution (including code, documentation, or translations)
+to this project, you represent that you have the right to submit it, and you
+agree that:
+  a. FinxWork may adjust the license agreement of this project (to be stricter
+     or more relaxed) as deemed necessary;
+  b. Your contributed code may be used by FinxWork for commercial purposes,
+     including cloud service operations and granting commercial licenses to
+     third parties.
+
+4. Miscellaneous
+  a. For commercial licensing, white-label/OEM authorization, multi-tenant SaaS
+     licensing, or commercial distribution inquiries, please email
+     yipengfei329@gmail.com.
+  b. Third-party open-source components, fonts, models, and dependencies
+     included in this software remain under their own respective licenses.
+  c. This license is governed by the laws of the People's Republic of China.
+     In case of any discrepancy between the Chinese and English versions, the
+     Chinese version prevails.
+
+--------------------------------------------------------------------------------
+
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS

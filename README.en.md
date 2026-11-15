@@ -32,6 +32,7 @@
   <img src="https://img.shields.io/badge/Rust-1.89%2B-000000?style=for-the-badge&logo=rust" alt="Rust 1.89+" />
   <img src="https://img.shields.io/badge/Desktop-Electron%20%2B%20React%2019-47848F?style=for-the-badge&logo=electron" alt="Electron + React 19" />
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-555555?style=for-the-badge" alt="macOS and Linux" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-FinxWork%20License-1F6BFF?style=for-the-badge" alt="FinxWork License" /></a>
 </p>
 
 <p>
@@ -39,7 +40,8 @@
   <a href="#key-capabilities">Key Capabilities</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#architecture">Architecture</a> ·
-  <a href="#star-history--citation">Star History & Citation</a>
+  <a href="#star-history--citation">Star History & Citation</a> ·
+  <a href="#license">License</a>
 </p>
 
 </div>
@@ -187,3 +189,17 @@ If **FinxWork** supports your research, financial workflows, or engineering benc
   url    = {https://github.com/finxwork/finxwork}
 }
 ```
+
+---
+
+## License
+
+This repository is licensed under the [FinxWork License](LICENSE) (a modified version of the Apache License 2.0 with additional commercial and brand-protection conditions):
+
+- **Free Use**: Individuals and organizations may self-host and use FinxWork free of charge for single-tenant internal business or personal use.
+- **Commercial License Required**: Prior written authorization from FinxWork is required to:
+  1. Operate a multi-tenant environment or provide SaaS, cloud hosting, or hosted multi-user services to external third parties;
+  2. Sell, rent, lease, resell, or bundle/pre-install FinxWork (or its derivative works) with paid software, hardware, or paid deployment/managed-operation services;
+  3. Remove, obscure, or modify FinxWork's LOGO, product name, or copyright notices in `apps/desktop`, `apps/chrome-extension`, `assets/brand/`, or distributed UI builds thereof.
+
+For commercial licensing, white-label/OEM authorization, or enterprise inquiries, please contact [yipengfei329@gmail.com](mailto:yipengfei329@gmail.com).
