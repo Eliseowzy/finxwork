@@ -12,12 +12,11 @@ import { useStore } from "../store";
 import { Approval } from "./Approval";
 import { Notice } from "./Notice";
 import { Queue } from "./Queue";
+import { Drafts, type Draft } from "../composer/drafts";
 import { OfferedTab, YoursWaitCard } from "./Yours";
 
-type Draft = { text: string; attachments: Attachment[] };
-
-/** What the owner had written in each session and not sent yet. */
-const drafts = new Map<string, Draft>();
+/** What the owner had written in each session and not sent yet, kept across restarts. */
+const drafts = new Drafts("finx.drafts.sessions");
 
 /**
  * A sent message being written again (message-resend-design §5): nothing of it is finx's business

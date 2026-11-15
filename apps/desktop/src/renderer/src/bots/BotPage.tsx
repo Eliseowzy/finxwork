@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, routineDot, type BotItem, type WorkingAgent, type SessionView } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
+import { Drafts } from "../composer/drafts";
 import { addAttachments, externalInput, fromInput, toInput, unsendable, type Attachment } from "../composer/attachments";
 import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
@@ -676,7 +677,7 @@ function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: 
 }
 
 /** What the owner had written to each bot and not sent yet, kept across restarts. */
-const drafts = new Map<string, { text: string; attachments: Attachment[] }>();
+const drafts = new Drafts("finx.drafts.bots");
 /** What failed tasks handed back that is in a composer already. */
 const handed = new WeakSet<UserMessage[]>();
 
