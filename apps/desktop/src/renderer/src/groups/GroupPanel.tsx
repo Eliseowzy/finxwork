@@ -32,16 +32,23 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
   };
   const canExternal = st.capabilities?.bots_external === true;
   const canAdd = bots.filter((b) => (canExternal || !b.source) && !group.members.some((m) => m.bot_id === b.id));
+  const [pending, setPending] = useState<string | null>(null);
+  const [history, setHistory] = useState<"none" | "summary" | "recent">("none");
   const choose = (botId: string) => {
     if (!botId) return;
     const bot = bots.find((b) => b.id === botId);
     if (bot?.source) {
-      const ok = window.confirm(t("panel.confirmExternal", { name: bot.name, host: bot.source.host }));
-      if (!ok) return;
-      void st.run(() => st.call("groups/add_member", { id: group.id, bot_id: botId, history: "none" }));
+      setHistory("none");
+      setPending(botId);
       return;
     }
     void st.run(() => st.call("groups/add_member", { id: group.id, bot_id: botId }));
+  };
+  const confirmExternal = async () => {
+    if (!pending) return;
+    const botId = pending;
+    setPending(null);
+    await st.run(() => st.call("groups/add_member", { id: group.id, bot_id: botId, history }));
   };
   const remove = () => {
     setDeleting(false);
@@ -117,6 +124,25 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
           </section>
         </div>
       </div>
+      {pending && (
+        <Dialog label={t("sheet.confirmTitle")} width={440} onClose={() => setPending(null)}>
+          <h3>{t("sheet.confirmTitle")}</h3>
+          <p className="gconfirm-line">{t("sheet.confirmLine", { name: bots.find((b) => b.id === pending)?.name, host: bots.find((b) => b.id === pending)?.source?.host })}</p>
+          <div className="gconfirm-h">{t("sheet.history")}</div>
+          <div className="ghist" role="radiogroup" aria-label={t("sheet.history")}>
+            {(["none", "summary", "recent"] as const).map((h) => (
+              <label key={h} className={`ghist-i ${history === h ? "on" : ""}`}>
+                <input type="radio" name="panel-history" checked={history === h} onChange={() => setHistory(h)} />
+                {t(`sheet.history_${h}`)}
+              </label>
+            ))}
+          </div>
+          <div className="sheet-foot">
+            <button className="btn" onClick={() => setPending(null)}>{t("sheet.cancel")}</button>
+            <button className="btn primary" onClick={() => void confirmExternal()}>{t("panel.add")}</button>
+          </div>
+        </Dialog>
+      )}
       {deleting && (
         <Dialog label={t("panel.deleteTitle")} width={420} onClose={() => setDeleting(false)}>
           <h3>{t("panel.deleteTitle")}</h3>
