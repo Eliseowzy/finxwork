@@ -303,6 +303,8 @@ pub(crate) struct Session {
     pub(crate) peer_ref: Option<crate::peer::PeerRef>,
     /// A bot's seat in a group: the group it belongs to.
     pub(crate) group: Option<finx_protocol::group::GroupRef>,
+    /// Where the documents a seat may name by id are.
+    pub(crate) group_docs: Option<Arc<crate::group_guard::GroupDocPaths>>,
     /// A group seat has seen an external member's words; the fuse applies from then on.
     pub(crate) group_tainted: AtomicBool,
     /// The batch being answered named this bot with `@`.
@@ -769,6 +771,14 @@ impl Session {
             browser: self.system.get().browser.policy.clone(),
             desktop: self.system.get().desktop.clone(),
             group: self.group.clone(),
+            listed_skills: state
+                .skills
+                .iter()
+                .filter(|skill| skill.model_invocable)
+                .filter_map(|skill| skill.path.parent().map(crate::protected::canonical_lossy))
+                .collect::<Vec<_>>()
+                .into(),
+            group_docs: self.group_docs.clone(),
         }
     }
 
@@ -785,7 +795,9 @@ impl Session {
     }
 
     pub(crate) fn set_group_mentioned(&self, mentioned: bool) {
-        self.group_mentioned.store(mentioned, std::sync::atomic::Ordering::Relaxed);
+        if mentioned {
+            self.group_mentioned.fetch_or(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     pub(crate) fn take_group_mentioned(&self) -> bool {

@@ -419,6 +419,8 @@ mod tests {
             browser: Arc::new(policy),
             desktop: Default::default(),
             group: None,
+            listed_skills: Arc::from([]),
+            group_docs: None,
         }
     }
 

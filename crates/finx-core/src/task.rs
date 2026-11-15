@@ -696,6 +696,11 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         // A call said this was its last word (bot-design §3.3); input that came meanwhile is
         // answered first.
         if last_word && !session.has_steer() {
+            // The last message was a word to the group: the batch is answered, so the next
+            // silent turn must not be reminded for it (brief §4.5).
+            if session.is_group() && session.group_answered() {
+                session.take_group_mentioned();
+            }
             return TaskOutcome::Completed {
                 last_message,
                 reason: CompletionReason::Done,

@@ -67,6 +67,10 @@ pub struct SessionView {
     pub desktop: crate::config::DesktopSettings,
     /// A bot's seat in a group: only the group's folder is readable and writable.
     pub group: Option<finx_protocol::group::GroupRef>,
+    /// The skills the catalog lists, whose files a seat may read and not change.
+    pub listed_skills: Arc<[PathBuf]>,
+    /// Where open documents are, for a call that names one by id.
+    pub(crate) group_docs: Option<Arc<crate::group_guard::GroupDocPaths>>,
 }
 
 #[async_trait]

@@ -253,6 +253,11 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let deferred: crate::deferred::DeferredCell =
         Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded, launch.deps.docs.is_some(), role))));
     let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &deferred, &shown);
+    let base_tools = if launch.group.is_some() {
+        only_tools(&base_tools)
+    } else {
+        base_tools
+    };
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
     let tool_state = Arc::new(finx_tools::SessionState::default());
@@ -342,7 +347,17 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         agents: launch.agents,
         peer: launch.peer,
         peer_ref: launch.peer_ref,
-        group: launch.group,
+        group: launch.group.clone(),
+        group_docs: launch
+            .group
+            .as_ref()
+            .map(|_| {
+                Arc::new(crate::group_guard::GroupDocPaths::new(
+                    tool_state.get::<crate::docs::DocsHandle>(),
+                    tool_state.get::<crate::word::WordsHandle>(),
+                    tool_state.get::<crate::deck::DecksHandle>(),
+                ))
+            }),
         group_tainted: AtomicBool::new(false),
         group_mentioned: AtomicBool::new(false),
         sub_agent: launch.sub_agent,
@@ -426,10 +441,13 @@ fn agent_tree(
     Some(tree)
 }
 
-/// The tools `keep` lets through: a group seat has no shell or computer use, which cannot be
-/// confined to its folder (bot-group-chat-dev-brief §4.3).
-fn without_tools(tools: &Arc<ToolRegistry>, drop: impl Fn(&str) -> bool) -> Arc<ToolRegistry> {
-    let names: Vec<String> = tools.names().into_iter().filter(|name| !drop(name)).collect();
+/// The tools a seat may have (bot-group-chat-dev-brief §4.3): one list, in `group_guard`.
+pub(crate) fn only_tools(tools: &Arc<ToolRegistry>) -> Arc<ToolRegistry> {
+    let names: Vec<String> = tools
+        .names()
+        .into_iter()
+        .filter(|name| crate::group_guard::tool_allowed(name))
+        .collect();
     Arc::new(tools.subset(&names).expect("the names came from this registry"))
 }
 
@@ -903,11 +921,10 @@ impl Kernel {
         let resolved = deps.llm.resolve(&opts.model)?;
         let group = opts.group.clone();
         if group.is_some() {
-            // A seat reads only the group's folder: no shell, and no computer use (brief §4.3).
-            deps.tools = without_tools(&deps.tools, |name| name == "bash" || name.starts_with("cua_"));
             deps.hooks.push(Arc::new(crate::group_guard::GroupGuard));
         }
-        let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
+        // A seat gets no connectors and no browser this time (brief §4.3).
+        let mcp = if group.is_some() { None } else { mcp_manager(&deps, &opts.config, opts.project_root.clone()) };
         let agents = if group.is_some() {
             None
         } else {
@@ -1048,11 +1065,11 @@ impl Kernel {
         if let Some(peer_ref) = loaded.header.peer.clone() {
             return resume_peer(opts, deps, peer_ref, loaded).await;
         }
-        let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         let bot_ref = loaded.header.bot.clone();
         let group_ref = loaded.header.group.clone();
+        // A seat gets no connectors and no browser this time (brief §4.3).
+        let mcp = if group_ref.is_some() { None } else { mcp_manager(&deps, &opts.config, opts.project_root.clone()) };
         if group_ref.is_some() {
-            deps.tools = without_tools(&deps.tools, |name| name == "bash" || name.starts_with("cua_"));
             deps.hooks.push(Arc::new(crate::group_guard::GroupGuard));
         }
         let agents = if group_ref.is_some() {

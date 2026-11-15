@@ -257,6 +257,8 @@ mod tests {
             browser: Arc::default(),
             desktop: Default::default(),
             group: None,
+            listed_skills: Arc::from([]),
+            group_docs: None,
         }
     }
 

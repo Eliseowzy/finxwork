@@ -200,7 +200,8 @@ node apps/desktop/e2e/bot-group.mjs      # 你新加的桌面端端到端测试�
 - **不加载 `AGENTS.md` 等指令文件。** 群里可能有外人，主人的全局指令里可能有私事。群的规矩只来自群规和群说明（4.4）。
 - 不进会话列表、不进 Bot 列表。`SessionHeader::listed()` 遇到 `group` 也返回假。
 - 子智能体、定时任务：**席位会话里关掉**（不挂 `agent_tree` 和 `manage_routine`）。群里的一轮应该短。
-- **文件边界（硬限制）**：席位会话里所有带路径参数的工具（`read`、`write`、`edit`、`doc_*`、`docx_*`、`deck_*`、`sheet_*`、`spatial_open`，以及 `send_to_user` 的附件）只能碰 `groups/<group_id>/files/` 以内。判断前先把路径规范化并解开符号链接；`..` 和指向群外的符号链接一律拒绝。席位会话里**不挂 `bash` 和 `cua_*`**（卡不住路径），`browser_navigate` 拒绝 `file://`。这条边界不看这一轮是谁触发的，主人触发的也一样；主人要让群里用某个文件，就把它发进群。
+- **文件边界（硬限制）**：席位会话里所有带路径参数的工具（`read`、`write`、`edit`、`doc_*`、`docx_*`、`deck_*`、`sheet_*`、`spatial_open`，以及 `send_to_user` 的附件）只能碰 `groups/<group_id>/files/` 以内。判断前先把路径规范化并解开符号链接；`..` 和指向群外的符号链接一律拒绝。这条边界不看这一轮是谁触发的，主人触发的也一样；主人要让群里用某个文件，就把它发进群。
+- **工具白名单（这一期）**：席位会话只挂 `read`、`write`、`edit`、`doc_*`、`docx_*`、`deck_*`、`sheet_*`、`spatial_*`（不含 `spatial_script`）、`web_search`、`send_to_user`、`stay_silent`。不在名单里的一律不挂，包括连接器、浏览器、所有 MCP 工具和子智能体工具。名单只写在一处，`GroupGuard` 也按它拒绝名单外的调用。
 
 ### 4.4 群规：一个新的提示词配置
 

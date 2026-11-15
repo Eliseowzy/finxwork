@@ -75,6 +75,15 @@ async fn seat(scripts: Vec<Script>) -> Harness {
     let folder = folder.canonicalize().unwrap();
     // A global instruction file: a seat must not load it (brief §4.3).
     std::fs::write(home.root().join("AGENTS.md"), "AGENTS-SECRET\n").unwrap();
+    // A skill the catalog lists: its own files may be read, and not changed.
+    let skill = home.skills_dir().join("group-skill");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: group-skill\ndescription: A skill for the group tests.\n---\n\nRead `notes.md`.\n",
+    )
+    .unwrap();
+    std::fs::write(skill.join("notes.md"), "SKILL-NOTES\n").unwrap();
     let api = ScriptedApi::new();
     for script in scripts {
         api.push(script);
@@ -280,6 +289,17 @@ async fn a_mention_gets_one_reminder_and_then_still_ends_quietly() {
 }
 
 #[tokio::test]
+async fn a_later_batch_without_a_mention_does_not_clear_the_mention() {
+    let mut h = seat(vec![Script::text("nothing yet"), Script::text("still nothing")]).await;
+    h.kernel.deliver_group(batch(true));
+    h.kernel.deliver_group(batch(false));
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. } | EventMsg::TaskFailed { .. })).await;
+    assert!(completed(&events));
+    assert_eq!(h.api.requests().len(), 2, "the mention is still owed a word");
+    assert!(entries(&h).iter().any(|k| matches!(k, EntryKind::GroupUnanswered)));
+}
+
+#[tokio::test]
 async fn a_mention_that_is_answered_is_not_reminded() {
     let mut h = seat(vec![send_last("c1", "我在。")]).await;
     h.kernel.deliver_group(batch(true));
@@ -335,27 +355,39 @@ async fn external_words_mark_the_seat() {
 }
 
 #[tokio::test]
-async fn the_seat_cannot_read_or_send_files_outside_its_folder() {
-    let private = vec![
-        Script::tool_call("r1", "read", json!({ "path": "../../bots/private/files/secret.txt" })),
-        Script::tool_call("r2", "read", json!({ "path": "AGENTS.md" })),
+async fn every_path_tool_stays_inside_the_group_folder() {
+    let mut h = seat(Vec::new()).await;
+    let private = h.home.bot_files_dir("private");
+    std::fs::create_dir_all(&private).unwrap();
+    std::fs::write(private.join("secret.txt"), "PRIVATE-SECRET").unwrap();
+    std::fs::write(private.join("secret.pdf"), "%PDF-1.7").unwrap();
+    std::fs::write(private.join("secret.docx"), "not a docx").unwrap();
+    std::fs::write(private.join("secret.pptx"), "not a pptx").unwrap();
+    std::fs::write(private.join("secret.dcm"), "not a dicom").unwrap();
+    let agents = h.home.root().join("AGENTS.md");
+    std::fs::write(&agents, "AGENTS-SECRET").unwrap();
+    let group_files = h.home.group_files_dir("g1");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(private.join("secret.txt"), group_files.join("link.txt")).unwrap();
+
+    let calls = vec![
+        Script::tool_call("r1", "read", json!({ "path": "../../../bots/private/files/secret.txt" })),
+        Script::tool_call("r2", "read", json!({ "path": agents })),
         Script::tool_call("r3", "read", json!({ "path": "link.txt" })),
+        Script::tool_call("d1", "doc_open", json!({ "path": "../../bots/private/files/secret.pdf" })),
+        Script::tool_call("d2", "docx_read", json!({ "docx": "../../bots/private/files/secret.docx" })),
+        Script::tool_call("d3", "deck_open", json!({ "deck": "../../bots/private/files/secret.pptx" })),
+        Script::tool_call("d4", "spatial_open", json!({ "path": "../../bots/private/files/secret.dcm" })),
         Script::tool_call(
             "a1",
             "send_to_user",
-            json!({ "type": "attachment", "files": [{ "path": "../../bots/private/files/secret.txt" }], "text": "leak" }),
+            json!({ "type": "attachment", "files": [{ "path": "../../../bots/private/files/secret.txt" }], "text": "leak" }),
         ),
         send_last("c1", "done"),
     ];
-    let mut h = seat(private).await;
-    let bot = h.home.bot_files_dir("private");
-    std::fs::create_dir_all(&bot).unwrap();
-    std::fs::write(bot.join("secret.txt"), "PRIVATE-SECRET").unwrap();
-    std::fs::write(h.home.root().join("AGENTS.md"), "AGENTS-SECRET").unwrap();
-    let group_files = h.home.group_files_dir("g1");
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(bot.join("secret.txt"), group_files.join("link.txt")).unwrap();
-
+    for call in calls {
+        h.api.push(call);
+    }
     h.kernel.deliver_group(batch(false));
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. } | EventMsg::TaskFailed { .. })).await;
     assert!(completed(&events));
@@ -367,11 +399,13 @@ async fn the_seat_cannot_read_or_send_files_outside_its_folder() {
             _ => None,
         })
         .collect();
-    let failed = |name: &str| results.iter().any(|(tool, error, _)| tool == name && *error);
-    assert!(failed("read"), "{results:?}");
-    assert!(failed("send_to_user"), "{results:?}");
-    assert!(results.iter().filter(|(tool, error, _)| tool == "read" && *error).count() >= 2, "{results:?}");
-    assert!(results.iter().any(|(tool, error, text)| tool == "send_to_user" && *error && text.contains("group's folder")), "{results:?}");
+    let error = |tool: &str, needle: &str| {
+        results.iter().any(|(name, failed, text)| name == tool && *failed && text.contains(needle))
+    };
+    assert!(error("read", "secret.txt"), "{results:?}");
+    assert!(error("read", "AGENTS.md"), "{results:?}");
+    assert!(error("read", "link.txt"), "{results:?}");
+    assert!(error("send_to_user", "group's folder"), "{results:?}");
 }
 
 #[tokio::test]
