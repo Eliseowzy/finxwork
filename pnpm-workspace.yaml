@@ -10,11 +10,11 @@ onlyBuiltDependencies:
 # see docs/desktop/nimbleoffice-fork.md. Overrides also catch
 # pptx-react's own dependency on pptx and pptx-i18n.
 overrides:
-  '@nimbleoffice/fonts-latin': file:vendor/nimbleoffice/nimbleoffice-fonts-latin-0.5.1-finx.ga271fb9b.tgz
-  '@nimbleoffice/fonts': file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.ga271fb9b.tgz
-  '@nimbleoffice/pptx': file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.ga271fb9b.tgz
-  '@nimbleoffice/pptx-i18n': file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.ga271fb9b.tgz
-  '@nimbleoffice/pptx-react': file:vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.ga271fb9b.tgz
-  '@nimbleoffice/docx': file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.ga271fb9b.tgz
-  '@nimbleoffice/docx-i18n': file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.ga271fb9b.tgz
-  '@nimbleoffice/docx-react': file:vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.ga271fb9b.tgz
+  '@nimbleoffice/fonts-latin': file:vendor/nimbleoffice/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/fonts': file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx': file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx-i18n': file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx-react': file:vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx': file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx-i18n': file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx-react': file:vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz

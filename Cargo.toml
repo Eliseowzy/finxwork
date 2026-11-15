@@ -58,13 +58,13 @@ async-trait = "0.1"
 # PPT engine: NimbleOffice (Eliseowzy/nimbleoffice), derived from BetterOffice (openooxml/betteroffice)
 # and maintained independently. No font packs (fonts-latin, fonts-intl, fonts-cjk): every face
 # comes from the machine (finx-slide's SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
-nimbleoffice-pptx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "2f3bbd4af687cd5550058a67ee9ddc594fee66e1", default-features = false, features = ["raster", "fonts"] }
+nimbleoffice-pptx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "65549f0e05e5edf91bd0edc85de94d55345d93c7", default-features = false, features = ["raster", "fonts"] }
 # Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
-nimbleoffice-docx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "2f3bbd4af687cd5550058a67ee9ddc594fee66e1", default-features = false, features = ["raster", "fonts", "pdf"] }
-docx-edit = { package = "nimbleoffice-docx-edit", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "2f3bbd4af687cd5550058a67ee9ddc594fee66e1", features = ["metafile", "tiff"] }
-ooxml-metafile = { package = "nimbleoffice-metafile", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "2f3bbd4af687cd5550058a67ee9ddc594fee66e1", features = ["svg"] }
+nimbleoffice-docx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "65549f0e05e5edf91bd0edc85de94d55345d93c7", default-features = false, features = ["raster", "fonts", "pdf"] }
+docx-edit = { package = "nimbleoffice-docx-edit", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "65549f0e05e5edf91bd0edc85de94d55345d93c7", features = ["metafile", "tiff"] }
+ooxml-metafile = { package = "nimbleoffice-metafile", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "65549f0e05e5edf91bd0edc85de94d55345d93c7", features = ["svg"] }
 # The .docx written from the session in Rust: the fork's port of the JS engine's saveYrsDocx.
-docx-native-save = { package = "nimbleoffice-docx-native-save", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "2f3bbd4af687cd5550058a67ee9ddc594fee66e1" }
+docx-native-save = { package = "nimbleoffice-docx-native-save", git = "https://github.com/Eliseowzy/nimbleoffice", rev = "65549f0e05e5edf91bd0edc85de94d55345d93c7" }
 base64 = "0.22"
 bytes = "1"
 calamine = "0.38"
