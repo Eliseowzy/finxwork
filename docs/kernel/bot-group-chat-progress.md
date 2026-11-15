@@ -12,7 +12,7 @@
 - 验收：`cargo test -p finx-core --test group`、`--test bot`、`--lib`、`-p finx-server`、`-p finx-protocol`、`cargo check --workspace --all-targets`、`cargo build --bin finx`、`pnpm typecheck`、`pnpm test` 全过（desktop 曾有一次 supervisor flake，复跑通过）。
 - 自己定的：群邮件用群的 id/name 合成 `AgentRef`；`GroupBatch` 的 `while_thinking` 文案放在闭合标签之后；被 @ 提醒用 `GroupUnanswered` 条目；席位会话不挂 `bash`/`cua_*`。
 
-## M2 边界修复 — `a52d081d`
+## M2 边界修复 — `037d6457`
 
 - 席位工具改成白名单：`read`、`write`、`edit`、`doc_*`、`docx_*`、`deck_*`、`sheet_*`、`spatial_*`（不含 `spatial_script`）、`web_search`、`send_to_user`、`stay_silent`；名单只在 `group_guard::tool_allowed` 一处，`GroupGuard` 也按它拒绝。席位不再挂连接器、浏览器、MCP、子智能体工具。
 - `GroupGuard` 对 `doc_*`/`docx_*`/`deck_*` 的 id 参数查对应文档库的真实路径，再按群文件夹判断；查不到拒绝。
@@ -23,7 +23,7 @@
 - 验收：`cargo test -p finx-core --test group`（10 通过）、`cargo test -p finx-core --lib group_guard`（3 通过）、`cargo test -p finx-core --test group`、`cargo check -p finx-core --tests`（除既有 `tests/bot.rs` unused_mut 警告外无新警告）。
 - 自己定的：`GroupDocPaths` 的测试映射只在 `#[cfg(test)]` 用；技能目录按“清单里 `model_invocable` 的 SKILL.md 的父目录”算；`tool_allowed` 用前缀匹配 `doc_`/`docx_`/`deck_`/`sheet_`/`spatial_`。
 
-## M3 — `d4d5aa0a`（只有本地 Bot 的群）
+## M3 — `c6c4efd9`（只有本地 Bot 的群）
 
 - 服务层：`groups/send` 后为主人消息建立/复用每个“群 × 本地 Bot”的席位会话；按群成员档位投递。
   - `mentions` 档只收 @ 它的消息；`normal` 档主消息流静默 4 秒后送，最多从第一条起等 20 秒；`lazy` 档先按 4 秒（配置化留到 M4）。
@@ -34,7 +34,7 @@
 - 验收：`cargo test -p finx-cli --test e2e_groups`（4 通过：@ 立即回 + 自动话题、三人群只 @ 的那位回、mentions 档不收主消息流、normal 静默 4 秒后回）；`cargo test -p finx-core --test group`（10 通过）；`cargo test -p finx-core --lib group_guard`（3 通过）；`cargo test -p finx-server`、`cargo test -p finx-core --test bot` 通过。
 - 自己定的：`normal` 的安静/最长等待先写成 4 秒/20 秒常量，M4 读 `[groups]`；`mentions` 档不按话题参与度投递（外部 Bot 的话题参与度在 M6 做）；`members_changed` 暂时每批都带；自动话题取“这一批里第一条主消息流且 @ 它的消息”；群消息事件发给所有 `groups/subscribe` 的连接，由客户端按 group_id 过滤。
 
-## M4 — `cc4217f4`（保险丝 1）
+## M4 — `8862bf3a`（保险丝 1）
 
 - 新 `[groups]` 配置：`enabled`、`quiet_secs`、`max_wait_secs`、`lazy_secs`、`lazy_count`、`recent_count`、`summary_after`、`bot_per_minute`、`bot_run_without_owner`、`daily_tokens`、`daily_peer_calls`；默认值照 brief。
 - 服务层：
@@ -109,3 +109,16 @@
   - `pnpm typecheck`、`pnpm test`（client 149、desktop 274）通过；`node apps/desktop/e2e/bot-group.mjs` 通过。
   - `cargo check --workspace --all-targets`、`cargo build --bin finx` 通过（只有既有 `tests/bot.rs` unused_mut 和 linker 提示）。
 - 自己定的：外部成员不接触 system 行（本机提示行只给主人和本地 Bot）；T1 的 cause 在重启后没有原文时用“此前群里有外部消息”兜底；`GroupPanel` 添加外部成员用原生 `confirm` 写域名，入群前记录固定“不给看”，要改记录在群设置里重加；`GroupMember.stateless` 是新增字段，不改已有字段；第一条外部 system 行占一个群 `seq`，外部批次按“排除 system 行”处理。
+
+
+## 复查修复（2026-11-15）
+
+- `897353dd Groups: check document ids before asking (boundary fix)`：`GroupGuard` 的文档 id 真实路径检查移到保险丝 3 的 `Gate::Ask` 之前；被外部内容触发时用文档 id 改群外文档直接 `Deny`，不再先弹卡。补 `a_tainted_seat_still_refuses_a_document_id_outside_the_group` 单元测试。
+- `140e8411 Desktop: confirm external members in group settings`：群设置添加外部成员不再用 `window.confirm`，改为和建群共用的确认页（域名、入群前 `none/summary/recent`，默认 `none`）。
+- `2d1c0ce2 Groups: speak to the owner as you in pause lines`：暂停说明改成“你”，并说明在提示条上点“继续”，不再写“主人”“群设置里点”。
+- `ce2fde4a Groups: resume external tasks and cover approvals after restart`：
+  - `PeerFile` 落盘 `task_id`/`task_stream`；A2A `Thread` 事件一到就保存，不再等整批结束；服务启动时 `resume_external_tasks` 用 `Client::resume` 补查，结果照常写回群，失败写 system 行。
+  - e2e：`a2a-fake` 的 `drop` 场景，中途重启服务，结果仍进群；外部恶意文字触发本地 Bot 的 `web_search`，`group/approval` 弹卡（被外部触发，`A2A Fake`）；拒绝后没有 `pwned.txt`；重启后同样的写文件仍弹卡，且 cause 为 `earlier`、文字含“此前群里有外部消息”。
+  - `tools/a2a-fake --evil` 与群批次里的 `drop` 触发；`finx-mock` 在群信件里遇到 `pwned.txt` 时先调 `web_search` 再 `write`。
+- `d8be0276 Groups: open group files and show external stateless`：`GroupSummary` 增加 `files_dir`，群消息里的文件可点开（按 DD-185 只对群文件夹里的文件生成的标签）；`GroupMember` 增加 `stateless`，群设置里显示外部成员的“记不记得上下文”。
+- 已知覆盖：桌面端外部确认页和保险丝 3 确认卡的**桌面 e2e/截图**仍未做（功能已实现，Rust e2e 覆盖服务和审批事件）；这一期不做话题更早回复的分页，记入方案 v0.2 的“以后做”。
