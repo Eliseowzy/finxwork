@@ -1,0 +1,273 @@
+name: Release Desktop
+
+# Manual dispatch or explicit version tag push (v*) — never runs automatically on normal commits.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (leave empty to use apps/desktop/package.json)"
+        required: false
+        default: ""
+        type: string
+      archs:
+        description: "macOS architectures to build"
+        required: true
+        default: "arm64,x64"
+        type: choice
+        options:
+          - arm64,x64
+          - arm64
+          - x64
+      draft:
+        description: "Create as a draft release instead of publishing immediately"
+        required: false
+        default: false
+        type: boolean
+      prerelease:
+        description: "Mark as a pre-release"
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      draft: ${{ steps.meta.outputs.draft }}
+      archs_json: ${{ steps.meta.outputs.archs_json }}
+      notes_path: ${{ steps.meta.outputs.notes_path }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          pkg_ver="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("apps/desktop/package.json", "utf8")).version)')"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ver="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            ver="${{ inputs.version }}"
+            ver="${ver#v}"
+          else
+            ver="$pkg_ver"
+          fi
+
+          if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $ver" >&2
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" = "push" ] && [ "$ver" != "$pkg_ver" ]; then
+            echo "Tag v$ver does not match apps/desktop/package.json ($pkg_ver)" >&2
+            exit 1
+          fi
+
+          archs_raw="${{ inputs.archs }}"
+          if [ -z "$archs_raw" ]; then
+            archs_raw="arm64,x64"
+          fi
+          archs_json="$(node -e 'console.log(JSON.stringify(process.argv[1].split(",").map(s => s.trim()).filter(Boolean)))' "$archs_raw")"
+
+          pre="false"
+          if [[ "$ver" == *-* ]] || [ "${{ inputs.prerelease }}" = "true" ]; then
+            pre="true"
+          fi
+
+          draft="${{ inputs.draft }}"
+          if [ -z "$draft" ]; then
+            draft="false"
+          fi
+
+          notes="apps/desktop/releases/${ver}.md"
+          if [ ! -f "$notes" ]; then
+            notes=""
+          fi
+
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=v$ver" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "archs_json=$archs_json" >> "$GITHUB_OUTPUT"
+          echo "notes_path=$notes" >> "$GITHUB_OUTPUT"
+
+  build-macos:
+    needs: prepare
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.prepare.outputs.archs_json) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Import Apple Developer ID certificate (optional)
+        id: signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE_P12" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "identity=-" >> "$GITHUB_OUTPUT"
+            echo "No APPLE_CERTIFICATE_P12 secret configured; falling back to ad-hoc signing."
+            exit 0
+          fi
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASS="$(openssl rand -hex 16)"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+
+          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          rm -f "$CERT_PATH"
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "identity=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Apple notarization key (optional)
+        shell: bash
+        env:
+          SIGNING_ENABLED: ${{ steps.signing.outputs.enabled }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          if [ "$SIGNING_ENABLED" != "true" ] || [ -z "$APPLE_NOTARY_KEY" ]; then
+            exit 0
+          fi
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$KEY_PATH" 2>/dev/null || printf '%s' "$APPLE_NOTARY_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "FINXWORK_NOTARY_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "FINXWORK_NOTARY_KEY_ID=$APPLE_NOTARY_KEY_ID" >> "$GITHUB_ENV"
+          echo "FINXWORK_NOTARY_ISSUER=$APPLE_NOTARY_ISSUER" >> "$GITHUB_ENV"
+
+      - name: Build FinxWork.app, DMG, and update feed (${{ matrix.arch }})
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          FINXWORK_ARCH: ${{ matrix.arch }}
+          FINXWORK_DIST: ${{ runner.temp }}/release-dist/${{ matrix.arch }}
+          FINXWORK_RELEASES: https://github.com/${{ github.repository }}/releases
+          FINXWORK_SIGNING_IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: node apps/desktop/scripts/build-app.mjs
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          mkdir -p dist-upload
+          DIST="${{ runner.temp }}/release-dist/${{ matrix.arch }}"
+          cp "$DIST"/FinxWork-macos-${{ matrix.arch }}.dmg dist-upload/
+          cp "$DIST"/FinxWork-macos-${{ matrix.arch }}.zip dist-upload/
+          if [ -f "$DIST/RELEASES-darwin-${{ matrix.arch }}.json" ]; then
+            cp "$DIST/RELEASES-darwin-${{ matrix.arch }}.json" dist-upload/
+          fi
+          ls -lh dist-upload/
+
+      - name: Clean up temporary signing credentials
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+          if [ -n "${FINXWORK_NOTARY_KEY_PATH:-}" ] && [ -f "$FINXWORK_NOTARY_KEY_PATH" ]; then
+            rm -f "$FINXWORK_NOTARY_KEY_PATH"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: dist-upload/*
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build-macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd release-assets
+          sha256sum -- * > ../SHA256SUMS.txt
+          mv ../SHA256SUMS.txt ./SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          DRAFT: ${{ needs.prepare.outputs.draft }}
+          NOTES_PATH: ${{ needs.prepare.outputs.notes_path }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists" >&2
+            exit 1
+          fi
+
+          ARGS=(
+            "$TAG"
+            --target "$GITHUB_SHA"
+            --title "FinxWork $VERSION"
+            --draft
+          )
+          if [ "$PRERELEASE" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          if [ -n "$NOTES_PATH" ] && [ -f "$NOTES_PATH" ]; then
+            ARGS+=(--notes-file "$NOTES_PATH")
+          else
+            ARGS+=(--generate-notes)
+          fi
+
+          gh release create "${ARGS[@]}"
+          gh release upload "$TAG" release-assets/*
+
+          if [ "$DRAFT" != "true" ]; then
+            EDIT_ARGS=("$TAG" --draft=false)
+            if [ "$PRERELEASE" != "true" ]; then
+              EDIT_ARGS+=(--latest)
+            fi
+            gh release edit "${EDIT_ARGS[@]}"
+          fi
