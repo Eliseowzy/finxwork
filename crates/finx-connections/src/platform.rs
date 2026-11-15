@@ -63,14 +63,19 @@ pub(crate) fn digest(value: &[u8]) -> String {
 }
 impl System {
     fn app_path(&self) -> &'static str {
-        if self.product == "qoder" {
+        if self.product == "workbuddy" {
+            "/Applications/WorkBuddy.app/Contents/Info.plist"
+        } else if self.product == "qoder" {
             "/Applications/Qoder.app/Contents/Info.plist"
         } else {
             "/Applications/QwenWorkCN.app/Contents/Info.plist"
         }
     }
     fn auth_path(&self) -> Result<PathBuf> {
-        if self.product == "qoder" {
+        if self.product == "workbuddy" {
+            Ok(dirs::home_dir().ok_or_else(ConnectionError::unsupported)?
+                .join("Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info"))
+        } else if self.product == "qoder" {
             Ok(dirs::home_dir()
                 .ok_or_else(ConnectionError::unsupported)?
                 .join("Library/Application Support/com.qoder.app.stable/auth.v1.dat"))
@@ -94,6 +99,13 @@ impl System {
         }
         tracing::debug!(stage = "login_file", "connection_local_stage_started");
         let file = self.auth_path()?;
+        if self.product == "workbuddy"
+            && tokio::fs::try_exists(file.with_extension("info.logged-out"))
+                .await
+                .map_err(login_file_error)?
+        {
+            return Err(ConnectionError::login());
+        }
         if tokio::fs::metadata(&file)
             .await
             .map_err(login_file_error)?
@@ -106,7 +118,10 @@ impl System {
             )
             .at("login_file"));
         }
-        let sealed = tokio::fs::read(file).await.map_err(login_file_error)?;
+        let sealed = Zeroizing::new(tokio::fs::read(file).await.map_err(login_file_error)?);
+        if self.product == "workbuddy" {
+            return workbuddy_login(&sealed).await;
+        }
         tracing::debug!(stage = "login_file", "connection_local_stage_completed");
         let keychain_started = std::time::Instant::now();
         if interactive {
@@ -179,6 +194,89 @@ fn login_file_error(e: std::io::Error) -> ConnectionError {
         _ => ConnectionError::new("login_file_unreadable", "无法读取来源应用登录文件")
             .at("login_file"),
     }
+}
+
+async fn workbuddy_login(sealed: &[u8]) -> Result<Login> {
+    let value: Value = serde_json::from_slice(sealed)
+        .map_err(|_| ConnectionError::format("login_file", "json"))?;
+    if value["auth"]["accessToken"].is_string() {
+        return crate::workbuddy::source_login(&value);
+    }
+    let unavailable = || {
+        ConnectionError::new(
+            "unsupported_credential_protection",
+            "无法读取此版本 WorkBuddy 的加密登录态，请更新来源应用后重新连接",
+        )
+        .at("decrypt")
+    };
+    let mut child = Command::new("/Applications/WorkBuddy.app/Contents/MacOS/Electron")
+        .env("ELECTRON_RUN_AS_NODE", "1")
+        .env_remove("NODE_OPTIONS")
+        .env_remove("NODE_PATH")
+        .args(["-e", include_str!("workbuddy/reader.cjs")])
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|_| unavailable())?;
+    let mut stdin = child.stdin.take().ok_or_else(unavailable)?;
+    stdin.write_all(sealed).await.map_err(|_| unavailable())?;
+    drop(stdin);
+    let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+        .await
+        .map_err(|_| unavailable())?
+        .map_err(|_| unavailable())?;
+    let plaintext = Zeroizing::new(output.stdout);
+    if !output.status.success() || plaintext.len() > 1024 * 1024 {
+        return Err(unavailable());
+    }
+    let value = serde_json::from_slice(&plaintext).map_err(|_| unavailable())?;
+    crate::workbuddy::source_login(&value)
+}
+
+async fn workbuddy_headers(info: &Value) -> Result<BTreeMap<String, String>> {
+    let version = info["CFBundleShortVersionString"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| ConnectionError::format("app_metadata", "version"))?;
+    let package = tokio::fs::read(
+        "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/package.json",
+    )
+    .await
+    .map_err(|_| ConnectionError::new("unsupported_app_metadata", "无法读取 WorkBuddy CLI 版本"))?;
+    let package: Value = serde_json::from_slice(&package)
+        .map_err(|_| ConnectionError::format("app_metadata", "cli.package"))?;
+    let cli = package["version"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| ConnectionError::format("app_metadata", "cli.version"))?;
+    let mut headers = BTreeMap::from([
+        (
+            "User-Agent".into(),
+            format!("WorkBuddy/{version} WorkBuddy/{version} CLI/{cli}"),
+        ),
+        ("X-IDE-Version".into(), version.into()),
+    ]);
+    for (name, value) in [
+        ("X-Product", "SaaS"),
+        ("X-IDE-Type", "WorkBuddy"),
+        ("X-IDE-Name", "WorkBuddy"),
+        ("X-Requested-With", "XMLHttpRequest"),
+        ("X-Agent-Intent", "craft"),
+        ("X-Agent-Purpose", "conversation"),
+        ("X-Agent-Type", "main"),
+        ("X-Agent-Runtime", "local-agent"),
+    ] {
+        headers.insert(name.into(), value.into());
+    }
+    if headers
+        .values()
+        .any(|v| reqwest::header::HeaderValue::from_str(v).is_err())
+    {
+        return Err(ConnectionError::format("app_metadata", "headers"));
+    }
+    Ok(headers)
 }
 
 fn auth_path() -> Result<PathBuf> {
@@ -314,7 +412,11 @@ impl Environment for System {
             ConnectionError::new("app_metadata_invalid", "来源应用信息不是有效的 JSON 数据")
                 .at("app_metadata")
         })?;
-        qwen_headers(&p)
+        if self.product == "workbuddy" {
+            workbuddy_headers(&p).await
+        } else {
+            qwen_headers(&p)
+        }
     }
     async fn get(&self, id: &str) -> Result<Option<String>> {
         supported()?;
@@ -371,6 +473,10 @@ impl Environment for System {
         Ok(())
     }
     async fn delete(&self, id: &str) -> Result<()> {
+        // WorkBuddy lends only its current access token; finx stores no session.
+        if self.product == "workbuddy" {
+            return Ok(());
+        }
         supported()?;
         let out = command(
             "/usr/bin/security",

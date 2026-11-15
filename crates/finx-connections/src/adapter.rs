@@ -20,6 +20,7 @@ impl ProductAdapter for QwenWork {
 pub(crate) fn name(adapter: &str) -> &'static str {
     match adapter {
         "qoder" => "Qoder",
+        "workbuddy" => "WorkBuddy",
         _ => "千问办公",
     }
 }
@@ -27,7 +28,7 @@ pub(crate) fn name(adapter: &str) -> &'static str {
 /// for the rest. Qoder goes by one name everywhere.
 pub(crate) fn names(adapter: &str) -> std::collections::BTreeMap<String, String> {
     match adapter {
-        "qoder" => Default::default(),
+        "qoder" | "workbuddy" => Default::default(),
         _ => [("zh", "千问办公"), ("en", "QwenWork")]
             .map(|(language, name)| (language.to_string(), name.to_string()))
             .into(),
@@ -36,6 +37,7 @@ pub(crate) fn names(adapter: &str) -> std::collections::BTreeMap<String, String>
 pub(crate) fn base(adapter: &str) -> &'static str {
     match adapter {
         "qoder" => "https://api2-v2.qoder.sh/model/v1",
+        "workbuddy" => crate::workbuddy::BASE,
         _ => "https://gateway.qwenwork.cn/v1",
     }
 }
@@ -48,6 +50,7 @@ pub(crate) fn create(
 ) -> Box<dyn ProductAdapter> {
     match adapter {
         "qoder" => Box::new(crate::qoder::Qoder::new(id, identity, env)),
+        "workbuddy" => Box::new(crate::workbuddy::WorkBuddy::new(identity, env)),
         _ => Box::new(QwenWork::new(id, identity, env)),
     }
 }
@@ -69,7 +72,7 @@ pub(crate) fn supported(adapter: &str, model: &str) -> bool {
 /// 429 of its is waited out and retried, unless it speaks of arrears.
 pub(crate) fn reclassify(adapter: &str, error: &mut finx_llm::LlmError) {
     const ARREARS: &[&str] = &["余额", "欠费", "充值", "arrear", "balance"];
-    if adapter == "qoder"
+    if adapter != "qwenwork"
         || error.status != Some(429)
         || error.kind != finx_llm::ErrorKind::QuotaExceeded
     {

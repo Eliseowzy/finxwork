@@ -229,9 +229,9 @@ export type Bridge = {
   localServers(): Promise<DevServer[]>;
   /** Stops the one on `port`, if `pid` still listens there: "gone" when it no longer does, "denied" when it isn't ours to stop. */
   stopLocalServer(port: number, pid: number): Promise<"stopped" | "gone" | "denied">;
-  openSourceApp(adapter?: "qwenwork" | "qoder"): Promise<void>;
+  openSourceApp(adapter?: "qwenwork" | "qoder" | "workbuddy"): Promise<void>;
   /** The local application's own icon, as the system draws it (a data URL), or null when it isn't installed. */
-  sourceAppIcon(adapter?: "qwenwork" | "qoder"): Promise<string | null>;
+  sourceAppIcon(adapter?: "qwenwork" | "qoder" | "workbuddy"): Promise<string | null>;
   platform: PlatformId;
   userName: string;
   home: string;

@@ -170,6 +170,7 @@ pub(crate) async fn operation<T>(
     let adapter = match adapter {
         "qwenwork" => "qwenwork",
         "qoder" => "qoder",
+        "workbuddy" => "workbuddy",
         "chatgpt" => "chatgpt",
         _ => "unknown",
     };

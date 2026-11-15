@@ -14,8 +14,8 @@ import { ManageModels, useModelCounts } from "./ManageModels";
 import { ChatGptConnection } from "./ChatGptConnection";
 
 // Read once per window: the app's icon does not change while FinxWork runs.
-export type LocalAdapter = "qwenwork" | "qoder";
-export const localAdapters: LocalAdapter[] = ["qwenwork", "qoder"];
+export type LocalAdapter = "qwenwork" | "qoder" | "workbuddy";
+export const localAdapters: LocalAdapter[] = ["qwenwork", "qoder", "workbuddy"];
 const iconRequests = new Map<LocalAdapter, Promise<string | null>>();
 
 /** The local application's own icon (null until read, or when it isn't installed): its mark, where FinxWork shows it. */
@@ -41,7 +41,7 @@ export function SourceAppMark({ className, adapter = "qwenwork" }: { className: 
     <img className={`${className} source-icon`} src={icon} alt="" draggable={false} />
   ) : (
     <span className={className} aria-hidden="true">
-      Q{adapter === "qwenwork" && <i>✦</i>}
+      {adapter === "workbuddy" ? "W" : "Q"}{adapter === "qwenwork" && <i>✦</i>}
     </span>
   );
 }
@@ -165,7 +165,7 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
 /** A local application's name, as FinxWork shows it. */
 export function useLocalName() {
   const { t } = useTranslation("settings");
-  return (adapter: LocalAdapter) => (adapter === "qoder" ? "Qoder" : t("models.qwen"));
+  return (adapter: LocalAdapter) => (adapter === "qoder" ? "Qoder" : adapter === "workbuddy" ? "WorkBuddy" : t("models.qwen"));
 }
 
 /**
