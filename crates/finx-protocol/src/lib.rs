@@ -12,6 +12,7 @@ pub mod docx;
 pub mod files;
 pub mod pptx;
 mod event;
+pub mod group;
 pub mod mcp;
 mod op;
 pub mod schema;

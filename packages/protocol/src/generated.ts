@@ -2776,6 +2776,259 @@ export type GradientStop = {
 
 export type GrantAuthority = "navigate" | "act" | "script";
 
+export type GroupActivityParams = {
+  bot_id: string;
+  busy: boolean;
+  group_id: string;
+};
+
+export type GroupAddMemberParams = {
+  bot_id: string;
+  history?: GroupHistory | null;
+  id: string;
+  mode?: GroupMemberMode | null;
+};
+
+export type GroupApprovalCause = {
+  kind: GroupCauseKind;
+  message_id?: string | null;
+  /** The external member whose words came first, if it is known. */
+  name?: string | null;
+  /** The first 200 characters of that message. */
+  text: string;
+};
+
+/** A confirmation a seat session's call asks for, for the group page. */
+export type GroupApprovalParams = {
+  args: unknown;
+  bot_id: string;
+  call_id: string;
+  cause: GroupApprovalCause;
+  group_id: string;
+  name: string;
+  reason?: string | null;
+  session_id: string;
+  summary: string;
+};
+
+/** Why a confirmation is shown: the message that set the group on this bot, as the owner sees it. */
+export type GroupCauseKind = "direct" | "earlier";
+
+export type GroupCreateParams = {
+  members?: GroupMemberInput[];
+  name: string;
+  note?: string | null;
+};
+
+/** A file in a group message. `path` is relative to the group's directory. */
+export type GroupFile = {
+  media_type?: string | null;
+  name: string;
+  path: string;
+  size: number;
+};
+
+/** A group's counters for the day, and whether a fuse stopped it. */
+export type GroupFuse = {
+  /** The local day the counters belong to. */
+  day: string;
+  peer_calls: number;
+  stopped?: GroupStop | null;
+  tokens: number;
+};
+
+/** What an external member sees of the group before it joined. */
+export type GroupHistory = "none" | "summary" | "recent";
+
+export type GroupIdParams = {
+  id: string;
+};
+
+/** A group's last message, for its row in the list. */
+export type GroupLast = {
+  file?: string | null;
+  from: GroupSpeaker;
+  images?: number;
+  /** The start of its text, at most 1000 characters. */
+  text: string;
+  ts: string;
+};
+
+/** A member of a group, as the list and the group page show it. */
+export type GroupMember = {
+  avatar: Avatar;
+  bot_id: string;
+  /** Another subject's bot: the words go to its service. */
+  external?: boolean;
+  /** What it may see of the time before it joined. Only external members have one. */
+  history?: GroupHistory;
+  mode: GroupMemberMode;
+  name: string;
+};
+
+/** A member a group is made with, or one added later. */
+export type GroupMemberInput = {
+  bot_id: string;
+  /** Required for an external bot: what it may see of the time before it joined. */
+  history?: GroupHistory | null;
+  mode?: GroupMemberMode | null;
+};
+
+/** How much of a group a member receives. */
+export type GroupMemberMode = "mentions" | "normal" | "lazy";
+
+/** One message in a group. */
+export type GroupMessage = {
+  files?: GroupFile[];
+  from: GroupSpeaker;
+  id: string;
+  /** The bots named with `@`. */
+  mentions?: string[];
+  reply_preview?: GroupQuote | null;
+  /** The message this one quotes, if any. It stays in its own flow. */
+  reply_to?: string | null;
+  /** From 0, increasing across the whole group: the main flow and every thread. */
+  seq: number;
+  text: string;
+  /** The first message of the thread this one is in; absent in the main flow. */
+  thread?: string | null;
+  /** RFC 3339. */
+  ts: string;
+};
+
+export type GroupMessageParams = {
+  group_id: string;
+  message: GroupMessage;
+};
+
+export type GroupOpenParams = {
+  /** Only messages with a smaller `seq`. */
+  before_seq?: number | null;
+  id: string;
+  limit?: number | null;
+};
+
+export type GroupOpenResult = {
+  group: GroupSummary;
+  /** The main flow, oldest first. */
+  messages: GroupMessage[];
+  threads?: GroupThread[];
+};
+
+/** What a reply quotes, so the client can draw its card without loading the whole group. */
+export type GroupQuote = {
+  from: GroupSpeaker;
+  id: string;
+  text: string;
+};
+
+export type GroupRemoveMemberParams = {
+  bot_id: string;
+  id: string;
+};
+
+export type GroupSendParams = {
+  /** Files on this computer to put into the group's folder. */
+  files?: string[];
+  id: string;
+  reply_to?: string | null;
+  text?: string;
+  /** The first message of the thread to reply in. */
+  thread?: string | null;
+};
+
+export type GroupSendResult = {
+  message: GroupMessage;
+};
+
+export type GroupSetMemberParams = {
+  bot_id: string;
+  id: string;
+  mode?: GroupMemberMode | null;
+  /** Whether the bot remembers its context; only an external member has this. */
+  stateless?: boolean | null;
+};
+
+/** Who said a group message. */
+export type GroupSpeaker = {
+  kind: "owner";
+} | {
+  bot_id: string;
+  external?: boolean;
+  kind: "bot";
+  name: string;
+} | {
+  kind: "system";
+};
+
+export type GroupStop = {
+  /** The bot that is waiting, for [`GroupStopReason::BotRate`]. */
+  bot_id?: string | null;
+  /** What the user has to do, in their language. */
+  detail: string;
+  reason: GroupStopReason;
+};
+
+/** Why a group is stopped, and how it starts again. */
+export type GroupStopReason = "bot_rate" | "owner_silent" | "daily_tokens" | "daily_peer_calls";
+
+/** A group, as the list and the group page's top bar show it. */
+export type GroupSummary = {
+  /** RFC 3339. */
+  created_at: string;
+  /** At least one member is another subject's bot. */
+  external?: boolean;
+  fuse?: GroupFuse | null;
+  id: string;
+  last?: GroupLast | null;
+  members: GroupMember[];
+  name: string;
+  note?: string | null;
+  pinned?: boolean;
+  stopped?: GroupStop | null;
+  /** The bots answering now. */
+  typing?: string[];
+  unread?: number;
+};
+
+/** A thread under its first message. */
+export type GroupThread = {
+  last?: GroupLast | null;
+  replies: number;
+  /** The message the thread started from. It stays in the main flow. */
+  root: string;
+};
+
+export type GroupThreadParams = {
+  before_seq?: number | null;
+  id: string;
+  limit?: number | null;
+  /** The first message of the thread. */
+  root: string;
+};
+
+export type GroupThreadResult = {
+  messages: GroupMessage[];
+};
+
+export type GroupUpdateParams = {
+  id: string;
+  name?: string | null;
+  note?: string | null;
+  pinned?: boolean | null;
+  /** The owner's "continue" after the daily fuse stopped the group. */
+  resume?: boolean | null;
+};
+
+export type GroupsChangedParams = {
+  deleted?: string[];
+  groups: GroupSummary[];
+};
+
+export type GroupsResult = {
+  groups: GroupSummary[];
+};
+
 /** Where a link goes. */
 export type HyperlinkTarget = {
   kind: "url";
@@ -3918,6 +4171,8 @@ export type ServerCapabilities = {
   /** `browser/host` and `browser/cdp`: a client can show the browser tools' pages (browser-design §8.3). */
   embedded_browser: boolean;
   event_filter: boolean;
+  /** Groups: the `groups/*` methods and their notifications (docs/kernel/bot-group-chat-dev-brief.md §4.12). */
+  groups: boolean;
   /** Input that waits for the running task, as a client shows and changes it: `queue_changed`, `input_withdrawn`, the `withdraw`, `requeue` and `steer_now` ops, and `returned_input` on `task_failed` (docs/kernel/input-queue-design.md). */
   input_queue: boolean;
   max_frame_bytes: number;
@@ -5139,6 +5394,18 @@ export interface Methods {
   "files/read": [FilesReadParams, FilesReadResult];
   "files/watch": [FilesWatchParams, Empty];
   "files/write": [FilesWriteParams, FilesWriteResult];
+  "groups/add_member": [GroupAddMemberParams, GroupSummary];
+  "groups/create": [GroupCreateParams, GroupSummary];
+  "groups/delete": [GroupIdParams, Empty];
+  "groups/open": [GroupOpenParams, GroupOpenResult];
+  "groups/read": [GroupIdParams, Empty];
+  "groups/remove_member": [GroupRemoveMemberParams, Empty];
+  "groups/send": [GroupSendParams, GroupSendResult];
+  "groups/set_member": [GroupSetMemberParams, Empty];
+  "groups/subscribe": [Record<string, never>, GroupsResult];
+  "groups/thread": [GroupThreadParams, GroupThreadResult];
+  "groups/unsubscribe": [Record<string, never>, Empty];
+  "groups/update": [GroupUpdateParams, Empty];
   "initialize": [InitializeParams, InitializeResult];
   "mcp/check": [McpServerParams, McpCheckResult];
   "mcp/list": [McpListParams, McpListResult];
@@ -5209,6 +5476,10 @@ export interface ServerNotifications {
   "docx/changed": DocxChangedParams;
   "docx/sync": DocxSyncNotice;
   "files/changed": FilesChangedParams;
+  "group/activity": GroupActivityParams;
+  "group/approval": GroupApprovalParams;
+  "group/message": GroupMessageParams;
+  "groups/changed": GroupsChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
   "models/changed": Empty;
@@ -5275,6 +5546,10 @@ export const RPC_ERROR_KINDS = {
   "-32052": "bot_card_changed",
   "-32053": "bot_auth_required",
   "-32054": "bot_not_supported",
+  "-32055": "group_not_found",
+  "-32056": "group_member_exists",
+  "-32057": "group_stopped",
+  "-32058": "group_external_disabled",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

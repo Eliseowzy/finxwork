@@ -44,6 +44,7 @@ mod db;
 mod decks;
 mod docs;
 mod docx_host;
+mod groups;
 mod words;
 mod files;
 mod models;

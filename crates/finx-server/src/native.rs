@@ -11,6 +11,7 @@ use finx_protocol::files::FilesListParams;
 use finx_protocol::files::FilesReadParams;
 use finx_protocol::files::FilesWatchParams;
 use finx_protocol::files::FilesWriteParams;
+use finx_protocol::group::*;
 use finx_protocol::api::InitializeParams;
 use finx_protocol::api::InitializeResult;
 use finx_protocol::api::ModelsListResult;
@@ -240,6 +241,7 @@ impl NativeProtocol {
                             bots: true,
                             bots_external: server.0.bot_settings.external,
                             routines: true,
+                            groups: true,
                         },
                     })
                 });
@@ -831,6 +833,87 @@ impl NativeProtocol {
                         let result = server.bots_routine_set_enabled(&p.bot_id, &p.routine_id, p.enabled).await;
                         conn.send(reply(&id, result.map(|()| json!({}))));
                     });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_SUBSCRIBE => {
+                let (conn, id) = (conn.clone(), id.clone());
+                tokio::task::spawn_blocking(move || {
+                    let reply_id = id.clone();
+                    server.groups_subscribe(&conn, move |result| reply(&reply_id, result));
+                });
+            }
+            method::GROUPS_UNSUBSCRIBE => {
+                server.groups_unsubscribe(conn);
+                conn.send(finx_rpc::response(id, &json!({})));
+            }
+            method::GROUPS_CREATE => match finx_rpc::params::<GroupCreateParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_create(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_UPDATE => match finx_rpc::params::<GroupUpdateParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_update(p).map(|()| json!({})))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_DELETE => match finx_rpc::params::<GroupIdParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_delete(p).map(|()| json!({})))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_ADD_MEMBER => match finx_rpc::params::<GroupAddMemberParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_add_member(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_REMOVE_MEMBER => match finx_rpc::params::<GroupRemoveMemberParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_remove_member(p).map(|()| json!({})))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_SET_MEMBER => match finx_rpc::params::<GroupSetMemberParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_set_member(p).map(|()| json!({})))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_OPEN => match finx_rpc::params::<GroupOpenParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_open(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_THREAD => match finx_rpc::params::<GroupThreadParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_thread(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_SEND => match finx_rpc::params::<GroupSendParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_send(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::GROUPS_READ => match finx_rpc::params::<GroupIdParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.groups_read(p).map(|()| json!({})))));
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },

@@ -234,6 +234,28 @@ pub mod method {
     pub const BOTS_DELETE: &str = "bots/delete";
     /// Server notification to `bots/subscribe`rs.
     pub const BOTS_CHANGED: &str = "bots/changed";
+    // Groups (docs/kernel/bot-group-chat-design.md, docs/kernel/bot-group-chat-dev-brief.md §4.12).
+    /// Every group now, and `groups/changed` on this connection from then on.
+    pub const GROUPS_SUBSCRIBE: &str = "groups/subscribe";
+    pub const GROUPS_UNSUBSCRIBE: &str = "groups/unsubscribe";
+    pub const GROUPS_CREATE: &str = "groups/create";
+    pub const GROUPS_UPDATE: &str = "groups/update";
+    pub const GROUPS_DELETE: &str = "groups/delete";
+    pub const GROUPS_ADD_MEMBER: &str = "groups/add_member";
+    pub const GROUPS_REMOVE_MEMBER: &str = "groups/remove_member";
+    pub const GROUPS_SET_MEMBER: &str = "groups/set_member";
+    pub const GROUPS_OPEN: &str = "groups/open";
+    pub const GROUPS_THREAD: &str = "groups/thread";
+    pub const GROUPS_SEND: &str = "groups/send";
+    pub const GROUPS_READ: &str = "groups/read";
+    /// Server notification to `groups/subscribe`rs: the list changed.
+    pub const GROUPS_CHANGED: &str = "groups/changed";
+    /// Server notification: a message joined a group.
+    pub const GROUP_MESSAGE: &str = "group/message";
+    /// Server notification: a bot in a group started or stopped answering.
+    pub const GROUP_ACTIVITY: &str = "group/activity";
+    /// Server notification: a seat session's call waits for the owner in the group page.
+    pub const GROUP_APPROVAL: &str = "group/approval";
     // A bot's routines (docs/kernel/routine-design.md §8). New ones and edits come from the chat.
     pub const BOTS_ROUTINE: &str = "bots/routine";
     pub const BOTS_ROUTINE_RUNS: &str = "bots/routine_runs";
@@ -355,6 +377,14 @@ pub mod error_code {
     pub const BOT_AUTH_REQUIRED: i64 = -32053;
     /// The operation means nothing for an external bot, or `bots.external` is off.
     pub const BOT_NOT_SUPPORTED: i64 = -32054;
+    /// `groups/*`: no group has that id.
+    pub const GROUP_NOT_FOUND: i64 = -32055;
+    /// `groups/create`, `groups/add_member`: the bot is in the group already.
+    pub const GROUP_MEMBER_EXISTS: i64 = -32056;
+    /// The group is stopped by a fuse; it takes the owner's message or `resume` to go on.
+    pub const GROUP_STOPPED: i64 = -32057;
+    /// `groups/create`, `groups/add_member`: `bots.external` is off, so an external bot cannot join.
+    pub const GROUP_EXTERNAL_DISABLED: i64 = -32058;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -410,6 +440,10 @@ pub mod error_code {
         (BOT_CARD_CHANGED, "bot_card_changed"),
         (BOT_AUTH_REQUIRED, "bot_auth_required"),
         (BOT_NOT_SUPPORTED, "bot_not_supported"),
+        (GROUP_NOT_FOUND, "group_not_found"),
+        (GROUP_MEMBER_EXISTS, "group_member_exists"),
+        (GROUP_STOPPED, "group_stopped"),
+        (GROUP_EXTERNAL_DISABLED, "group_external_disabled"),
     ];
 }
 
@@ -827,6 +861,10 @@ pub struct ServerCapabilities {
     /// (docs/kernel/routine-design.md §8).
     #[serde(default)]
     pub routines: bool,
+    /// Groups: the `groups/*` methods and their notifications
+    /// (docs/kernel/bot-group-chat-dev-brief.md §4.12).
+    #[serde(default)]
+    pub groups: bool,
 }
 
 // ---- Sessions ----

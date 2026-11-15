@@ -167,6 +167,8 @@ pub(crate) struct Inner {
     pub(crate) docx_watchers: crate::decks::DeckWatchers,
     /// Every bot and who follows their list (crate::bots).
     pub(crate) bots: Arc<crate::bots::Registry>,
+    /// Every group and who follows their list (crate::groups).
+    pub(crate) groups: Arc<crate::groups::Registry>,
     /// Their routines (crate::routines).
     pub(crate) routines: Arc<crate::routines::Routines>,
 }
@@ -201,6 +203,11 @@ impl Server {
         let words = Arc::new(words);
         let docs = Arc::new(finx_docs::DocStore::new(options.home.root().join("docs"), options.doc_worker));
         let bots = Arc::new(crate::bots::Registry::new(options.home.clone()));
+        let groups = Arc::new(crate::groups::Registry::new(
+            options.home.clone(),
+            bots.clone(),
+            workspace.config.bots.external,
+        ));
         let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());
         let server = Server(Arc::new(Inner {
             connections: connections.clone(),
@@ -211,6 +218,7 @@ impl Server {
             model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
             bots,
+            groups,
             routines,
             defaults,
             bot_settings: workspace.config.bots,

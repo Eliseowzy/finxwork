@@ -64,6 +64,30 @@ pub fn bot_not_supported() -> RpcError {
     )
 }
 
+pub fn group_not_found(id: &str) -> RpcError {
+    RpcError::with_kind(error_code::GROUP_NOT_FOUND, "group_not_found", format!("group {id} not found"))
+}
+
+pub fn group_member_exists(id: &str) -> RpcError {
+    RpcError::with_kind(
+        error_code::GROUP_MEMBER_EXISTS,
+        "group_member_exists",
+        format!("bot {id} is in the group already"),
+    )
+}
+
+pub fn group_stopped(why: impl Into<String>) -> RpcError {
+    RpcError::with_kind(error_code::GROUP_STOPPED, "group_stopped", why)
+}
+
+pub fn group_external_disabled() -> RpcError {
+    RpcError::with_kind(
+        error_code::GROUP_EXTERNAL_DISABLED,
+        "group_external_disabled",
+        "other subjects' bots are off (bots.external)",
+    )
+}
+
 pub fn routine_not_found(id: &str) -> RpcError {
     RpcError::with_kind(error_code::ROUTINE_NOT_FOUND, "routine_not_found", format!("routine or run {id} not found"))
 }

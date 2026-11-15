@@ -20,6 +20,7 @@ use crate::deck;
 use crate::docx;
 use crate::event::Event;
 use crate::files;
+use crate::group;
 use crate::op::Op;
 use crate::web_search;
 
@@ -331,6 +332,18 @@ pub fn document() -> Value {
         (method::BOTS_ROUTINE_RUN_NOW, Some(name::<bot::BotRoutineParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_ROUTINE_STOP, Some(name::<bot::BotRoutineParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_ROUTINE_DELETE, Some(name::<bot::BotRoutineParams>(g)), name::<api::Empty>(g)),
+        (method::GROUPS_SUBSCRIBE, None, name::<group::GroupsResult>(g)),
+        (method::GROUPS_UNSUBSCRIBE, None, name::<api::Empty>(g)),
+        (method::GROUPS_CREATE, Some(name::<group::GroupCreateParams>(g)), name::<group::GroupSummary>(g)),
+        (method::GROUPS_UPDATE, Some(name::<group::GroupUpdateParams>(g)), name::<api::Empty>(g)),
+        (method::GROUPS_DELETE, Some(name::<group::GroupIdParams>(g)), name::<api::Empty>(g)),
+        (method::GROUPS_ADD_MEMBER, Some(name::<group::GroupAddMemberParams>(g)), name::<group::GroupSummary>(g)),
+        (method::GROUPS_REMOVE_MEMBER, Some(name::<group::GroupRemoveMemberParams>(g)), name::<api::Empty>(g)),
+        (method::GROUPS_SET_MEMBER, Some(name::<group::GroupSetMemberParams>(g)), name::<api::Empty>(g)),
+        (method::GROUPS_OPEN, Some(name::<group::GroupOpenParams>(g)), name::<group::GroupOpenResult>(g)),
+        (method::GROUPS_THREAD, Some(name::<group::GroupThreadParams>(g)), name::<group::GroupThreadResult>(g)),
+        (method::GROUPS_SEND, Some(name::<group::GroupSendParams>(g)), name::<group::GroupSendResult>(g)),
+        (method::GROUPS_READ, Some(name::<group::GroupIdParams>(g)), name::<api::Empty>(g)),
     ];
     let client_notifications = [
         (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),
@@ -357,6 +370,10 @@ pub fn document() -> Value {
         (method::DOC_CHANGED, name::<crate::doc::DocChangedParams>(g)),
         (method::SPATIAL_VIEW, name::<crate::doc::SpatialViewParams>(g)),
         (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
+        (method::GROUPS_CHANGED, name::<group::GroupsChangedParams>(g)),
+        (method::GROUP_MESSAGE, name::<group::GroupMessageParams>(g)),
+        (method::GROUP_ACTIVITY, name::<group::GroupActivityParams>(g)),
+        (method::GROUP_APPROVAL, name::<group::GroupApprovalParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
         (

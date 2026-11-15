@@ -1,6 +1,7 @@
 import type {
   ActiveTask, AgentStatus, Avatar, AvatarInput, BotSource, BotSummary, RoutineOutcome, RoutineRunInfo, RoutineSummary, ContextReport, Event, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage, ModelsListResult,
+  GroupFile, GroupLast, GroupMember, GroupMessage, GroupSummary,
 } from "@finx/protocol";
 import { botScript, demoBots, demoImage, relayScript, type DemoBot, type DemoRoutine } from "./bots.ts";
 import { applyEvent, fromSnapshot, pendingApproval, runningAgents, statusOf, type SessionView } from "../session.ts";
@@ -44,6 +45,8 @@ interface Conn {
   listening: boolean;
   /** Called bots/subscribe. */
   bots: boolean;
+  /** Called groups/subscribe. */
+  groups: boolean;
 }
 
 /** A bot (bot-design §2.1): its row, its uploaded avatar, its conversation. */
@@ -54,6 +57,13 @@ interface MockBot {
   /** What `bots/create` was told its conversation starts with. */
   model?: string;
   thinking?: ThinkingLevel;
+}
+
+/** A group in the mock (bot-group-chat-dev-brief §4.1): its row, its messages, its next seq. */
+interface MockGroup {
+  summary: GroupSummary;
+  messages: GroupMessage[];
+  next: number;
 }
 
 /** A routine in the mock: what the row shows, and what only its detail does. */
@@ -174,6 +184,8 @@ export class MockServer {
   private readonly customs = new Map<string, DemoCustom>();
   /** Bot mode's bots, by id. */
   private readonly bots = new Map<string, MockBot>();
+  /** Groups, by id. */
+  private readonly groups = new Map<string, MockGroup>();
   /** The 自定义 page's skills, servers and configuration; its changes reach every connection. */
   private readonly customize = new CustomizeMock((method, params) => {
     const line = JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n";
@@ -189,6 +201,7 @@ export class MockServer {
     for (const d of demoSessions()) this.addDemo(d);
     this.addAgentsDemo();
     for (const b of demoBots()) this.addBot(b);
+    this.addGroupsDemo();
     if (o.stress) this.addStress(o.stress);
   }
 
@@ -238,7 +251,7 @@ export class MockServer {
   }
 
   connect(peer: Peer): Connection {
-    const c: Conn = { peer, attached: new Set(), listening: false, bots: false };
+    const c: Conn = { peer, attached: new Set(), listening: false, bots: false, groups: false };
     this.conns.add(c);
     return {
       receive: (text) => {
@@ -444,6 +457,106 @@ export class MockServer {
     next = { ...next, typing: v.live !== null, agents_working: runningAgents(v).length, waiting: pendingApproval(v)?.approval.summary, failed };
     bot.summary = next;
     if (JSON.stringify(next) !== JSON.stringify(was)) this.botsChanged([next]);
+  }
+
+  /// The demo's group: two local bots and another subject's bot, with a message, a quote and
+  /// a thread (bot-group-chat-dev-brief §4.1, §5).
+  private addGroupsDemo() {
+    const finx = [...this.bots.values()].find((b) => b.summary.name === "FinxBot");
+    const research = [...this.bots.values()].find((b) => b.summary.name === "研究员");
+    if (!finx || !research) return;
+    const now = Date.now();
+    const extId = "demo-hospital";
+    const ext: BotSummary = {
+      id: extId,
+      name: "医院助手",
+      avatar: { kind: "mono", hue: "sage" },
+      created_at: iso(now - 5 * 86_400_000),
+      source: {
+        kind: "remote",
+        protocol: "a2a",
+        host: "hospital.example.com",
+        description: "查询科室排班，预约和改约门诊。",
+        provider: "示例医院",
+        skills: [{ name: "查排班", description: "按科室和日期查医生出诊时间。" }],
+        accepts: ["text"],
+        auth: "none",
+        noticed: true,
+      },
+    };
+    const members: GroupMember[] = [
+      { bot_id: finx.summary.id, name: finx.summary.name, avatar: finx.summary.avatar, mode: "normal" },
+      { bot_id: research.summary.id, name: research.summary.name, avatar: research.summary.avatar, mode: "normal" },
+      { bot_id: extId, name: ext.name, avatar: ext.avatar, external: true, mode: "normal", history: "summary" },
+    ];
+    const owner = { kind: "owner" as const };
+    const say = (n: number, from: GroupMessage["from"], text: string, extra: Partial<GroupMessage> = {}): GroupMessage => ({
+      id: `gm${n}`,
+      seq: n,
+      ts: iso(now - (6 - n) * 60_000),
+      from,
+      text,
+      ...extra,
+    });
+    const messages: GroupMessage[] = [
+      say(0, owner, "报价单我发群里了，@研究员 帮我看下材料费。", {
+        mentions: [research.summary.id],
+        files: [{ path: "files/报价.pdf", name: "报价.pdf", size: 2_400_000, media_type: "application/pdf" }],
+      }),
+      say(1, { kind: "bot", bot_id: research.summary.id, name: research.summary.name }, "看了，材料费比上月高 18%，主要是铜和铝。"),
+      say(2, { kind: "bot", bot_id: extId, name: ext.name, external: true }, "需要排班表的话，我可以发过来。"),
+      say(3, owner, "先不用，谢谢。", { reply_to: "gm1", reply_preview: { id: "gm1", from: { kind: "bot", bot_id: research.summary.id, name: research.summary.name }, text: "看了，材料费比上月高 18%，主要是铜和铝。" } }),
+      say(4, owner, "@研究员 把明细发我。", { mentions: [research.summary.id] }),
+      say(5, { kind: "bot", bot_id: research.summary.id, name: research.summary.name }, "明细在附件里。", { thread: "gm4" }),
+    ];
+    const last = this.groupLast(messages[messages.length - 1]!);
+    const summary: GroupSummary = {
+      id: "demo-group",
+      name: "装修群",
+      note: "材料费和排班的事在这里说。",
+      members,
+      external: true,
+      last,
+      unread: 2,
+      typing: [],
+      created_at: iso(now - 3 * 86_400_000),
+    };
+    this.groups.set(summary.id, { summary, messages, next: messages.length });
+  }
+
+  private groupLast(message: GroupMessage): GroupLast {
+    const images = (message.files ?? []).filter((f) => f.media_type?.startsWith("image/")).length;
+    const file = (message.files ?? []).find((f) => !f.media_type?.startsWith("image/"))?.name;
+    return { from: message.from, text: message.text.slice(0, 1000), images, file, ts: message.ts };
+  }
+
+  private group(id: unknown): MockGroup {
+    const g = typeof id === "string" ? this.groups.get(id) : undefined;
+    if (!g) throw new Failure(-32055, "group_not_found", `group ${String(id)} not found`);
+    return g;
+  }
+
+  private groupMember(botId: string): GroupMember {
+    const bot = this.bots.get(botId);
+    return {
+      bot_id: botId,
+      name: bot?.summary.name ?? botId,
+      avatar: bot?.summary.avatar ?? { kind: "mono", hue: "slate" },
+      ...(bot?.summary.source ? { external: true } : {}),
+      mode: "normal",
+    };
+  }
+
+  private groupsChanged(groups: GroupSummary[], deleted: string[] = []) {
+    if (this.clock !== null) return;
+    const line = JSON.stringify({ jsonrpc: "2.0", method: "groups/changed", params: { groups, deleted } }) + "\n";
+    for (const c of this.conns) if (c.groups) c.peer.write(line);
+  }
+
+  private groupMessage(groupId: string, message: GroupMessage) {
+    if (this.clock !== null) return;
+    const line = JSON.stringify({ jsonrpc: "2.0", method: "group/message", params: { group_id: groupId, message } }) + "\n";
+    for (const c of this.conns) if (c.groups) c.peer.write(line);
   }
 
   private botsChanged(bots: BotSummary[], deleted: string[] = []) {
@@ -1055,7 +1168,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, custom_endpoints: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, bots_external: true, routines: true };
+        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, custom_endpoints: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, bots_external: true, routines: true, groups: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -1072,6 +1185,148 @@ export class MockServer {
       case "bots/unsubscribe":
         c.bots = false;
         return {};
+      case "groups/subscribe":
+        c.groups = true;
+        return { groups: [...this.groups.values()].map((g) => g.summary) } satisfies R<"groups/subscribe">;
+      case "groups/unsubscribe":
+        c.groups = false;
+        return {};
+      case "groups/create": {
+        const q = p as P<"groups/create">;
+        const id = crypto.randomUUID();
+        const members: GroupMember[] = (q.members ?? []).map((m) => ({
+          ...this.groupMember(m.bot_id),
+          ...(m.mode ? { mode: m.mode } : {}),
+          ...(m.history ? { history: m.history } : {}),
+        }));
+        const summary: GroupSummary = {
+          id,
+          name: q.name.trim(),
+          ...(q.note ? { note: q.note } : {}),
+          members,
+          external: members.some((m) => m.external),
+          unread: 0,
+          created_at: iso(Date.now()),
+        };
+        this.groups.set(id, { summary, messages: [], next: 0 });
+        this.groupsChanged([summary]);
+        return summary satisfies R<"groups/create">;
+      }
+      case "groups/update": {
+        const q = p as P<"groups/update">;
+        const g = this.group(q.id);
+        const summary: GroupSummary = {
+          ...g.summary,
+          ...(q.name != null ? { name: q.name.trim() } : {}),
+          ...(q.note != null ? { note: q.note } : {}),
+          ...(q.pinned != null ? { pinned: q.pinned } : {}),
+        };
+        if (q.resume) delete summary.stopped;
+        g.summary = summary;
+        this.groupsChanged([summary]);
+        return {};
+      }
+      case "groups/delete": {
+        const q = p as P<"groups/delete">;
+        this.group(q.id);
+        this.groups.delete(q.id);
+        this.groupsChanged([], [q.id]);
+        return {};
+      }
+      case "groups/add_member": {
+        const q = p as P<"groups/add_member">;
+        const g = this.group(q.id);
+        if (g.summary.members.some((m) => m.bot_id === q.bot_id)) throw new Failure(-32056, "group_member_exists", `bot ${q.bot_id} is in the group already`);
+        const member: GroupMember = {
+          ...this.groupMember(q.bot_id),
+          ...(q.mode ? { mode: q.mode } : {}),
+          ...(q.history ? { history: q.history } : {}),
+        };
+        g.summary = { ...g.summary, members: [...g.summary.members, member], external: g.summary.external || !!member.external };
+        this.groupsChanged([g.summary]);
+        return g.summary satisfies R<"groups/add_member">;
+      }
+      case "groups/remove_member": {
+        const q = p as P<"groups/remove_member">;
+        const g = this.group(q.id);
+        const members = g.summary.members.filter((m) => m.bot_id !== q.bot_id);
+        g.summary = { ...g.summary, members, external: members.some((m) => m.external) };
+        this.groupsChanged([g.summary]);
+        return {};
+      }
+      case "groups/set_member": {
+        const q = p as P<"groups/set_member">;
+        const g = this.group(q.id);
+        g.summary = {
+          ...g.summary,
+          members: g.summary.members.map((m) => (m.bot_id === q.bot_id && q.mode ? { ...m, mode: q.mode } : m)),
+        };
+        this.groupsChanged([g.summary]);
+        return {};
+      }
+      case "groups/open": {
+        const q = p as P<"groups/open">;
+        const g = this.group(q.id);
+        const before = q.before_seq ?? Number.MAX_SAFE_INTEGER;
+        const limit = Math.max(1, Math.min(200, q.limit ?? 50));
+        const main = g.messages.filter((m) => !m.thread && m.seq < before).slice(-limit);
+        const threads = g.messages
+          .filter((m) => !m.thread)
+          .map((root) => {
+            const replies = g.messages.filter((m) => m.thread === root.id);
+            return replies.length ? { root: root.id, replies: replies.length, last: this.groupLast(replies[replies.length - 1]!) } : null;
+          })
+          .filter((t): t is NonNullable<typeof t> => t !== null);
+        return { group: g.summary, messages: main, threads } satisfies R<"groups/open">;
+      }
+      case "groups/thread": {
+        const q = p as P<"groups/thread">;
+        const g = this.group(q.id);
+        const root = g.messages.find((m) => m.id === q.root && !m.thread);
+        if (!root) throw new Failure(-32602, "invalid_params", "that message does not start a thread");
+        const before = q.before_seq ?? Number.MAX_SAFE_INTEGER;
+        const limit = Math.max(1, Math.min(200, q.limit ?? 50));
+        const replies = g.messages.filter((m) => m.thread === root.id && m.seq < before);
+        return { messages: [root, ...replies.slice(-(limit - 1))] } satisfies R<"groups/thread">;
+      }
+      case "groups/send": {
+        const q = p as P<"groups/send">;
+        const g = this.group(q.id);
+        const text = (q.text ?? "").trim();
+        if (!text && !q.files?.length) throw new Failure(-32602, "invalid_params", "there is nothing to send");
+        const files: GroupFile[] = (q.files ?? []).map((path) => {
+          const name = path.split(/[\\/]/).at(-1) ?? path;
+          return { path: `files/${name}`, name, size: 0 };
+        });
+        const reply = q.reply_to ? g.messages.find((m) => m.id === q.reply_to) : undefined;
+        if (q.reply_to && !reply) throw new Failure(-32602, "invalid_params", "that message is not in the group");
+        if (q.thread && !g.messages.some((m) => m.id === q.thread && !m.thread)) throw new Failure(-32602, "invalid_params", "that message does not start a thread");
+        const message: GroupMessage = {
+          id: crypto.randomUUID(),
+          seq: g.next,
+          ts: iso(Date.now()),
+          from: { kind: "owner" },
+          text,
+          ...(files.length ? { files } : {}),
+          mentions: g.summary.members.filter((m) => text.includes(`@${m.name}`)).map((m) => m.bot_id),
+          ...(q.reply_to ? { reply_to: q.reply_to } : {}),
+          ...(reply ? { reply_preview: { id: reply.id, from: reply.from, text: reply.text } } : {}),
+          ...(q.thread ? { thread: q.thread } : {}),
+        };
+        g.next += 1;
+        g.messages.push(message);
+        g.summary = { ...g.summary, last: this.groupLast(message) };
+        this.groupsChanged([g.summary]);
+        this.groupMessage(g.summary.id, message);
+        return { message } satisfies R<"groups/send">;
+      }
+      case "groups/read": {
+        const q = p as P<"groups/read">;
+        const g = this.group(q.id);
+        g.summary = { ...g.summary, unread: 0 };
+        this.groupsChanged([g.summary]);
+        return {};
+      }
       case "bots/create": {
         const q = p as P<"bots/create">;
         const id = crypto.randomUUID();

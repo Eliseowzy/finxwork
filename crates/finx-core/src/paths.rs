@@ -149,22 +149,48 @@ impl FinxHome {
         self.bot_dir(id).join("files")
     }
 
+    /// `groups/`: each group's file, its messages and its working folder
+    /// (bot-group-chat-dev-brief §4.1).
+    pub fn groups_dir(&self) -> PathBuf {
+        self.root.join("groups")
+    }
+
+    pub fn group_dir(&self, id: &str) -> PathBuf {
+        self.groups_dir().join(id)
+    }
+
+    /// A group's working folder: what its bots read and write.
+    pub fn group_files_dir(&self, id: &str) -> PathBuf {
+        self.group_dir(id).join("files")
+    }
+
+    /// Where a deleted group's directory goes.
+    pub fn trash_groups_dir(&self) -> PathBuf {
+        self.root.join("trash").join("groups")
+    }
+
     /// Whether a session in `cwd` (canonical) has no project: one started without a project,
-    /// or a bot's. Neither looks for a project around its folder.
+    /// a bot's, or a group's seat. None looks for a project around its folder.
     pub fn has_no_project(&self, cwd: &Path) -> bool {
-        self.is_chat_dir(cwd) || self.is_bot_files_dir(cwd)
+        self.is_chat_dir(cwd) || self.is_bot_files_dir(cwd) || self.is_group_files_dir(cwd)
     }
 
     /// `cwd` (canonical) when it is a session's own folder in the data directory: one of
-    /// `chats/`, or a bot's `files/`. What is written there is the user's, not finx's data.
+    /// `chats/`, a bot's `files/`, or a group's `files/`. What is written there is the user's,
+    /// not finx's data.
     pub fn private_folder(&self, cwd: &Path) -> Option<PathBuf> {
         let chats = canonical(self.chats_dir());
-        (cwd.parent() == Some(chats.as_path()) || self.is_bot_files_dir(cwd)).then(|| cwd.to_path_buf())
+        (cwd.parent() == Some(chats.as_path()) || self.is_bot_files_dir(cwd) || self.is_group_files_dir(cwd)).then(|| cwd.to_path_buf())
     }
 
     fn is_bot_files_dir(&self, cwd: &Path) -> bool {
         let bots = canonical(self.bots_dir());
         cwd.file_name().is_some_and(|name| name == "files") && cwd.parent().and_then(Path::parent) == Some(bots.as_path())
+    }
+
+    fn is_group_files_dir(&self, cwd: &Path) -> bool {
+        let groups = canonical(self.groups_dir());
+        cwd.file_name().is_some_and(|name| name == "files") && cwd.parent().and_then(Path::parent) == Some(groups.as_path())
     }
 
 

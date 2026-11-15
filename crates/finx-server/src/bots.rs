@@ -180,6 +180,14 @@ struct Bot {
     routines: Vec<RoutineSummary>,
 }
 
+/// What a group needs to know about a member, without the bot's row or conversation.
+#[derive(Clone, Debug)]
+pub(crate) struct MemberInfo {
+    pub(crate) name: String,
+    pub(crate) avatar: Avatar,
+    pub(crate) external: bool,
+}
+
 impl Bot {
     fn new(file: BotFile) -> Self {
         Self {
@@ -319,8 +327,20 @@ impl Registry {
     }
 
     /// The bot's name now, for a conversation being loaded.
-    pub(crate) fn name(&self, id: &str) -> Option<String> {
+pub(crate) fn name(&self, id: &str) -> Option<String> {
         self.with(|bots| bots.get(id).map(|b| b.file.name.clone()))
+    }
+
+    /// What a group needs to know about a member: its name, avatar and whether it is another
+    /// subject's bot (bot-group-chat-dev-brief §4.1).
+    pub(crate) fn member_info(&self, id: &str) -> Option<MemberInfo> {
+        self.with(|bots| {
+            bots.get(id).map(|b| MemberInfo {
+                name: b.file.name.clone(),
+                avatar: b.file.avatar.clone(),
+                external: b.file.source.is_some(),
+            })
+        })
     }
 
     /// Reads the list now, if it was not read yet. Blocking I/O.
@@ -362,6 +382,42 @@ impl Registry {
     pub(crate) fn add_for_test(&self, id: &str) {
         let mut file = new_file("测试".into(), Avatar::Mark, false);
         file.id = id.to_string();
+        self.with(|bots| bots.insert(id.to_string(), Bot::new(file)));
+    }
+
+    /// A bot with a name, for mentions and group rows.
+    #[cfg(test)]
+    pub(crate) fn add_named_for_test(&self, id: &str, name: &str) {
+        let mut file = new_file(name.into(), Avatar::Mono { hue: finx_protocol::bot::AvatarHue::Slate }, false);
+        file.id = id.to_string();
+        self.with(|bots| bots.insert(id.to_string(), Bot::new(file)));
+    }
+
+    /// Another subject's bot, for the group tests that check `bots.external`.
+    #[cfg(test)]
+    pub(crate) fn add_external_for_test(&self, id: &str, name: &str) {
+        let mut file = new_file(name.into(), Avatar::Mono { hue: finx_protocol::bot::AvatarHue::Sage }, false);
+        file.id = id.to_string();
+        file.source = Some(BotSourceFile {
+            kind: BotSourceKind::Remote,
+            protocol: BotProtocol::A2a,
+            card_url: "http://localhost:9999/card".into(),
+            endpoint: "http://localhost:9999/a2a".into(),
+            tenant: None,
+            host: "localhost:9999".into(),
+            card_sha256: "test".into(),
+            card_read_at: crate::list::now(),
+            description: "test".into(),
+            provider: None,
+            skills: Vec::new(),
+            accepts: vec![BotAccept::Text],
+            auth: BotAuth::None,
+            api_key_header: None,
+            noticed: true,
+            needs_review: None,
+            offered_name: None,
+            card_problem: None,
+        });
         self.with(|bots| bots.insert(id.to_string(), Bot::new(file)));
     }
 
