@@ -2864,6 +2864,8 @@ export type GroupMember = {
   history?: GroupHistory;
   mode: GroupMemberMode;
   name: string;
+  /** An external member that does not remember its context. */
+  stateless?: boolean;
 };
 
 /** A member a group is made with, or one added later. */

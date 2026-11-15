@@ -307,6 +307,8 @@ pub(crate) struct Session {
     pub(crate) group_docs: Option<Arc<crate::group_guard::GroupDocPaths>>,
     /// A group seat has seen an external member's words; the fuse applies from then on.
     pub(crate) group_tainted: AtomicBool,
+    /// What set this seat's current turn on: direct external words, or earlier ones.
+    pub(crate) group_cause: Mutex<Option<finx_protocol::group::GroupApprovalCause>>,
     /// The batch being answered named this bot with `@`.
     pub(crate) group_mentioned: AtomicBool,
     /// A sub-agent's session.
@@ -771,6 +773,8 @@ impl Session {
             browser: self.system.get().browser.policy.clone(),
             desktop: self.system.get().desktop.clone(),
             group: self.group.clone(),
+            tainted: self.group_tainted.load(std::sync::atomic::Ordering::Relaxed),
+            group_cause: self.group_cause.lock().clone(),
             listed_skills: state
                 .skills
                 .iter()
@@ -791,6 +795,31 @@ impl Session {
     pub(crate) fn mark_group_external(&self) {
         if self.group.is_some() && !self.group_tainted.swap(true, std::sync::atomic::Ordering::Relaxed) {
             self.record(EntryKind::GroupExternal);
+        }
+    }
+
+    /// Remembers what a batch was set on, for the fuse's confirmation and its card.
+    pub(crate) fn note_group_batch(&self, batch: &crate::group::GroupBatch) {
+        if self.group.is_none() {
+            return;
+        }
+        let external = batch.messages.iter().find(|m| m.from.external()).map(|m| {
+            let name = match &m.from {
+                crate::group::GroupBatchSpeaker::Bot { name, .. } => name.clone(),
+                _ => "another subject's bot".to_string(),
+            };
+            finx_protocol::group::GroupApprovalCause {
+                kind: finx_protocol::group::GroupCauseKind::Direct,
+                name: Some(name),
+                message_id: Some(m.id.clone()),
+                text: m.text.chars().take(200).collect(),
+            }
+        });
+        let mut cause = self.group_cause.lock();
+        if let Some(external) = external {
+            *cause = Some(external);
+        } else if let Some(current) = cause.as_mut() {
+            current.kind = finx_protocol::group::GroupCauseKind::Earlier;
         }
     }
 

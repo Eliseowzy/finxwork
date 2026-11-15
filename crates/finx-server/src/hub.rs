@@ -419,6 +419,18 @@ impl Hub {
                         groups.on_seat_spoke(group_id, bot_id, &args, details.as_ref());
                     }
                 }
+                EventMsg::ApprovalRequested { call_id, name, args, summary, reason, .. } => {
+                    groups.on_seat_approval(
+                        group_id,
+                        bot_id,
+                        &self.shared.session.id,
+                        call_id.clone(),
+                        name.clone(),
+                        args.clone(),
+                        summary.clone(),
+                        reason.clone(),
+                    );
+                }
                 EventMsg::TurnCompleted { usage, .. } => {
                     let settings = groups.settings().clone();
                     let _ = groups.add_tokens(group_id, usage.total_tokens(), &settings);

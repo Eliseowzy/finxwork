@@ -43,7 +43,7 @@ impl GroupBatchSpeaker {
         }
     }
 
-    fn external(&self) -> bool {
+    pub(crate) fn external(&self) -> bool {
         matches!(self, GroupBatchSpeaker::Bot { external: true, .. })
     }
 }

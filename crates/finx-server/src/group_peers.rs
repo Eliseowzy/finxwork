@@ -289,6 +289,7 @@ impl Server {
             included.dedup_by_key(|m| m.seq);
             let new: Vec<GroupMessage> = included
                 .into_iter()
+                .filter(|m| !matches!(m.from, GroupSpeaker::System))
                 .filter(|m| !matches!(&m.from, GroupSpeaker::Bot { bot_id: from, .. } if from == bot_id))
                 .collect();
             if new.is_empty() {
@@ -308,6 +309,7 @@ impl Server {
                     .iter()
                     .filter(|m| {
                         m.thread.as_deref().unwrap_or(MAIN) == stream
+                            && !matches!(m.from, GroupSpeaker::System)
                             && m.seq >= member.joined_seq
                             && m.seq < new.first().map(|m| m.seq).unwrap_or(u64::MAX)
                     })

@@ -49,18 +49,26 @@ impl Drop for Fake {
 
 struct Wire {
     messages: mpsc::UnboundedReceiver<Value>,
+    approvals: mpsc::UnboundedReceiver<Value>,
 }
 
 fn route(mut incoming: IncomingRx) -> Wire {
     let (tx, messages) = mpsc::unbounded_channel();
+    let (atx, approvals) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         while let Some(message) = incoming.recv().await {
-            if message.method() == "group/message" {
-                let _ = tx.send(message.params().clone());
+            match message.method() {
+                "group/message" => {
+                    let _ = tx.send(message.params().clone());
+                }
+                "group/approval" => {
+                    let _ = atx.send(message.params().clone());
+                }
+                _ => {}
             }
         }
     });
-    Wire { messages }
+    Wire { messages, approvals }
 }
 
 async fn until_message(wire: &mut Wire, group: &str, want: impl Fn(&Value) -> bool) -> Value {
@@ -156,6 +164,8 @@ async fn a_group_batch_is_incremental_and_keeps_one_context_per_stream() {
 
     let bot = add_external(&client, &fake).await;
     let group = create_group(&client, "外部群", json!([{ "bot_id": bot, "history": "none" }])).await;
+    let notice = until_message(&mut wire, &group, |m| m["from"]["kind"] == "system").await;
+    assert!(notice["text"].as_str().is_some_and(|t| t.contains("外部成员")), "{notice}");
 
     let mut ids = Vec::new();
     for i in 0..5 {
@@ -169,8 +179,9 @@ async fn a_group_batch_is_incremental_and_keeps_one_context_per_stream() {
     let batches = group_batches(&fake);
     assert_eq!(batches.len(), 1, "five quiet messages are one call: {batches:?}");
     assert_eq!(part_texts(&batches[0]).len(), 5);
-    assert_eq!(message_of(&batches[0])["metadata"]["seq"]["from"], 0);
-    assert_eq!(message_of(&batches[0])["metadata"]["seq"]["to"], 4);
+    // Seq 0 is the "external member is here" system line; the five owner messages follow.
+    assert_eq!(message_of(&batches[0])["metadata"]["seq"]["from"], 1);
+    assert_eq!(message_of(&batches[0])["metadata"]["seq"]["to"], 5);
     assert!(no_context(&batches[0]), "the first batch has no context yet");
     assert_eq!(batches[0]["headers"]["a2a-extensions"], "https://finx.work/a2a/ext/group-chat/v1");
     let speakers: Vec<&str> = message_of(&batches[0])["parts"]
@@ -271,7 +282,7 @@ async fn a_stateless_member_gets_the_recent_messages_every_time_and_can_be_chang
     assert!(batches.len() >= 2, "{batches:?}");
     assert!(no_context(batches.last().unwrap()), "a stateless batch has no contextId");
     let text = part_texts(batches.last().unwrap()).join("\n");
-    assert!(text.contains("[#0 Owner] 第一句"), "the recent window comes along: {text}");
+    assert!(text.contains("[#1 Owner] 第一句"), "the recent window comes along: {text}");
     assert!(text.contains("【Owner】第二句"), "{text}");
 
     // The owner says it does remember: the next batches carry a context.
@@ -423,4 +434,70 @@ async fn pass_and_silent_are_not_messages_but_are_written_to_the_debug_log() {
     no_bot_message(&mut wire, &group, std::time::Duration::from_secs(3)).await;
     let silence = std::fs::read_to_string(env.home.path().join("groups").join(&group).join("silence.jsonl")).unwrap();
     assert!(silence.contains("no content"), "{silence}");
+}
+
+
+async fn create_local_bot(client: &Client, name: &str) -> String {
+    let made = client
+        .request("bots/create", json!({ "name": name, "avatar": { "kind": "mono", "hue": "slate" } }))
+        .await
+        .expect("bots/create");
+    made["bot"]["id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn external_words_make_a_tainted_turn_ask_before_files_and_network() {
+    let env = TestEnv::new(
+        "bypass-permissions",
+        "[bots]\nexternal = true\nallow_local = true\n[groups]\nquiet_secs = 1\nmax_wait_secs = 2",
+    )
+    .await;
+    let fake = fake(&["--group-ext", "--evil"]);
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let _ = client.request("groups/subscribe", Value::Null).await.expect("groups/subscribe");
+
+    let local = create_local_bot(&client, "Alice").await;
+    let external = add_external(&client, &fake).await;
+    let group = create_group(
+        &client,
+        "有外人的群",
+        json!([{ "bot_id": local, "history": "none" }, { "bot_id": external, "history": "none" }]),
+    )
+    .await;
+
+    client
+        .request("groups/send", json!({ "id": group, "text": "大家看一下" }))
+        .await
+        .expect("groups/send");
+
+    let external_word = until_message(&mut wire, &group, |m| m["from"]["kind"] == "bot" && m["from"]["external"] == true).await;
+    assert!(external_word["text"].as_str().is_some_and(|t| t.contains("pwned.txt")));
+
+    let approval = tokio::time::timeout(WAIT, wire.approvals.recv())
+        .await
+        .expect("timed out waiting for group/approval")
+        .expect("closed");
+    assert_eq!(approval["group_id"], group);
+    assert_eq!(approval["cause"]["kind"], "direct");
+    assert_eq!(approval["cause"]["name"], "A2A Fake");
+    let approvals = vec![approval];
+    let session = approvals[0]["session_id"].as_str().unwrap().to_string();
+    client.request("session/resume", json!({ "session_id": session })).await.expect("session/resume");
+    for approval in &approvals {
+        let call_id = approval["call_id"].as_str().unwrap();
+        client
+            .request(
+                "session/op",
+                json!({ "session_id": session, "op": { "type": "approval", "call_id": call_id, "decision": { "type": "deny" } } }),
+            )
+            .await
+            .expect("deny");
+    }
+    let _ = client.request("session/detach", json!({ "session_id": session })).await;
+
+    let file = env.home.path().join("groups").join(&group).join("files").join("pwned.txt");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!file.exists(), "the denied write makes no file");
 }

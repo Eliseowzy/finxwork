@@ -12848,6 +12848,10 @@
         },
         "name": {
           "type": "string"
+        },
+        "stateless": {
+          "description": "An external member that does not remember its context.",
+          "type": "boolean"
         }
       },
       "required": [

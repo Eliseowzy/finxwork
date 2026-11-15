@@ -72,6 +72,9 @@ struct GroupData {
     fuse: FuseFile,
     #[serde(default)]
     summary_list: Kept,
+    /// Whether the group has told everyone that another subject's bot is here (fuse 2).
+    #[serde(default)]
+    external_notified: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -392,6 +395,7 @@ impl Registry {
                     None => (m.bot_id.clone(), Avatar::Mono { hue: AvatarHue::Slate }, false),
                 };
                 external |= is_external;
+                let stateless = group.file.peers.get(&m.bot_id).is_some_and(|peer| peer.stateless);
                 GroupMember {
                     bot_id: m.bot_id.clone(),
                     name,
@@ -399,6 +403,7 @@ impl Registry {
                     external: is_external,
                     mode: m.mode,
                     history: m.history,
+                    stateless,
                 }
             })
             .collect();
@@ -454,6 +459,7 @@ impl Registry {
                 ..FuseFile::default()
             },
             summary_list: Kept::default(),
+            external_notified: false,
         };
         make_dirs(&self.home, &id)?;
         write_file(&self.home, &file)?;
@@ -805,6 +811,41 @@ impl Registry {
         let mut file = options.open(&path).map_err(io_error)?;
         use std::io::Write as _;
         writeln!(file, "{line}").map_err(io_error)
+    }
+
+    /// Fuse 2: the first time an external member is in the group, everyone hears it once.
+    pub(crate) fn notice_external(&self, id: &str) -> Result<(), RpcError> {
+        let names: Vec<String> = self
+            .with(|groups| {
+                groups.get(id).map(|g| {
+                    g.file
+                        .members
+                        .iter()
+                        .filter_map(|m| self.bots.member_info(&m.bot_id).filter(|i| i.external).map(|i| i.name))
+                        .collect()
+                })
+            })
+            .unwrap_or_default();
+        if names.is_empty() {
+            return Ok(());
+        }
+        let already = self.with_group(id, |g| {
+            if g.file.external_notified {
+                return Ok(true);
+            }
+            g.file.external_notified = true;
+            Ok(false)
+        })?;
+        if !already {
+            self.system(
+                id,
+                format!(
+                    "群里有外部成员了：{}。群里的消息会发到他们的服务。",
+                    names.join("、")
+                ),
+            )?;
+        }
+        Ok(())
     }
 
     /// A seat's call waits for the owner: send it to the group page.
@@ -1824,6 +1865,7 @@ impl Server {
             // A new external member's stateless probe (brief §4.7).
             self.probe_stateless(&row.id, &member.bot_id).await;
         }
+        self.groups().notice_external(&row.id)?;
         Ok(row)
     }
 
@@ -1844,6 +1886,7 @@ impl Server {
             self.probe_stateless(&row.id, &bot_id).await;
             // The new member's history choice may need the rolling summary: make it now.
             let _ = self.maybe_summarize(&row.id).await;
+            self.groups().notice_external(&row.id)?;
         }
         Ok(row)
     }

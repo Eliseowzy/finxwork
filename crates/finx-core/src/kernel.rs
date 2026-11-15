@@ -359,6 +359,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
                 ))
             }),
         group_tainted: AtomicBool::new(false),
+        group_cause: Mutex::new(None),
         group_mentioned: AtomicBool::new(false),
         sub_agent: launch.sub_agent,
         agent_role: role,
@@ -1546,6 +1547,7 @@ async fn submission_loop(
                 Internal::Mail(mail) => task::on_mail(&session, mail),
                 Internal::Group(batch) => {
                     session.set_group_mentioned(batch.mentioned);
+                    session.note_group_batch(&batch);
                     if batch.has_external() {
                         session.mark_group_external();
                     }

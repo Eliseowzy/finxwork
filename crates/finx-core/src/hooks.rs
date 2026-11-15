@@ -67,6 +67,10 @@ pub struct SessionView {
     pub desktop: crate::config::DesktopSettings,
     /// A bot's seat in a group: only the group's folder is readable and writable.
     pub group: Option<finx_protocol::group::GroupRef>,
+    /// A seat has seen another subject's words; every tool outside the fuse's whitelist asks.
+    pub tainted: bool,
+    /// What set the seat on this turn, for the confirmation card.
+    pub group_cause: Option<finx_protocol::group::GroupApprovalCause>,
     /// The skills the catalog lists, whose files a seat may read and not change.
     pub listed_skills: Arc<[PathBuf]>,
     /// Where open documents are, for a call that names one by id.

@@ -30,7 +30,14 @@
     "localOnly": "现在只能拉这台电脑上的 Bot。",
     "cancel": "取消",
     "create": "建群",
-    "creating": "正在建群…"
+    "creating": "正在建群…",
+    "externalMembers": "外部 Bot",
+    "confirmTitle": "群里的消息会发到对方的服务",
+    "confirmLine": "这个群里的消息会发到 {{name}}（{{host}}）的服务。",
+    "history": "入群前的记录",
+    "history_none": "不给看",
+    "history_summary": "给看摘要",
+    "history_recent": "给看最近 20 条"
   },
   "page": {
     "log": "群聊",
@@ -80,7 +87,9 @@
     "deleteCancel": "取消",
     "deleteConfirm": "删除",
     "empty": "群里还没有 Bot。",
-    "pinned": "置顶"
+    "pinned": "置顶",
+    "confirmExternal": "这个群里的消息会发到 {{name}}（{{host}}）的服务。要添加吗？",
+    "stateless": "它不记得上下文"
   },
   "approval": {
     "title": "{{name}} 需要你确认",

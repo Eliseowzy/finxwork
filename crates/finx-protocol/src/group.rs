@@ -61,6 +61,9 @@ pub struct GroupMember {
     /// What it may see of the time before it joined. Only external members have one.
     #[serde(default, skip_serializing_if = "GroupHistory::is_none")]
     pub history: GroupHistory,
+    /// An external member that does not remember its context.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stateless: bool,
 }
 
 /// A file in a group message. `path` is relative to the group's directory.

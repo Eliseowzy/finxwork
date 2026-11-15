@@ -30,9 +30,17 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
     if (note.trim() === (group.note ?? "")) return;
     void save({ note });
   };
-  const canAdd = bots.filter((b) => !b.source && !group.members.some((m) => m.bot_id === b.id));
+  const canExternal = st.capabilities?.bots_external === true;
+  const canAdd = bots.filter((b) => (canExternal || !b.source) && !group.members.some((m) => m.bot_id === b.id));
   const choose = (botId: string) => {
     if (!botId) return;
+    const bot = bots.find((b) => b.id === botId);
+    if (bot?.source) {
+      const ok = window.confirm(t("panel.confirmExternal", { name: bot.name, host: bot.source.host }));
+      if (!ok) return;
+      void st.run(() => st.call("groups/add_member", { id: group.id, bot_id: botId, history: "none" }));
+      return;
+    }
     void st.run(() => st.call("groups/add_member", { id: group.id, bot_id: botId }));
   };
   const remove = () => {
@@ -130,6 +138,8 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
 function MemberRow({ group, m }: { group: GroupSummary; m: GroupMember }) {
   const { t } = useTranslation("groups");
   const st = useStore();
+  const bots = useLists((l) => l.bots);
+  const host = m.external ? bots.find((b) => b.id === m.bot_id)?.source?.host : undefined;
   return (
     <div className="frow gpanel-member">
       <Avatar spec={m.avatar} name={m.name} size={28} />
@@ -138,7 +148,10 @@ function MemberRow({ group, m }: { group: GroupSummary; m: GroupMember }) {
           {m.name}
           {m.external && <span className="bext" title={t("panel.external")} aria-label={t("panel.external")}><Icon name="globe" /></span>}
         </span>
-        <span className="sub">{t(`panel.modes.${m.mode}`)}</span>
+        <span className="sub">
+          {t(`panel.modes.${m.mode}`)}
+          {host && <span className="gpanel-host mono"> · {host}</span>}
+        </span>
       </span>
       <div className="gpanel-modes" role="group" aria-label={t("panel.mode")}>
         {modes.map((mode) => (
@@ -155,7 +168,19 @@ function MemberRow({ group, m }: { group: GroupSummary; m: GroupMember }) {
       <button className="link gpanel-remove" onClick={() => void st.run(() => st.call("groups/remove_member", { id: group.id, bot_id: m.bot_id }))}>
         {t("panel.remove")}
       </button>
-      {m.external && <p className="set-note gpanel-ext">{t("panel.externalNote")}</p>}
+      {m.external && (
+        <div className="gpanel-ext">
+          <p className="set-note">{t("panel.externalNote")}</p>
+          <label className="frow gpanel-stateless">
+            <span className="fl">{t("panel.stateless")}</span>
+            <input
+              type="checkbox"
+              checked={!!m.stateless}
+              onChange={(e) => void st.run(() => st.call("groups/set_member", { id: group.id, bot_id: m.bot_id, stateless: e.target.checked }))}
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }

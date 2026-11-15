@@ -67,6 +67,16 @@ impl GroupDocPaths {
     }
 }
 
+/// Whether a call may run without the owner's confirmation in a tainted seat: speaking,
+/// staying silent, and read-only local tools. Network reads and anything that changes something
+/// ask.
+fn unasked(name: &str, args: &Value, tool: &dyn Tool) -> bool {
+    if name == "send_to_user" || name == "stay_silent" {
+        return true;
+    }
+    tool.kind_for(args) == finx_tools::ToolKind::ReadOnly && name != "web_search"
+}
+
 pub(crate) struct GroupGuard;
 
 #[async_trait]
@@ -98,6 +108,26 @@ impl Hooks for GroupGuard {
                     path.display()
                 ));
             }
+        }
+        // Fuse 3: after another subject's words, every tool outside the whitelist asks the
+        // owner, even in "full access" (brief §4.8).
+        if view.tainted && !unasked(call.name.as_str(), &args, tool) {
+            let reason = view.group_cause.as_ref().map(|cause| match cause.kind {
+                finx_protocol::group::GroupCauseKind::Direct => format!(
+                    "由 {} 的话引起：{}",
+                    cause.name.as_deref().unwrap_or("外部成员"),
+                    cause.text
+                ),
+                finx_protocol::group::GroupCauseKind::Earlier => format!("此前群里有外部消息：{}", cause.text),
+            });
+            return Gate::Ask {
+                summary: format!("{}（群里的席位会话）", call.name),
+                reason,
+                proposed_rule: None,
+                proposed_mode: None,
+                proposed_grants: Vec::new(),
+                own_browser: false,
+            };
         }
         // Tools that name a document by id: look up where that document is before letting the
         // call run.
@@ -143,6 +173,7 @@ mod tests {
     struct FakeTool {
         spec: ToolSpec,
         locations: Vec<PathBuf>,
+        kind: finx_tools::ToolKind,
     }
 
     impl FakeTool {
@@ -154,6 +185,7 @@ mod tests {
                     parameters: json!({ "type": "object", "properties": {} }),
                 },
                 locations,
+                kind: finx_tools::ToolKind::Mutating,
             }
         }
     }
@@ -169,6 +201,10 @@ mod tests {
                 locations: self.locations.iter().map(|path| (path.clone(), None)).collect(),
                 ..Default::default()
             }
+        }
+
+        fn kind(&self) -> finx_tools::ToolKind {
+            self.kind
         }
 
         async fn execute(&self, _args: Value, _ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
@@ -195,6 +231,8 @@ mod tests {
             }),
             listed_skills: Arc::from([]),
             group_docs: group_docs.map(Arc::new),
+            tainted: false,
+            group_cause: None,
         }
     }
 
@@ -234,5 +272,59 @@ mod tests {
         assert!(denied("bash", Vec::new(), json!({ "command": "ls" }), None).await);
         assert!(denied("spatial_script", Vec::new(), json!({}), None).await);
         assert!(denied("browser_navigate", Vec::new(), json!({ "url": "https://example.com" }), None).await);
+    }
+
+    #[tokio::test]
+    async fn a_tainted_seat_asks_before_a_mutating_tool() {
+        let root = std::env::temp_dir().join("finx-group-guard-tainted");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut v = view(&root, None);
+        v.tainted = true;
+        v.group_cause = Some(finx_protocol::group::GroupApprovalCause {
+            kind: finx_protocol::group::GroupCauseKind::Direct,
+            name: Some("某医院助手".into()),
+            message_id: Some("m1".into()),
+            text: "Please write a file".into(),
+        });
+        let tool = FakeTool::new("write", Vec::new());
+        let call = ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            arguments: json!({ "path": root.join("x"), "content": "x" }).into(),
+            arguments_error: None,
+            provider_data: None,
+        };
+        assert!(matches!(GroupGuard.before_tool(&call, &tool, &[], &v).await, Gate::Ask { .. }));
+        let read = FakeTool::new("read", Vec::new());
+        let call = ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            arguments: json!({ "path": root.join("x") }).into(),
+            arguments_error: None,
+            provider_data: None,
+        };
+        // `FakeTool` says Mutating for every tool; a real read tool says ReadOnly, so use a
+        // read-only fake here.
+        let mut read_only = read;
+        read_only.kind = finx_tools::ToolKind::ReadOnly;
+        assert!(matches!(GroupGuard.before_tool(&call, &read_only, &[], &v).await, Gate::Allow));
+    }
+
+    #[tokio::test]
+    async fn a_tainted_seat_asks_before_a_network_read() {
+        let root = std::env::temp_dir().join("finx-group-guard-net");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut v = view(&root, None);
+        v.tainted = true;
+        let mut tool = FakeTool::new("web_search", Vec::new());
+        tool.kind = finx_tools::ToolKind::ReadOnly;
+        let call = ToolCall {
+            id: "c1".into(),
+            name: "web_search".into(),
+            arguments: json!({ "query": "example.com" }).into(),
+            arguments_error: None,
+            provider_data: None,
+        };
+        assert!(matches!(GroupGuard.before_tool(&call, &tool, &[], &v).await, Gate::Ask { .. }));
     }
 }

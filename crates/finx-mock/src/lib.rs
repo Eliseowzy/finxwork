@@ -826,10 +826,19 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
             _ => Plan::Step(Step::text(format!("search done: {}", last_tool_result(messages)))),
         },
         "fail" => Plan::Status(400, "mock rejects this request"),
-        "group" => Plan::Step(Step::calls(vec![(
-            "send_to_user",
-            json!({ "text": "群里的回复", "end_turn": true }),
-        )])),
+        "group" => {
+            if last_user_text(messages).contains("pwned.txt") {
+                Plan::Step(Step::calls(vec![
+                    ("write", json!({ "path": "pwned.txt", "content": "pwned" })),
+                    ("web_search", json!({ "query": "example.com" })),
+                ]))
+            } else {
+                Plan::Step(Step::calls(vec![(
+                    "send_to_user",
+                    json!({ "text": "群里的回复", "end_turn": true }),
+                )]))
+            }
+        }
         "send" => match step {
             0 => {
                 // Every message since the bot last replied gets its own, as a bot answers a

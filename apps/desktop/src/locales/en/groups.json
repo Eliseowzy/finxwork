@@ -30,7 +30,14 @@
     "localOnly": "For now, only bots on this Mac can join.",
     "cancel": "Cancel",
     "create": "Create group",
-    "creating": "Creating…"
+    "creating": "Creating…",
+    "externalMembers": "Other subjects’ bots",
+    "confirmTitle": "These messages go to another service",
+    "confirmLine": "Messages in this group will be sent to {{name}} at {{host}}.",
+    "history": "Before it joined",
+    "history_none": "Show nothing",
+    "history_summary": "Show a summary",
+    "history_recent": "Show the last 20 messages"
   },
   "page": {
     "log": "Group chat",
@@ -80,7 +87,9 @@
     "deleteCancel": "Cancel",
     "deleteConfirm": "Delete",
     "empty": "No bots in this group yet.",
-    "pinned": "Pin to top"
+    "pinned": "Pin to top",
+    "confirmExternal": "Messages in this group will be sent to {{name}} at {{host}}. Add it?",
+    "stateless": "It does not remember its context"
   },
   "approval": {
     "title": "{{name}} needs your confirmation",

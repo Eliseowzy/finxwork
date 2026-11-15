@@ -46,7 +46,7 @@
 - 验收：`cargo test -p finx-cli --test e2e_groups`（7 通过，含：主人沉默 12 条停群并恢复、每日 token 停 + resume、每分钟上限、normal 静默、@ 立即/自动话题、mentions 档、三人群）。
 - 自己定的：每分钟计数按 Bot 说出的条数算，超过后跳过后面的投递而不撤回已说的；`resume` 把 `fuse.tokens`/`peer_calls` 清零（再给一份）；`bot_run_without_owner` 默认 12；system 行文字为“群暂停了：…”；`daily_peer_calls` 的计数入口留给 M6。
 
-## M5 — `bb9cdc9b`（桌面端群聊，只有本地 Bot）
+## M5 — `82e1ec26`（桌面端群聊，只有本地 Bot）
 
 - `packages/client`：`groups.ts` 补 `collageMembers`、`typingMention`、`insertMention`、`mentionChoices` 四个纯函数；`groups.test.ts` 补对应用例。协议未改。
 - `store.tsx`：`Lists` 加 `groups`/`groupsLoaded`；订阅 `groups/subscribe`，处理 `groups/changed`、`group/message`、`group/activity`（thinking 由 activity 维护，`groups/changed` 里不清空）；`Selection` 加 `{ kind: "group"; id }`，加 `selectGroup`；保存/恢复 `lastGroup`；加 `groupSheet`、`groupPanel`、`groupThread` 状态。切换模式时群和 Bot 互相保留。
@@ -64,7 +64,7 @@
   - Rust 未改：确认已有 `target/debug/finx`（`finx 0.2.0`）可用，未重新 `cargo build`（同分支上 M6 正在改 crates）。
 - 自己定的：M5 的建群表单只列本地 Bot，外部 Bot 的确认页和入群前记录设置留给 M7；话题面板直接用页面已加载的群消息和 `group/message` 事件渲染，不额外调 `groups/thread`（更早的话题分页以后接）；群设置多一个置顶开关；群里收到的文件只显示文件名，不做打开/预览（M5 范围外）；保险丝“继续”不再额外弹 toast。
 
-## M6 — `Groups: external bots in groups (M6)`（本提交）
+## M6 — `25d3dfde`（外部 Bot 进群）
 
 - `crates/finx-server/src/group_peers.rs`：外部成员不开席位会话，服务层直接走 A2A。
   - 每个成员、每个流（`main` 或话题第一条 id）一个 contextId + `sent_seq`；只发 `sent_seq` 之后、属于该流、不是它自己的消息；成功接到任务后才推进 `sent_seq`。
@@ -92,3 +92,20 @@
   - 滚动摘要在“群里有外部成员”时才计算；加外部成员时会同步补算一次，避免 `summary`/`recent` 的首批没有摘要可用。
   - 外部文件名的清洗先取路径最后一段再清洗，和直接聊的落盘规则一致。
 - 仍未做：外部成员等待中的 A2A 任务在服务重启后的补查/续接；M7 的确认页、外部标记和保险丝 3 界面（由别人做）。
+
+
+## M7 — `0eff68d7`（保险丝 2、3 和外部 Bot 的界面）
+
+- 保险丝 2：群里第一次有外部成员时写一条 system 行（“群里有外部成员了：…，群里的消息会发到他们的服务”），只写一次；system 行不进外部成员的批次（外部成员只看群里的消息，不看本机的提示行）。
+- 保险丝 3：`GroupGuard` 在 `SessionView.tainted` 为真时，除 `send_to_user`、`stay_silent`、只读且不联网的本地工具外，所有调用返回 `Gate::Ask`，不看权限模式；`web_search` 这类只读联网工具也问。确认卡只给“允许这一次/拒绝”（`Gate::Ask` 没有 session 级建议）。
+- T1 污染标记：`GroupExternal` 条目落盘；重启从历史恢复 `group_tainted`。`note_group_batch` 记下当前批的 cause：直接由外部消息引起（`direct`，名字、message id、前 200 字），或此前有外部消息（`earlier`）。
+- 审批转群聊页：席位会话的 `ApprovalRequested` 由 hub 发 `group/approval`（含 `group_id/bot_id/session_id/call_id/args/summary/cause`）；桌面端 `GroupPage` 弹卡，答复走 `session/resume` → 现有 `session/op` approval → `session/detach`。
+- 外部界面：`GroupSheet` 在 `bots.external` 打开时列外部 Bot，逐行写域名，选“入群前不给看/给看摘要/给看最近 20 条”（默认不给看），建群时带 `history`；`GroupPanel` 显示外部成员的域名、提供“记不记得上下文”开关、添加外部成员前确认域名；`bots.external` 关闭时列表里没有外部 Bot。`GroupMember` 加 `stateless`（协议新增字段），`GroupSummary` 带出。
+- 测试：
+  - `cargo test -p finx-core --test group`：11 通过（含 T1 后写文件要确认、拒绝后不写）。
+  - `cargo test -p finx-core --lib group_guard`：5 通过（路径/id/白名单/联网读/写）。
+  - `cargo test -p finx-cli --test e2e_groups_external`：5 通过（含外部恶意文字触发本地 Bot 写文件，`group/approval` cause 为 direct，拒绝后没有 `pwned.txt`；第一条外部成员 system 行）。
+  - `cargo test -p finx-cli --test e2e_groups`：7 通过；`cargo test -p finx-a2a -p finx-server`、`node tools/a2a-fake/tests.mjs` 通过。
+  - `pnpm typecheck`、`pnpm test`（client 149、desktop 274）通过；`node apps/desktop/e2e/bot-group.mjs` 通过。
+  - `cargo check --workspace --all-targets`、`cargo build --bin finx` 通过（只有既有 `tests/bot.rs` unused_mut 和 linker 提示）。
+- 自己定的：外部成员不接触 system 行（本机提示行只给主人和本地 Bot）；T1 的 cause 在重启后没有原文时用“此前群里有外部消息”兜底；`GroupPanel` 添加外部成员用原生 `confirm` 写域名，入群前记录固定“不给看”，要改记录在群设置里重加；`GroupMember.stateless` 是新增字段，不改已有字段；第一条外部 system 行占一个群 `seq`，外部批次按“排除 system 行”处理。
