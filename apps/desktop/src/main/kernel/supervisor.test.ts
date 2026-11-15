@@ -5,7 +5,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { after, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 import { parseEnv, withLocale } from "./env.ts";
 import { alive, lockPath, readRecord } from "./record.ts";
 import { RpcClient } from "@finx/client";
@@ -16,6 +16,12 @@ import { Supervisor, sameBytes, socketTransport, tryConnect, type KernelStatus }
 
 const finx = path.resolve(import.meta.dirname, "../../../../../target/debug/finx");
 const built = fs.existsSync(finx);
+
+// The desktop has a window keeping its loop alive, but the supervisor deliberately
+// unrefs its service and control socket. Keep that same lifetime during each test.
+let keepAlive: ReturnType<typeof setInterval>;
+beforeEach(() => { keepAlive = setInterval(() => {}, 1000); });
+afterEach(() => clearInterval(keepAlive));
 
 test("the login environment is read between the marks, NUL-separated, without the shell's own variables", () => {
   const mark = "__M__";
@@ -29,12 +35,18 @@ test("the login environment is read between the marks, NUL-separated, without th
 const made: Supervisor[] = [];
 
 /** Whatever a test left behind: the supervisors' connections and the services they started. */
-function cleanup() {
+async function cleanup() {
+  const pids = new Set<number>();
   for (const s of made.splice(0)) {
     s.stop();
     const record = readRecord(s.current.endpoint);
-    if (record && alive(record.pid)) process.kill(record.pid, "SIGTERM");
+    if (record && alive(record.pid)) pids.add(record.pid);
   }
+  for (const pid of pids) {
+    if (alive(pid)) process.kill(pid, "SIGTERM");
+  }
+  // Services flush their files on SIGTERM; remove the fixture only after they exit.
+  await Promise.all([...pids].map((pid) => until(() => !alive(pid), 5000)));
 }
 after(cleanup);
 
@@ -94,7 +106,7 @@ const takenOver = (app: Supervisor, pid: number) =>
     return !!now && now.pid !== pid && app.current.state === "ready";
   });
 
-test("starts finx when none runs, uses one that does, and starts it again after it dies", { skip: !built && "run `cargo build` first" }, async () => {
+test("starts finx when none runs, uses one that does, and starts it again after it dies", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     // Cold: nothing listens, so the supervisor starts finx and waits for it.
@@ -128,12 +140,12 @@ test("starts finx when none runs, uses one that does, and starts it again after 
     process.kill(replacement.pid, "SIGTERM");
     await until(() => !alive(replacement.pid));
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("a service of another version is replaced once no task runs", { skip: !built && "run `cargo build` first" }, async () => {
+test("a service of another version is replaced once no task runs", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const old = supervisor(home);
@@ -154,12 +166,12 @@ test("a service of another version is replaced once no task runs", { skip: !buil
     const now = readRecord(app.s.current.endpoint);
     if (now) process.kill(now.pid, "SIGTERM");
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("a service running another build of the same version is replaced once no task runs", { skip: !built && "run `cargo build` first" }, async () => {
+test("a service running another build of the same version is replaced once no task runs", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const before = await serviceOf(home, build(home, "old"));
@@ -179,12 +191,12 @@ test("a service running another build of the same version is replaced once no ta
     assert.equal(app.s.current.replacing, false);
     assert.equal(readRecord(app.s.current.endpoint)?.pid, now.pid);
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("a service running another file with the same bytes stays", { skip: !built && "run `cargo build` first" }, async () => {
+test("a service running another file with the same bytes stays", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const before = await serviceOf(home, build(home, "here"));
@@ -198,12 +210,12 @@ test("a service running another file with the same bytes stays", { skip: !built 
     assert.equal(readRecord(app.s.current.endpoint)?.pid, before.pid);
     assert.ok(alive(before.pid));
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("a service whose own file was replaced since it started is replaced, though that file now holds the app's bytes", { skip: !built && "run `cargo build` first" }, async () => {
+test("a service whose own file was replaced since it started is replaced, though that file now holds the app's bytes", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const starts = path.join(home, "starts.json");
@@ -219,12 +231,12 @@ test("a service whose own file was replaced since it started is replaced, though
     await takenOver(app.s, before.pid);
     assert.equal(app.s.current.ours, true);
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("a service whose file is gone is replaced", { skip: !built && "run `cargo build` first" }, async () => {
+test("a service whose file is gone is replaced", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const old = build(home, "old");
@@ -237,12 +249,12 @@ test("a service whose file is gone is replaced", { skip: !built && "run `cargo b
     await takenOver(app.s, before.pid);
     assert.equal(app.s.current.ours, true);
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("a service stays when its record names no file, and when the app has no finx to start instead", { skip: !built && "run `cargo build` first" }, async () => {
+test("a service stays when its record names no file, and when the app has no finx to start instead", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const before = await serviceOf(home, build(home, "old"));
@@ -261,12 +273,12 @@ test("a service stays when its record names no file, and when the app has no fin
     await settle();
     assert.ok(alive(before.pid));
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("a finx serve started from a terminal stays when it runs the app's finx, and is otherwise replaced like an older app's", { skip: !built && "run `cargo build` first" }, async () => {
+test("a finx serve started from a terminal stays when it runs the app's finx, and is otherwise replaced like an older app's", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const endpoint = path.join(home, "run", "finx.sock");
@@ -290,12 +302,12 @@ test("a finx serve started from a terminal stays when it runs the app's finx, an
     await takenOver(other.s, terminal.pid!);
     assert.ok(!alive(terminal.pid!), "another build goes, as one of another version does");
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("two open apps of different builds do not keep replacing each other", { skip: !built && "run `cargo build` first" }, async () => {
+test("two open apps of different builds do not keep replacing each other", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     const endpoint = path.join(home, "run", "finx.sock");
@@ -318,7 +330,7 @@ test("two open apps of different builds do not keep replacing each other", { ski
       assert.equal(app.s.current.replacing, false);
     }
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
@@ -404,20 +416,20 @@ async function botHoldsBack(replacing: (home: string) => { expected?: string; bi
     release();
     client?.close();
     provider.close();
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 }
 
-test("a bot at work holds back replacing a service of another version until it is done", { skip: !built && "run `cargo build` first" }, () =>
+test("a bot at work holds back replacing a service of another version until it is done", { skip: !built && "run `cargo build` first", timeout: 30_000 }, () =>
   botHoldsBack(() => ({ expected: "99.0.0" })),
 );
 
-test("a bot at work holds back replacing a service running another build until it is done", { skip: !built && "run `cargo build` first" }, () =>
+test("a bot at work holds back replacing a service running another build until it is done", { skip: !built && "run `cargo build` first", timeout: 30_000 }, () =>
   botHoldsBack((home) => ({ binary: build(home, "new", "another build") })),
 );
 
-test("after an update puts a new finx at the app's path, the service still running the old one is replaced", { skip: !built && "run `cargo build` first" }, async () => {
+test("after an update puts a new finx at the app's path, the service still running the old one is replaced", { skip: !built && "run `cargo build` first", timeout: 30_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
   try {
     // The app's own finx: same version before and after, as when only the window changed.
@@ -447,7 +459,7 @@ test("after an update puts a new finx at the app's path, the service still runni
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(updated.s.current.replacing, false, "the new service, started from the new file, stays");
   } finally {
-    cleanup();
+    await cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
