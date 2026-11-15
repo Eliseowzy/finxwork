@@ -38,7 +38,7 @@ pub use render::{PdfExported, PdfRequest, export_pdf, page_count, render_page};
 use read::Paragraph;
 
 /// The engine build. Keep in step with the `docx-edit` rev in the workspace Cargo.toml.
-pub const ENGINE: &str = "nimbleoffice a271fb9b";
+pub const ENGINE: &str = "nimbleoffice 2f3bbd4a";
 
 /// The Yrs client id of the kernel's own edits; see [`Word::client_id`].
 const CLIENT_ID: u64 = 1;
