@@ -24,7 +24,7 @@ pub use fonts::SystemFonts;
 /// The engine build, recorded beside a deck's update log: a log written by another build is
 /// replayed only if the result still saves (presentation-kernel-authority §7.2). Keep in step
 /// with the `nimbleoffice-pptx` rev in the workspace Cargo.toml.
-pub const ENGINE: &str = "betteroffice 330266fb";
+pub const ENGINE: &str = "nimbleoffice a271fb9b";
 
 /// Language PowerPoint would edit in: East Asian text with no language of its own is Chinese.
 const EAST_ASIAN_LANGUAGE: &str = "zh-CN";

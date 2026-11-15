@@ -55,19 +55,9 @@ agent-client-protocol-schema = { version = "1.13", default-features = false }
 anyhow = "1"
 async-stream = "0.3"
 async-trait = "0.1"
-# PPT engine: NimbleOffice (Eliseowzy/nimbleoffice), our fork of BetterOffice (openooxml/betteroffice). On top of
-# upstream a45ba76 the fork carries fixes upstream does not have yet:
-#   77a1364 pptx-render: wrap preset-shape text to the preset's text rect
-#   169980a pptx-raster: synthesize bold for faces with no bold weight
-#   b9b1102 pptx: draw East Asian text in its a:ea face
-#   fc15642..b4ce385 charts (auto axis unit, one-series title, pie placement, axis strokes,
-#     legend margin), full-width punctuation, run-level a:ea and chart text in +mn-ea,
-#     Latin line breaking without an East Asian lang
-#   b73babb pptx: save after delete_slide (fonts over the session's slides)
-#   330266fb pptx-react: editor chrome reads --bo-editor-* custom properties
-# Back to upstream once all of these are merged there and a release carries them. No font packs
-# (fonts-latin, fonts-intl, fonts-cjk): every face comes from the machine (finx-slide's
-# SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
+# PPT engine: NimbleOffice (Eliseowzy/nimbleoffice), derived from BetterOffice (openooxml/betteroffice)
+# and maintained independently. No font packs (fonts-latin, fonts-intl, fonts-cjk): every face
+# comes from the machine (finx-slide's SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
 nimbleoffice-pptx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "a271fb9b1654f69fae389892861008ffd2a02902", default-features = false, features = ["raster", "fonts"] }
 # Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
 nimbleoffice-docx = { git = "https://github.com/Eliseowzy/nimbleoffice", rev = "a271fb9b1654f69fae389892861008ffd2a02902", default-features = false, features = ["raster", "fonts", "pdf"] }

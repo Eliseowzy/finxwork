@@ -8,7 +8,7 @@
 ## 一、接手时的现场
 
 - **代码**：`finx/word-parity`（工作分支）停在 `0ea01fa7`；Codex 的集成工作区
-  `~/betteroffice-parity-integration` cherry-pick 了 r1 表格行距修复
+  `~/nimbleoffice-parity-integration` cherry-pick 了 r1 表格行距修复
   （`7822619f`）；Codex 的 float-wrap 工作区有 **2 个未提交文件**——跨页文字
   挤窄的修复写到一半（12:08 配额耗尽）。
 - **数据**：`~/word-parity-data/runs/` 有 15+ 个历史 run；exp 目录有 Codex 的

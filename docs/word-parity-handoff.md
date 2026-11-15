@@ -4,7 +4,7 @@
 
 ## 目标与方法
 
-目标是 FinxWork 的 Word 编辑器在排版上全面追平 Microsoft Word。排版引擎是 NimbleOffice fork（`~/betteroffice`，GitHub `Eliseowzy/nimbleoffice`，分支 `finx/0.5`）。
+目标是 FinxWork 的 Word 编辑器在排版上全面追平 Microsoft Word。排版引擎是 NimbleOffice fork（`~/nimbleoffice`，GitHub `Eliseowzy/nimbleoffice`，分支 `finx/0.5`）。
 
 方法：以本机 Word 为标准答案，在一批语料上自动逐行对比，按影响面从大到小逐类修复，每修一类都加回归测试并重跑全量。完整计划见 `~/.claude/plans/word-badcase-composed-torvalds.md`。
 
@@ -17,7 +17,7 @@
 - FinxWork 已升级到这个版本（`114ba37`），之后又升级到 `ee14ba19`（`fcd4924`）。
 
 ### 2. 对照流水线（计划第 1 步）
-- 位置：`~/betteroffice-parity`（NimbleOffice 的 worktree，分支 `finx/word-parity`，**只在本地，未推送**）。
+- 位置：`~/nimbleoffice-parity`（NimbleOffice 的 worktree，分支 `finx/word-parity`，**只在本地，未推送**）。
 - 提交：
   - `291a1d5c`：流水线本体；
   - `7106dd94`：网格修复，见下一节；
@@ -32,7 +32,7 @@
 - 运行：
 
 ```bash
-cd ~/betteroffice-parity && python3 -I tools/word-parity/run.py /tmp/wp-out /tmp/wp-corpus /tmp/wp-corpus2
+cd ~/nimbleoffice-parity && python3 -I tools/word-parity/run.py /tmp/wp-out /tmp/wp-corpus /tmp/wp-corpus2
 ```
 
   加上 `WORD_PARITY_NO_EXPORT=1` 则只用已缓存的 PDF 做对比，不需要 Word，十几分钟跑完。
@@ -127,9 +127,8 @@ cd ~/betteroffice-parity && python3 -I tools/word-parity/run.py /tmp/wp-out /tmp
 
   交接前要么合完发版，要么逐个写清做到了哪里。
 - FinxWork PR [#17](https://github.com/finxwork/FinxWork/pull/17) 还没合入 `main`。
-- 没写下来的两件事：
-  - `finx/word-parity` 和 `finx/0.5` 的关系：前者是工作分支，攒够修复后快进合入后者再发版；
-  - fork 和上游 BetterOffice（openooxml/betteroffice）的同步策略。
+- 没写下来的一件事：
+  - `finx/word-parity` 和 `finx/0.5` 的关系：前者是工作分支，攒够修复后快进合入后者再发版。
 
 ### 4. 方法上的坑（务必遵守）
 - **子会话报告"测试通过"不可信**，合并前必须自己重跑：`cargo test -p nimbleoffice-ooxml-text -p nimbleoffice-docx-layout -p nimbleoffice-docx-edit --no-fail-fast`，只允许既有的 `chart_snapshots` 失败。第一轮有两个会话误报。
