@@ -1221,7 +1221,6 @@ export class MockServer {
           ...(q.note != null ? { note: q.note } : {}),
           ...(q.pinned != null ? { pinned: q.pinned } : {}),
         };
-        if (q.resume) delete summary.stopped;
         g.summary = summary;
         this.groupsChanged([summary]);
         return {};

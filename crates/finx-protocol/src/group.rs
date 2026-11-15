@@ -88,7 +88,7 @@ pub enum GroupSpeaker {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         external: bool,
     },
-    /// A line the group keeps for itself: someone joined, a fuse stopped it.
+    /// A line the group keeps for itself: someone joined, a member failed.
     System,
 }
 
@@ -152,41 +152,6 @@ fn is_zero(n: &u32) -> bool {
     *n == 0
 }
 
-/// Why a group is stopped, and how it starts again.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum GroupStopReason {
-    /// One bot said too much in a minute; only that bot waits.
-    BotRate,
-    /// The bots said enough after the owner's last message; the whole group waits.
-    OwnerSilent,
-    /// The group used its model budget for the day.
-    DailyTokens,
-    /// The group used its calls to external bots for the day.
-    DailyPeerCalls,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct GroupStop {
-    pub reason: GroupStopReason,
-    /// The bot that is waiting, for [`GroupStopReason::BotRate`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bot_id: Option<String>,
-    /// What the user has to do, in their language.
-    pub detail: String,
-}
-
-/// A group's counters for the day, and whether a fuse stopped it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct GroupFuse {
-    /// The local day the counters belong to.
-    pub day: String,
-    pub tokens: u64,
-    pub peer_calls: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stopped: Option<GroupStop>,
-}
-
 /// A group, as the list and the group page's top bar show it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GroupSummary {
@@ -207,10 +172,6 @@ pub struct GroupSummary {
     /// The bots answering now.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub typing: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stopped: Option<GroupStop>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fuse: Option<GroupFuse>,
     /// Where the group's files are on this computer, for opening them from the page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files_dir: Option<String>,
@@ -259,9 +220,6 @@ pub struct GroupUpdateParams {
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
-    /// The owner's "continue" after the daily fuse stopped the group.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resume: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

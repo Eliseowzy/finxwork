@@ -76,10 +76,6 @@ pub fn group_member_exists(id: &str) -> RpcError {
     )
 }
 
-pub fn group_stopped(why: impl Into<String>) -> RpcError {
-    RpcError::with_kind(error_code::GROUP_STOPPED, "group_stopped", why)
-}
-
 pub fn group_external_disabled() -> RpcError {
     RpcError::with_kind(
         error_code::GROUP_EXTERNAL_DISABLED,

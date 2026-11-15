@@ -10,7 +10,6 @@
   "row": {
     "empty": "Nothing said yet",
     "typing": "Thinking…",
-    "stopped": "Paused",
     "members": "{{count}} members"
   },
   "head": {
@@ -52,9 +51,6 @@
     "threadClose": "Close thread",
     "threadPlaceholder": "Reply in this thread",
     "threadEmpty": "No replies yet.",
-    "fuseTitle": "A fuse stopped the group",
-    "continue": "Continue",
-    "stopped": "This group is paused: {{detail}}",
     "memberCount": "{{count}} members",
     "files": "Files"
   },

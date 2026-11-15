@@ -37,13 +37,11 @@ export function memberName(g: GroupSummary, botId: string): string {
 
 /** The row's second line, the first that applies: a fuse, who is answering, its last message. */
 export type GroupLine =
-  | { kind: "stopped"; text: string }
   | { kind: "typing"; names: string[] }
   | { kind: "last"; from: GroupLast["from"]; text: string; images: number; files: string[] }
   | { kind: "empty" };
 
 export function groupLine(g: GroupSummary): GroupLine {
-  if (g.stopped) return { kind: "stopped", text: g.stopped.detail };
   if (g.typing?.length) return { kind: "typing", names: g.typing.map((id) => memberName(g, id)) };
   if (!g.last) return { kind: "empty" };
   const { text, files } = lastLine(g.last);

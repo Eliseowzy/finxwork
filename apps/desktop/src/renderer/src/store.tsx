@@ -354,7 +354,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
     // The groups beside the bots (bot-group-chat-dev-brief §5): the rows finx pushes, who is
     // answering now, and each new message so a row's last line is never a push behind.
     const sameTyping = (old: GroupSummary | undefined, next: GroupSummary) =>
-      next.stopped ? { ...next, typing: [] } : old?.typing?.length && !next.typing?.length ? { ...next, typing: old.typing } : next;
+      old?.typing?.length && !next.typing?.length ? { ...next, typing: old.typing } : next;
     const offGroups = rpc.on("groups/changed", (c) =>
       lists.update((l) => {
         const next = mergeGroups(l.groups, c.groups, c.deleted ?? []).map((g) => sameTyping(l.groups.find((old) => old.id === g.id), g));

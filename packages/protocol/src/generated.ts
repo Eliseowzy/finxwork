@@ -2828,15 +2828,6 @@ export type GroupFile = {
   size: number;
 };
 
-/** A group's counters for the day, and whether a fuse stopped it. */
-export type GroupFuse = {
-  /** The local day the counters belong to. */
-  day: string;
-  peer_calls: number;
-  stopped?: GroupStop | null;
-  tokens: number;
-};
-
 /** What an external member sees of the group before it joined. */
 export type GroupHistory = "none" | "summary" | "recent";
 
@@ -2963,17 +2954,6 @@ export type GroupSpeaker = {
   kind: "system";
 };
 
-export type GroupStop = {
-  /** The bot that is waiting, for [`GroupStopReason::BotRate`]. */
-  bot_id?: string | null;
-  /** What the user has to do, in their language. */
-  detail: string;
-  reason: GroupStopReason;
-};
-
-/** Why a group is stopped, and how it starts again. */
-export type GroupStopReason = "bot_rate" | "owner_silent" | "daily_tokens" | "daily_peer_calls";
-
 /** A group, as the list and the group page's top bar show it. */
 export type GroupSummary = {
   /** RFC 3339. */
@@ -2982,14 +2962,12 @@ export type GroupSummary = {
   external?: boolean;
   /** Where the group's files are on this computer, for opening them from the page. */
   files_dir?: string | null;
-  fuse?: GroupFuse | null;
   id: string;
   last?: GroupLast | null;
   members: GroupMember[];
   name: string;
   note?: string | null;
   pinned?: boolean;
-  stopped?: GroupStop | null;
   /** The bots answering now. */
   typing?: string[];
   unread?: number;
@@ -3020,8 +2998,6 @@ export type GroupUpdateParams = {
   name?: string | null;
   note?: string | null;
   pinned?: boolean | null;
-  /** The owner's "continue" after the daily fuse stopped the group. */
-  resume?: boolean | null;
 };
 
 export type GroupsChangedParams = {
@@ -5552,7 +5528,6 @@ export const RPC_ERROR_KINDS = {
   "-32054": "bot_not_supported",
   "-32055": "group_not_found",
   "-32056": "group_member_exists",
-  "-32057": "group_stopped",
   "-32058": "group_external_disabled",
   "-32600": "invalid_request",
   "-32601": "method_not_found",

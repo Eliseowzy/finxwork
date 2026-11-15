@@ -48,7 +48,6 @@ pub(crate) struct Peers {
     inflight: Mutex<HashSet<(String, String)>>,
     failures: Mutex<BTreeMap<(String, String), u32>>,
     paused: Mutex<HashSet<(String, String)>>,
-    task_ids: Mutex<BTreeMap<(String, String), String>>,
 }
 
 impl Peers {
@@ -83,22 +82,6 @@ impl Peers {
         self.paused.lock().remove(&key);
     }
 
-    fn task_id(&self, group: &str, bot: &str) -> Option<String> {
-        self.task_ids.lock().get(&(group.to_string(), bot.to_string())).cloned()
-    }
-
-    fn set_task_id(&self, group: &str, bot: &str, task: Option<String>) {
-        let key = (group.to_string(), bot.to_string());
-        let mut tasks = self.task_ids.lock();
-        match task {
-            Some(task) => {
-                tasks.insert(key, task);
-            }
-            None => {
-                tasks.remove(&key);
-            }
-        }
-    }
 }
 
 impl Server {
@@ -110,9 +93,6 @@ impl Server {
         if let GroupSpeaker::Bot { bot_id, .. } = &message.from
             && bot_id == &member.bot_id
         {
-            return;
-        }
-        if !self.groups().delivery_allowed(group_id, &member.bot_id, &self.0.group_settings) {
             return;
         }
         let mentioned = message.mentions.iter().any(|id| id == &member.bot_id);
@@ -388,7 +368,6 @@ impl Server {
                 task_id: self.groups().peer_task(group_id, bot_id).map(|(task, _)| task),
                 waiting: false,
             };
-            let _ = self.groups().add_peer_call(group_id, &self.0.group_settings);
             let result = self.run_batch(&client, a2a, thread, group_id, bot_id, &stream).await;
             let (received, failure, context) = match result {
                 Ok(value) => value,
@@ -403,9 +382,6 @@ impl Server {
                 let _ = self.groups().set_peer_context(group_id, bot_id, &stream, &context_id);
             }
             if let Some(task) = received.task_id.clone() {
-                self.0
-                    .group_peers
-                    .set_task_id(group_id, bot_id, Some(task.clone()));
                 let _ = self.groups().set_peer_task(group_id, bot_id, Some(task), Some(stream.clone()));
             }
             let silent = received.silent();
@@ -417,11 +393,9 @@ impl Server {
                         self.groups()
                             .append_external(group_id, bot_id, asked, Vec::new(), is_thread.then(|| stream.clone()), None)
                     {
-                        let _ = self.groups().bot_said(group_id, bot_id, &self.0.group_settings);
                         self.pass_on_reply(group_id, bot_id, message);
                     }
                 } else {
-                    self.0.group_peers.set_task_id(group_id, bot_id, None);
                     let _ = self.groups().set_peer_task(group_id, bot_id, None, None);
                 }
                 let said: Vec<String> = received
@@ -440,7 +414,6 @@ impl Server {
                         is_thread.then(|| stream.clone()),
                         None,
                     ) {
-                        let _ = self.groups().bot_said(group_id, bot_id, &self.0.group_settings);
                         self.pass_on_reply(group_id, bot_id, message);
                     }
                 }
@@ -454,7 +427,6 @@ impl Server {
                         None,
                     )
                 {
-                    let _ = self.groups().bot_said(group_id, bot_id, &self.0.group_settings);
                     self.pass_on_reply(group_id, bot_id, message);
                 }
             }

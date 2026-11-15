@@ -101,13 +101,11 @@ const GroupRow = memo(function GroupRow({ g, sel, store }: { g: GroupSummary; se
   );
 });
 
-/** The group row's second line: a fuse, who is answering, else its last message, with who said it. */
+/** The group row's second line: who is answering, else its last message, with who said it. */
 function GroupRowLine({ g }: { g: GroupSummary }) {
   const { t } = useTranslation("groups");
   const line = groupLine(g);
   switch (line.kind) {
-    case "stopped":
-      return <span className="bprev"><span className="btag">{t("row.stopped")}</span> {line.text}</span>;
     case "typing":
       return <span className="bprev">{line.names.join("、")} · {t("row.typing")}</span>;
     case "empty":

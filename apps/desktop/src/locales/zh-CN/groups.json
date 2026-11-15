@@ -10,7 +10,6 @@
   "row": {
     "empty": "还没说过话",
     "typing": "正在想…",
-    "stopped": "已暂停",
     "members": "{{count}} 个成员"
   },
   "head": {
@@ -52,9 +51,6 @@
     "threadClose": "关闭话题",
     "threadPlaceholder": "在这个话题里回复",
     "threadEmpty": "还没有回复。",
-    "fuseTitle": "保险丝停了群",
-    "continue": "继续",
-    "stopped": "这个群暂停了：{{detail}}",
     "memberCount": "{{count}} 个成员",
     "files": "文件"
   },

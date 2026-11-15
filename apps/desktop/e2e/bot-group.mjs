@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Group chat on the desktop (bot-group-chat-dev-brief §5, M5): making a group of this computer's
 // bots, saying something, an @ that opens a thread, a quote that finds its message, who is
-// thinking, and a fuse's line with its continue. The app runs against the repository's
+// thinking. The app runs against the repository's
 // target/debug/finx in a temporary FINX_HOME and profile, with a scripted model on a local port;
 // the person's own finx, settings and home are not touched.
 //
@@ -71,8 +71,7 @@ const place = () => {
     path.join(home, "models.toml"),
     `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${provider.address().port}/v1"\nauth = "none"\ncompat = { thinking_format = "openai" }\n\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
   );
-  // A tiny daily budget so the group's fuse stops after one answer: what the page's continue resumes.
-  fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "manual"\n[models]\nnetwork = false\n[bots]\nexternal = false\n[groups]\nquiet_secs = 1\nmax_wait_secs = 2\ndaily_tokens = 1\n`);
+  fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "manual"\n[models]\nnetwork = false\n[bots]\nexternal = false\n[groups]\nquiet_secs = 1\nmax_wait_secs = 2\n`);
 };
 
 // ── the app, driven over the DevTools protocol ──
@@ -191,13 +190,6 @@ async function say(page, text) {
   await page.until("Send enabled", `!document.querySelector(".gpage button.send")?.disabled`);
   await page.run(`document.querySelector(".gpage button.send").click()`);
 }
-/** The fuse stopped the group after an answer: its continue is the owner's word to go on. */
-async function resume(page) {
-  await page.until("the fuse", `!!document.querySelector(".gfuse")`);
-  await page.run(`document.querySelector(".gfuse .btn").click()`);
-  await page.until("the fuse gone", `!document.querySelector(".gfuse")`);
-}
-
 let failed = false;
 let page = null;
 try {
@@ -225,13 +217,9 @@ try {
   await page.until("the group's page", inGroup("装修群"));
   check(await page.run(`${rows}.some((r) => r.includes("装修群"))`), "the group is in the list beside the bots");
 
-  step("an answer in the group, and the fuse's line with its continue");
+  step("an answer in the group");
   await say(page, "大家好");
   await page.until("Alice's or Bob's answer", `${answers}.some((b) => b.includes("好的，收到"))`);
-  await page.until("the fuse's line", `!!document.querySelector(".gfuse")`);
-  await page.until("the system line", `[...document.querySelectorAll(".gsys")].some((s) => s.innerText.includes("群暂停了"))`);
-  await page.shot("fuse");
-  await resume(page);
   const messages = await page.run(`document.querySelectorAll(".grow").length`);
   check(messages >= 2, `the flow has the owner's message and an answer: ${messages}`);
   await page.shot("chat");
@@ -253,7 +241,6 @@ try {
   await page.shot("thread");
 
   step("a reply in the thread panel sends into the thread");
-  await resume(page);
   await page.run(`document.querySelector(".gthread .cmp-in").focus()`);
   await page.cdp("Input.insertText", { text: "那就按这个价" });
   await page.run(`document.querySelector(".gthread button.send").click()`);
@@ -262,7 +249,6 @@ try {
   await page.until("the thread closed", `!document.querySelector(".gthread")`);
 
   step("a quote shows the words it quotes, and its click finds them");
-  await resume(page);
   const quoteButton = `[...document.querySelectorAll(".grow.other")].at(-1).querySelectorAll(".gact")[1]`;
   await press(page, quoteButton);
   await page.until("the quote over the composer", `!!document.querySelector(".gquote-draft")`);
@@ -276,11 +262,9 @@ try {
   await page.shot("quote");
 
   step("who is thinking, before the answer comes");
-  await resume(page);
   await say(page, "@Alice 慢慢想");
   await page.until("the thinking line", `!!document.querySelector(".gtyping") && document.querySelector(".gtyping").innerText.includes("Alice")`);
   await page.shot("typing");
-  await page.until("the slow answer", `${answers}.some((b) => b.includes("想好了"))`);
   check(requests > 0, "the scripted model was asked");
 
   step("the group goes back to its list");

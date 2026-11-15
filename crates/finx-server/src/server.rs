@@ -220,7 +220,6 @@ impl Server {
             options.home.clone(),
             bots.clone(),
             workspace.config.bots.external,
-            workspace.config.groups.clone(),
         ));
         let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());
         let server = Server(Arc::new(Inner {

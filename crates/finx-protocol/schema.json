@@ -12722,41 +12722,6 @@
       ],
       "type": "object"
     },
-    "GroupFuse": {
-      "description": "A group's counters for the day, and whether a fuse stopped it.",
-      "properties": {
-        "day": {
-          "description": "The local day the counters belong to.",
-          "type": "string"
-        },
-        "peer_calls": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "stopped": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/GroupStop"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "tokens": {
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "day",
-        "peer_calls",
-        "tokens"
-      ],
-      "type": "object"
-    },
     "GroupHistory": {
       "description": "What an external member sees of the group before it joined.",
       "oneOf": [
@@ -13215,7 +13180,7 @@
           "type": "object"
         },
         {
-          "description": "A line the group keeps for itself: someone joined, a fuse stopped it.",
+          "description": "A line the group keeps for itself: someone joined, a member failed.",
           "properties": {
             "kind": {
               "enum": [
@@ -13228,62 +13193,6 @@
             "kind"
           ],
           "type": "object"
-        }
-      ]
-    },
-    "GroupStop": {
-      "properties": {
-        "bot_id": {
-          "description": "The bot that is waiting, for [`GroupStopReason::BotRate`].",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "detail": {
-          "description": "What the user has to do, in their language.",
-          "type": "string"
-        },
-        "reason": {
-          "$ref": "#/definitions/GroupStopReason"
-        }
-      },
-      "required": [
-        "detail",
-        "reason"
-      ],
-      "type": "object"
-    },
-    "GroupStopReason": {
-      "description": "Why a group is stopped, and how it starts again.",
-      "oneOf": [
-        {
-          "description": "One bot said too much in a minute; only that bot waits.",
-          "enum": [
-            "bot_rate"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "The bots said enough after the owner's last message; the whole group waits.",
-          "enum": [
-            "owner_silent"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "The group used its model budget for the day.",
-          "enum": [
-            "daily_tokens"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "The group used its calls to external bots for the day.",
-          "enum": [
-            "daily_peer_calls"
-          ],
-          "type": "string"
         }
       ]
     },
@@ -13303,16 +13212,6 @@
           "type": [
             "string",
             "null"
-          ]
-        },
-        "fuse": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/GroupFuse"
-            },
-            {
-              "type": "null"
-            }
           ]
         },
         "id": {
@@ -13345,16 +13244,6 @@
         },
         "pinned": {
           "type": "boolean"
-        },
-        "stopped": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/GroupStop"
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "typing": {
           "description": "The bots answering now.",
@@ -13470,13 +13359,6 @@
           ]
         },
         "pinned": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "resume": {
-          "description": "The owner's \"continue\" after the daily fuse stopped the group.",
           "type": [
             "boolean",
             "null"
@@ -22929,7 +22811,6 @@
     "-32054": "bot_not_supported",
     "-32055": "group_not_found",
     "-32056": "group_member_exists",
-    "-32057": "group_stopped",
     "-32058": "group_external_disabled",
     "-32600": "invalid_request",
     "-32601": "method_not_found",

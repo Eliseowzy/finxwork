@@ -27,11 +27,6 @@ test("merges changed rows and drops deleted ones", () => {
   assert.deepEqual(mergeGroups([a, b], [b], ["a"]).map((g) => g.id), ["b"]);
 });
 
-test("a row shows a stopped group before anything else", () => {
-  const g = group({ stopped: { reason: "daily_tokens", detail: "今天的额度用完了" } });
-  assert.deepEqual(groupLine(g), { kind: "stopped", text: "今天的额度用完了" });
-});
-
 test("a row names the bots answering", () => {
   const g = group({ typing: ["b"] });
   assert.deepEqual(groupLine(g), { kind: "typing", names: ["Bob"] });

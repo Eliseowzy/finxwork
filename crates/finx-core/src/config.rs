@@ -84,10 +84,6 @@ pub struct GroupsFile {
     pub lazy_count: Option<u32>,
     pub recent_count: Option<u32>,
     pub summary_after: Option<u64>,
-    pub bot_per_minute: Option<u32>,
-    pub bot_run_without_owner: Option<u32>,
-    pub daily_tokens: Option<u64>,
-    pub daily_peer_calls: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,10 +95,6 @@ pub struct GroupsSettings {
     pub lazy_count: u32,
     pub recent_count: u32,
     pub summary_after: u64,
-    pub bot_per_minute: u32,
-    pub bot_run_without_owner: u32,
-    pub daily_tokens: u64,
-    pub daily_peer_calls: u32,
 }
 
 impl Default for GroupsSettings {
@@ -115,10 +107,6 @@ impl Default for GroupsSettings {
             lazy_count: 20,
             recent_count: 20,
             summary_after: 60,
-            bot_per_minute: 6,
-            bot_run_without_owner: 12,
-            daily_tokens: 2_000_000,
-            daily_peer_calls: 200,
         }
     }
 }
@@ -801,10 +789,6 @@ impl Config {
                     lazy_count: groups.lazy_count.unwrap_or(20),
                     recent_count: groups.recent_count.unwrap_or(20),
                     summary_after: groups.summary_after.unwrap_or(60),
-                    bot_per_minute: groups.bot_per_minute.unwrap_or(6),
-                    bot_run_without_owner: groups.bot_run_without_owner.unwrap_or(12),
-                    daily_tokens: groups.daily_tokens.unwrap_or(2_000_000),
-                    daily_peer_calls: groups.daily_peer_calls.unwrap_or(200),
                 })
                 .unwrap_or_default(),
             mcp_servers: file

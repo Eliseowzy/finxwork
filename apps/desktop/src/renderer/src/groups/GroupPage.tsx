@@ -158,7 +158,6 @@ export function GroupPage({ group }: { group: GroupSummary }) {
   const openThread = (root: string) => st.set({ groupThread: root, groupPanel: false });
   const openSettings = () => st.set({ groupPanel: !settings, groupThread: null });
   const typing = group.typing ?? [];
-  const stopped = group.stopped;
   return (
     <div className={`spage group gpage ${settings || thread ? "bgopen" : ""}`}>
       <div className="scol">
@@ -201,7 +200,7 @@ export function GroupPage({ group }: { group: GroupSummary }) {
               </div>
             </div>
             <Composer
-              form={{ mode: "bot", above: <Above group={group} typing={typing} stopped={stopped} reply={reply} onReplyClose={() => setReply(null)} draft={draft} onDraft={setDraft} onContinue={() => void st.run(() => st.call("groups/update", { id: group.id, resume: true }))} approval={approvals[0]} answering={answering} onAnswer={answer} />, onHeight: setDock }}
+              form={{ mode: "bot", above: <Above group={group} typing={typing} reply={reply} onReplyClose={() => setReply(null)} draft={draft} onDraft={setDraft} approval={approvals[0]} answering={answering} onAnswer={answer} />, onHeight: setDock }}
               value={draft}
               onChange={setDraft}
               onSend={() => void sendMain()}
@@ -221,22 +220,19 @@ export function GroupPage({ group }: { group: GroupSummary }) {
 }
 
 /** What sits above the composer: who is thinking, a fuse's line and its continue, a quote, and the @ menu. */
-function Above({ group, typing, stopped, reply, onReplyClose, draft, onDraft, onContinue, approval, answering, onAnswer }: {
+function Above({ group, typing, reply, onReplyClose, draft, onDraft, approval, answering, onAnswer }: {
   group: GroupSummary;
   typing: string[];
-  stopped: GroupSummary["stopped"];
   reply: GroupQuote | null;
   onReplyClose: () => void;
   draft: string;
   onDraft: (text: string) => void;
-  onContinue: () => void;
   approval?: GroupApprovalParams;
   answering: string | null;
   onAnswer: (a: GroupApprovalParams, allow: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation("groups");
   const typingText = typing.length ? t("page.typing", { names: typing.map((id) => memberName(group, id)).join("、") }) : null;
-  const daily = stopped?.reason === "daily_tokens" || stopped?.reason === "daily_peer_calls";
   return (
     <>
       <MentionMenu group={group} draft={draft} onDraft={onDraft} />
@@ -244,17 +240,6 @@ function Above({ group, typing, stopped, reply, onReplyClose, draft, onDraft, on
         <div className="gtyping" role="status">
           <span className="gtyping-dots" aria-hidden="true"><i /><i /><i /></span>
           {typingText}
-        </div>
-      )}
-      {stopped && (
-        <div className="gfuse" role="status">
-          <Icon name="warn" className="gfuse-i" />
-          <span className="gfuse-t">{t("page.stopped", { detail: stopped.detail })}</span>
-          {daily && (
-            <button className="btn" onClick={onContinue}>
-              {t("page.continue")}
-            </button>
-          )}
         </div>
       )}
       {approval && <ApprovalCard a={approval} busy={answering === approval.call_id} onAnswer={onAnswer} />}

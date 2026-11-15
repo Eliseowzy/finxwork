@@ -550,7 +550,7 @@ async fn a_task_left_running_is_picked_up_after_a_restart() {
     let fake = fake(&["--group-ext"]);
     let (mut child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
     native_init(&client).await;
-    let mut wire = route(incoming);
+    let wire = route(incoming);
     let _ = client.request("groups/subscribe", Value::Null).await.expect("groups/subscribe");
 
     let bot = add_external(&client, &fake).await;

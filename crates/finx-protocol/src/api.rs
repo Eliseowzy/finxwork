@@ -381,8 +381,6 @@ pub mod error_code {
     pub const GROUP_NOT_FOUND: i64 = -32055;
     /// `groups/create`, `groups/add_member`: the bot is in the group already.
     pub const GROUP_MEMBER_EXISTS: i64 = -32056;
-    /// The group is stopped by a fuse; it takes the owner's message or `resume` to go on.
-    pub const GROUP_STOPPED: i64 = -32057;
     /// `groups/create`, `groups/add_member`: `bots.external` is off, so an external bot cannot join.
     pub const GROUP_EXTERNAL_DISABLED: i64 = -32058;
 
@@ -442,7 +440,6 @@ pub mod error_code {
         (BOT_NOT_SUPPORTED, "bot_not_supported"),
         (GROUP_NOT_FOUND, "group_not_found"),
         (GROUP_MEMBER_EXISTS, "group_member_exists"),
-        (GROUP_STOPPED, "group_stopped"),
         (GROUP_EXTERNAL_DISABLED, "group_external_disabled"),
     ];
 }
