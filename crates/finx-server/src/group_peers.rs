@@ -385,11 +385,11 @@ impl Server {
             };
             let thread = PeerThread {
                 context_id,
-                task_id: self.0.group_peers.task_id(group_id, bot_id),
+                task_id: self.groups().peer_task(group_id, bot_id).map(|(task, _)| task),
                 waiting: false,
             };
             let _ = self.groups().add_peer_call(group_id, &self.0.group_settings);
-            let result = self.run_batch(&client, a2a, thread).await;
+            let result = self.run_batch(&client, a2a, thread, group_id, bot_id, &stream).await;
             let (received, failure, context) = match result {
                 Ok(value) => value,
                 Err(error) => return Err(RpcError::internal(format!("{}: {error}", member.name))),
@@ -403,7 +403,10 @@ impl Server {
                 let _ = self.groups().set_peer_context(group_id, bot_id, &stream, &context_id);
             }
             if let Some(task) = received.task_id.clone() {
-                self.0.group_peers.set_task_id(group_id, bot_id, Some(task));
+                self.0
+                    .group_peers
+                    .set_task_id(group_id, bot_id, Some(task.clone()));
+                let _ = self.groups().set_peer_task(group_id, bot_id, Some(task), Some(stream.clone()));
             }
             let silent = received.silent();
             if silent {
@@ -419,6 +422,7 @@ impl Server {
                     }
                 } else {
                     self.0.group_peers.set_task_id(group_id, bot_id, None);
+                    let _ = self.groups().set_peer_task(group_id, bot_id, None, None);
                 }
                 let said: Vec<String> = received
                     .said
@@ -474,6 +478,9 @@ impl Server {
         client: &Client,
         message: A2aGroupMessage,
         thread: PeerThread,
+        group_id: &str,
+        bot_id: &str,
+        stream: &str,
     ) -> Result<(Received, Option<String>, Option<String>), String> {
         let mut events = client
             .send_group(message, thread, CancellationToken::new())
@@ -488,7 +495,10 @@ impl Server {
                     PeerEvent::Thread(thread) => {
                         context = thread.context_id.clone();
                         if let Some(task) = thread.task_id.clone() {
-                            received.task_id = Some(task);
+                            received.task_id = Some(task.clone());
+                            // Save it as soon as the other side gives it: a dropped stream must
+                            // still be resumable after a restart (contacts §5.5).
+                            let _ = self.groups().set_peer_task(group_id, bot_id, Some(task), Some(stream.to_string()));
                         }
                     }
                     PeerEvent::Said { text } => received.said.push(text),
@@ -864,4 +874,90 @@ impl Received {
 
 fn is_pass(text: &str) -> bool {
     text.trim().eq_ignore_ascii_case("PASS")
+}
+
+
+impl Server {
+    /// After a restart, picks up every external member's task that was still running
+    /// (bot-contacts-design §5.5).
+    pub(crate) async fn resume_external_tasks(&self) {
+        for (group, bot, task, stream) in self.groups().external_tasks() {
+            let server = self.handle();
+            tokio::spawn(async move {
+                let _ = server.resume_external_task(&group, &bot, &task, stream.as_deref()).await;
+            });
+        }
+    }
+
+    async fn resume_external_task(&self, group_id: &str, bot_id: &str, task_id: &str, stream: Option<&str>) -> Result<(), RpcError> {
+        let client = self.external_client(bot_id)?;
+        let thread = PeerThread {
+            context_id: None,
+            task_id: Some(task_id.to_string()),
+            waiting: false,
+        };
+        let mut events = client
+            .resume(thread, CancellationToken::new())
+            .await
+            .map_err(|error| RpcError::internal(error.to_string()))?;
+        let mut received = Received::default();
+        let mut failure = None;
+        while let Some(event) = events.next().await {
+            match event {
+                PeerEvent::Thread(thread) => {
+                    if let Some(task) = thread.task_id {
+                        received.task_id = Some(task);
+                    }
+                }
+                PeerEvent::Said { text } => received.said.push(text),
+                PeerEvent::File { name, media_type, bytes } => {
+                    if bytes.len() <= FILE_MAX {
+                        received.files.push(PeerIncomingFile { name, media_type, bytes });
+                    }
+                }
+                PeerEvent::Asked { text } => received.asked = Some(text),
+                PeerEvent::Done => break,
+                PeerEvent::Failed(error) => {
+                    failure = Some(error);
+                    break;
+                }
+                PeerEvent::Working => {}
+            }
+        }
+        if let Some(error) = failure {
+            let _ = self.groups().system(group_id, format!("{bot_id} 出错了：{}", error.message));
+            let _ = self.groups().set_peer_task(group_id, bot_id, None, None);
+            return Ok(());
+        }
+        let thread_of = stream.filter(|stream| *stream != MAIN).map(str::to_string);
+        let silent = received.silent();
+        if silent {
+            let _ = self.groups().silence(group_id, bot_id, 0, 0, false, Some("no content after restart"));
+        } else {
+            if let Some(asked) = received.asked {
+                if let Ok(message) = self.groups().append_external(group_id, bot_id, asked, Vec::new(), thread_of.clone(), None) {
+                    self.pass_on_reply(group_id, bot_id, message);
+                }
+            }
+            let mut files = std::mem::take(&mut received.files);
+            for (index, text) in received.said.into_iter().enumerate() {
+                if text.trim().is_empty() || is_pass(&text) {
+                    continue;
+                }
+                let files = if index == 0 { std::mem::take(&mut files) } else { Vec::new() };
+                if let Ok(message) = self.groups().append_external(group_id, bot_id, text, files, thread_of.clone(), None) {
+                    self.pass_on_reply(group_id, bot_id, message);
+                }
+            }
+            if !files.is_empty()
+                && let Ok(message) = self.groups().append_external(group_id, bot_id, String::new(), files, thread_of, None)
+            {
+                self.pass_on_reply(group_id, bot_id, message);
+            }
+        }
+        let task = received.task_id;
+        let stream = stream.map(str::to_string);
+        let _ = self.groups().set_peer_task(group_id, bot_id, task, stream);
+        Ok(())
+    }
 }

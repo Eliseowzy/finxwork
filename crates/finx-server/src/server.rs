@@ -277,6 +277,10 @@ impl Server {
         spawn_memory_upkeep(&server.0);
     spawn_bot_sweep(&server.0);
         server.0.groups.set_host(Arc::downgrade(&server.0));
+        let resume = server.handle();
+        tokio::spawn(async move {
+            resume.resume_external_tasks().await;
+        });
         Ok(server)
     }
 
@@ -671,7 +675,12 @@ impl Server {
         if let Some(text) = header.bot.as_ref().and_then(|bot| self.0.routines.listing_of(&bot.id)) {
             kernel.set_routines(text);
         }
-        self.register(kernel, transcript, attach, base, header.bot.map(|bot| bot.id));
+        if let Some(group) = header.group.clone() {
+            let bot = header.bot.as_ref().map(|bot| bot.id.clone()).unwrap_or_default();
+            self.register_seat(kernel, transcript, attach, base, group.id, bot);
+        } else {
+            self.register(kernel, transcript, attach, base, header.bot.map(|bot| bot.id));
+        }
         Ok(())
     }
 

@@ -107,6 +107,12 @@ struct PeerFile {
     /// Whether the member list went to this bot; sent again after a member changes.
     #[serde(default)]
     members_sent: bool,
+    /// A task this member is still working on, across a restart (contacts §5.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task_id: Option<String>,
+    /// The stream that task belongs to: `main`, or a thread's first message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task_stream: Option<String>,
 }
 
 /// What the group needs to know about an external member (brief §4.7).
@@ -418,6 +424,7 @@ impl Registry {
             unread: group.file.summary_list.unread,
             typing: Vec::new(),
             stopped: group.file.fuse.stopped.clone(),
+            files_dir: Some(self.home.group_files_dir(&group.file.id).display().to_string()),
             fuse: Some(GroupFuse {
                 day: day(&group.file.fuse),
                 tokens: group.file.fuse.tokens,
@@ -1166,6 +1173,38 @@ impl Registry {
             .collect())
     }
 
+    /// A task this member is still working on, and the stream it belongs to.
+    pub(crate) fn peer_task(&self, id: &str, bot_id: &str) -> Option<(String, Option<String>)> {
+        self.with(|groups| {
+            let peer = groups.get(id)?.file.peers.get(bot_id)?;
+            Some((peer.task_id.clone()?, peer.task_stream.clone()))
+        })
+    }
+
+    pub(crate) fn set_peer_task(&self, id: &str, bot_id: &str, task: Option<String>, stream: Option<String>) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            let peer = g.file.peers.entry(bot_id.to_string()).or_default();
+            peer.task_id = task;
+            peer.task_stream = stream;
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    /// Every external member with a task still in flight, for the startup sweep.
+    pub(crate) fn external_tasks(&self) -> Vec<(String, String, String, Option<String>)> {
+        self.with(|groups| {
+            groups
+                .iter()
+                .flat_map(|(id, group)| {
+                    group.file.peers.iter().filter_map(move |(bot, peer)| {
+                        Some((id.clone(), bot.clone(), peer.task_id.clone()?, peer.task_stream.clone()))
+                    })
+                })
+                .collect()
+        })
+    }
+
     /// One external member's contexts and read positions.
     pub(crate) fn peer_state(&self, id: &str, bot_id: &str) -> Result<PeerState, RpcError> {
         let peer = self
@@ -1567,7 +1606,10 @@ impl Server {
     pub(crate) async fn ensure_group_seats(&self, id: &str) -> Result<(), RpcError> {
         let _one = self.0.group_seating.lock().await;
         for (bot, name, _mode) in self.groups().local_members(id)? {
-            if self.groups().member_session(id, &bot)?.is_some() {
+            if let Some(session) = self.groups().member_session(id, &bot)? {
+                if !self.is_loaded(&session) {
+                    self.load_session(&session, crate::server::ResumeOverrides::default(), None).await?;
+                }
                 continue;
             }
             let session = self.start_group_seat(id, &bot, name).await?;
@@ -1621,10 +1663,18 @@ impl Server {
             updated_at: now,
             no_project: true,
         };
-        Ok(self.register_seat(kernel, base, group_id.to_string(), bot_id.to_string()))
+        Ok(self.register_seat(kernel, Vec::new(), None, base, group_id.to_string(), bot_id.to_string()))
     }
 
-    fn register_seat(&self, kernel: finx_core::Kernel, base: SummaryBase, group_id: String, bot_id: String) -> String {
+    pub(crate) fn register_seat(
+        &self,
+        kernel: finx_core::Kernel,
+        transcript: Vec<finx_protocol::api::TranscriptItem>,
+        attach: Option<crate::hub::AttachRequest>,
+        base: SummaryBase,
+        group_id: String,
+        bot_id: String,
+    ) -> String {
         let id = kernel.session_id().to_string();
         let server = Arc::downgrade(&self.0);
         let exit_id = id.clone();
@@ -1641,7 +1691,7 @@ impl Server {
             events: parking_lot::Mutex::default(),
         };
         let mut sessions = self.0.sessions.lock();
-        let handle = crate::hub::spawn(kernel, Vec::new(), self.idle_after(), None, listing, base, on_exit);
+        let handle = crate::hub::spawn(kernel, transcript, self.idle_after(), attach, listing, base, on_exit);
         sessions.insert(id.clone(), handle);
         id
     }

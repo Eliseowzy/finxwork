@@ -348,7 +348,8 @@ function handleStreaming(req, res, id, params) {
     return res.end();
   }
 
-  switch (lower) {
+  const scenario = groupExt && lower.includes('drop') ? 'drop' : lower;
+  switch (scenario) {
     case 'ask':
       sendStatus(res, id, task, 'TASK_STATE_WORKING');
       task.awaiting = true;

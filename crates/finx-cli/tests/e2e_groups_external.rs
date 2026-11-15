@@ -453,7 +453,7 @@ async fn external_words_make_a_tainted_turn_ask_before_files_and_network() {
     )
     .await;
     let fake = fake(&["--group-ext", "--evil"]);
-    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    let (mut child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
     native_init(&client).await;
     let mut wire = route(incoming);
     let _ = client.request("groups/subscribe", Value::Null).await.expect("groups/subscribe");
@@ -482,6 +482,7 @@ async fn external_words_make_a_tainted_turn_ask_before_files_and_network() {
     assert_eq!(approval["group_id"], group);
     assert_eq!(approval["cause"]["kind"], "direct");
     assert_eq!(approval["cause"]["name"], "A2A Fake");
+    assert_eq!(approval["name"], "web_search", "the network read asks too");
     let approvals = vec![approval];
     let session = approvals[0]["session_id"].as_str().unwrap().to_string();
     client.request("session/resume", json!({ "session_id": session })).await.expect("session/resume");
@@ -500,4 +501,94 @@ async fn external_words_make_a_tainted_turn_ask_before_files_and_network() {
     let file = env.home.path().join("groups").join(&group).join("files").join("pwned.txt");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert!(!file.exists(), "the denied write makes no file");
+
+    // The same write after a restart still asks, and the card names the earlier external words.
+    client
+        .request("groups/set_member", json!({ "id": group, "bot_id": external, "mode": "mentions" }))
+        .await
+        .expect("groups/set_member");
+    child.kill().await.expect("stop the service");
+    let _ = child.wait().await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let _ = client.request("groups/subscribe", Value::Null).await.expect("subscribe again");
+    client
+        .request("groups/send", json!({ "id": group, "text": "pwned.txt" }))
+        .await
+        .expect("groups/send after restart");
+    let approval = tokio::time::timeout(WAIT, wire.approvals.recv())
+        .await
+        .expect("timed out waiting for the restarted approval")
+        .expect("closed");
+    assert_eq!(approval["cause"]["kind"], "earlier");
+    assert!(
+        approval["cause"]["text"].as_str().is_some_and(|text| text.contains("此前群里有外部消息")),
+        "{approval}"
+    );
+    let session = approval["session_id"].as_str().unwrap().to_string();
+    client.request("session/resume", json!({ "session_id": session })).await.expect("resume seat");
+    client
+        .request(
+            "session/op",
+            json!({ "session_id": session, "op": { "type": "approval", "call_id": approval["call_id"], "decision": { "type": "deny" } } }),
+        )
+        .await
+        .expect("deny after restart");
+    let _ = client.request("session/detach", json!({ "session_id": session })).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!file.exists(), "restart does not weaken the write boundary");
+}
+
+#[tokio::test]
+async fn a_task_left_running_is_picked_up_after_a_restart() {
+    let env = TestEnv::new(
+        "bypass-permissions",
+        "[bots]\nexternal = true\nallow_local = true\n[groups]\nquiet_secs = 1\nmax_wait_secs = 2",
+    )
+    .await;
+    let fake = fake(&["--group-ext"]);
+    let (mut child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let _ = client.request("groups/subscribe", Value::Null).await.expect("groups/subscribe");
+
+    let bot = add_external(&client, &fake).await;
+    let group = create_group(&client, "重启的群", json!([{ "bot_id": bot, "history": "none" }])).await;
+    client
+        .request("groups/send", json!({ "id": group, "text": "drop" }))
+        .await
+        .expect("groups/send");
+
+    // The fake drops the stream but leaves the task WORKING; wait for the task id to be saved.
+    let group_file = env.home.path().join("groups").join(&group).join("group.json");
+    let mut saved = false;
+    for _ in 0..100 {
+        let text = std::fs::read_to_string(&group_file).unwrap_or_default();
+        if text.contains("\"task_id\"") {
+            saved = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(saved, "the task id is written down");
+    let _ = wire;
+    child.kill().await.expect("stop the service");
+    let _ = child.wait().await;
+
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let _ = client.request("groups/subscribe", Value::Null).await.expect("subscribe again");
+    let mut messages = route(incoming).messages;
+    let mut found = false;
+    for _ in 0..100 {
+        let opened = client.request("groups/open", json!({ "id": group })).await.expect("groups/open");
+        if opened["messages"].as_array().into_iter().flatten().any(|m| m["from"]["kind"] == "bot" && m["from"]["external"] == true) {
+            found = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(found, "the result arrives in the group after the restart");
+    let _ = &mut messages;
 }

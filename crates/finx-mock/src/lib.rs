@@ -829,8 +829,8 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
         "group" => {
             if last_user_text(messages).contains("pwned.txt") {
                 Plan::Step(Step::calls(vec![
-                    ("write", json!({ "path": "pwned.txt", "content": "pwned" })),
                     ("web_search", json!({ "query": "example.com" })),
+                    ("write", json!({ "path": "pwned.txt", "content": "pwned" })),
                 ]))
             } else {
                 Plan::Step(Step::calls(vec![(
