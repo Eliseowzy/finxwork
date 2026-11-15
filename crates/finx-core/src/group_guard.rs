@@ -109,26 +109,6 @@ impl Hooks for GroupGuard {
                 ));
             }
         }
-        // Fuse 3: after another subject's words, every tool outside the whitelist asks the
-        // owner, even in "full access" (brief §4.8).
-        if view.tainted && !unasked(call.name.as_str(), &args, tool) {
-            let reason = view.group_cause.as_ref().map(|cause| match cause.kind {
-                finx_protocol::group::GroupCauseKind::Direct => format!(
-                    "由 {} 的话引起：{}",
-                    cause.name.as_deref().unwrap_or("外部成员"),
-                    cause.text
-                ),
-                finx_protocol::group::GroupCauseKind::Earlier => format!("此前群里有外部消息：{}", cause.text),
-            });
-            return Gate::Ask {
-                summary: format!("{}（群里的席位会话）", call.name),
-                reason,
-                proposed_rule: None,
-                proposed_mode: None,
-                proposed_grants: Vec::new(),
-                own_browser: false,
-            };
-        }
         // Tools that name a document by id: look up where that document is before letting the
         // call run.
         for key in ["doc", "docx", "deck", "sheet", "spatial"] {
@@ -150,6 +130,26 @@ impl Hooks for GroupGuard {
                     path.display()
                 ));
             }
+        }
+        // Fuse 3: after another subject's words, every tool outside the whitelist asks the
+        // owner, even in "full access" (brief §4.8).
+        if view.tainted && !unasked(call.name.as_str(), &args, tool) {
+            let reason = view.group_cause.as_ref().map(|cause| match cause.kind {
+                finx_protocol::group::GroupCauseKind::Direct => format!(
+                    "由 {} 的话引起：{}",
+                    cause.name.as_deref().unwrap_or("外部成员"),
+                    cause.text
+                ),
+                finx_protocol::group::GroupCauseKind::Earlier => format!("此前群里有外部消息：{}", cause.text),
+            });
+            return Gate::Ask {
+                summary: format!("{}（群里的席位会话）", call.name),
+                reason,
+                proposed_rule: None,
+                proposed_mode: None,
+                proposed_grants: Vec::new(),
+                own_browser: false,
+            };
         }
         Gate::Allow
     }
@@ -326,5 +326,25 @@ mod tests {
             provider_data: None,
         };
         assert!(matches!(GroupGuard.before_tool(&call, &tool, &[], &v).await, Gate::Ask { .. }));
+    }
+
+    #[tokio::test]
+    async fn a_tainted_seat_still_refuses_a_document_id_outside_the_group() {
+        let root = std::env::temp_dir().join("finx-group-guard-doc-id");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = std::env::temp_dir().join("finx-group-guard-outside.docx");
+        std::fs::write(&outside, b"x").unwrap();
+        let docs = GroupDocPaths::with_paths(&[("outside-doc", outside.as_path())]);
+        let mut v = view(&root, Some(docs));
+        v.tainted = true;
+        let tool = FakeTool::new("doc_edit", Vec::new());
+        let call = ToolCall {
+            id: "c1".into(),
+            name: "doc_edit".into(),
+            arguments: json!({ "doc": "outside-doc", "ops": [] }).into(),
+            arguments_error: None,
+            provider_data: None,
+        };
+        assert!(matches!(GroupGuard.before_tool(&call, &tool, &[], &v).await, Gate::Deny(_)));
     }
 }
