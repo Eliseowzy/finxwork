@@ -15,6 +15,10 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::io::Read;
+use std::io::Seek;
+use std::io::SeekFrom;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
@@ -384,6 +388,9 @@ impl Registry {
     }
 
     pub(crate) fn delete(&self, id: &str) -> Result<(), RpcError> {
+        // A save that started before this delete must finish before the folder moves, or it
+        // would write a fresh group.json at the old path (and the group would come back).
+        let _writing = self.writing.lock();
         let existing = self.with(|groups| groups.get(id).map(|g| g.file.id.clone())).ok_or_else(|| errors::group_not_found(id))?;
         let dir = self.home.group_dir(&existing);
         let trash = self.home.trash_groups_dir();
@@ -465,19 +472,24 @@ impl Registry {
             let main: Vec<&MessageFile> = messages.iter().filter(|m| m.thread.is_none() && m.seq < before).collect();
             let start = main.len().saturating_sub(limit);
             let shown: Vec<GroupMessage> = main[start..].iter().map(|m| self.message(m, messages)).collect();
-            let mut threads: Vec<GroupThread> = Vec::new();
-            for m in messages.iter().filter(|m| m.thread.is_none()) {
-                let mut replies: Vec<&MessageFile> = messages.iter().filter(|x| x.thread.as_deref() == Some(m.id.as_str())).collect();
-                if replies.is_empty() {
-                    continue;
+            // One pass over the replies, then only the roots on this page: opening a long
+            // group must not scan every message for every root.
+            let mut counts: HashMap<&str, (u32, Option<&MessageFile>)> = HashMap::new();
+            for m in messages.iter().filter(|m| m.thread.is_some()) {
+                let root = m.thread.as_deref().expect("filtered");
+                let entry = counts.entry(root).or_insert((0, None));
+                entry.0 += 1;
+                entry.1 = Some(m);
+            }
+            let mut threads = Vec::new();
+            for m in &shown {
+                if let Some((replies, last)) = counts.get(m.id.as_str()) {
+                    threads.push(GroupThread {
+                        root: m.id.clone(),
+                        replies: *replies,
+                        last: last.map(|x| self.last(x)),
+                    });
                 }
-                replies.sort_by_key(|x| x.seq);
-                let last = replies.last().map(|x| self.last(x));
-                threads.push(GroupThread {
-                    root: m.id.clone(),
-                    replies: replies.len() as u32,
-                    last,
-                });
             }
             Ok(GroupOpenResult { group, messages: shown, threads })
         })
@@ -509,6 +521,12 @@ impl Registry {
         if text.is_empty() && p.files.is_empty() {
             return Err(RpcError::invalid_params("there is nothing to send"));
         }
+        // The group must be there before anything is copied into its folder; the lock below
+        // checks again, in case it was deleted meanwhile.
+        self.row(&p.id)?;
+        // Copying a large file is slow: do it before taking the registry's lock, so other
+        // groups and the bots' messages are not held up by it.
+        let files = self.ingest_files(&p.id, &p.files)?;
         let message = self.with_group(&p.id, |g| {
             g.ensure_messages(&self.home)?;
             let messages = g.messages.as_ref().expect("read above");
@@ -522,7 +540,6 @@ impl Registry {
                 Some(_) => return Err(RpcError::invalid_params("that message does not start a thread")),
                 None => None,
             };
-            let files = self.ingest_files(&p.id, &p.files)?;
             let mentions = self.mentions(&text, &g.file.members);
             let seq = g.file.next_seq;
             let message = MessageFile {
@@ -544,6 +561,9 @@ impl Registry {
             let shown = self.message(&message, g.messages.as_ref().expect("read above"));
             Ok(shown)
         })?;
+        // fsync and the group file are outside the lock too: a slow disk must not stop the
+        // other groups.
+        self.sync_messages(&p.id)?;
         self.save(&p.id)?;
         self.announce(&[&p.id], Vec::new());
         self.publish(&p.id, &message);
@@ -560,13 +580,24 @@ impl Registry {
         Ok(())
     }
 
+    /// Flushes a group's appended messages after the registry lock is released.
+    fn sync_messages(&self, id: &str) -> Result<(), RpcError> {
+        let path = self.home.group_dir(id).join("messages.jsonl");
+        let mut options = std::fs::OpenOptions::new();
+        options.append(true);
+        let file = options.open(&path).map_err(io_error)?;
+        file.sync_all().map_err(io_error)
+    }
+
     fn ingest_files(&self, group_id: &str, paths: &[String]) -> Result<Vec<GroupFile>, RpcError> {
         let dir = self.home.group_files_dir(group_id);
         private_dir(&dir).map_err(io_error)?;
         let mut out = Vec::new();
         for raw in paths {
-            let path = PathBuf::from(raw);
-            let source = if path.is_absolute() { path } else { std::env::current_dir().map_err(io_error)?.join(path) };
+            let source = PathBuf::from(raw);
+            if !source.is_absolute() {
+                return Err(RpcError::invalid_params(format!("{raw}: a file must be given by its absolute path")));
+            }
             let meta = std::fs::metadata(&source).map_err(|e| RpcError::invalid_params(format!("{}: {e}", source.display())))?;
             if !meta.is_file() {
                 return Err(RpcError::invalid_params(format!("{}: not a file", source.display())));
@@ -770,8 +801,38 @@ fn append_message(home: &FinxHome, id: &str, line: &[u8]) -> Result<(), RpcError
     let mut file = options.open(&path).map_err(io_error)?;
     file.write_all(line).map_err(io_error)?;
     file.write_all(b"\n").map_err(io_error)?;
-    file.sync_data().map_err(io_error)?;
     Ok(())
+}
+
+/// The `seq` of the last line of `messages.jsonl`, if it can be read: a crash may leave
+/// `group.json`'s `next_seq` behind the messages it already has.
+fn last_seq(path: &Path) -> Option<u64> {
+    const TAIL: u64 = 4 * 1024 * 1024;
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    if len == 0 {
+        return None;
+    }
+    let start = len.saturating_sub(TAIL);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    for line in text.lines().rev().filter(|line| !line.trim().is_empty()) {
+        if let Ok(message) = serde_json::from_str::<MessageFile>(line) {
+            return Some(message.seq);
+        }
+    }
+    if start > 0 {
+        // A single message larger than the tail: read the file whole rather than miss it.
+        let text = std::fs::read_to_string(path).ok()?;
+        for line in text.lines().rev().filter(|line| !line.trim().is_empty()) {
+            if let Ok(message) = serde_json::from_str::<MessageFile>(line) {
+                return Some(message.seq);
+            }
+        }
+    }
+    None
 }
 
 fn read_messages(dir: &Path) -> Result<Vec<MessageFile>, RpcError> {
@@ -805,6 +866,11 @@ fn read_all(home: &FinxHome) -> BTreeMap<String, Group> {
             Ok(mut file) => {
                 if file.fuse.day.is_empty() {
                     file.fuse.day = today();
+                }
+                // `next_seq` is written after the message it counts. A crash in between leaves
+                // it behind, so the next message would reuse a seq: take the larger one.
+                if let Some(seq) = last_seq(&home.group_dir(&file.id).join("messages.jsonl")) {
+                    file.next_seq = file.next_seq.max(seq + 1);
                 }
                 out.insert(file.id.clone(), Group { file, messages: None });
             }
@@ -1166,6 +1232,79 @@ mod tests {
             })
             .unwrap_err();
         assert_eq!(err.code, error_code::GROUP_EXTERNAL_DISABLED);
+    }
+
+    #[test]
+    fn a_crash_before_the_group_file_does_not_reuse_a_seq() {
+        let (_dir, home, bots, groups) = setup(true);
+        bots.add_named_for_test("bot-c", "Carol");
+        let row = group(&groups);
+        let first = send(&groups, &row.id, "第一条");
+        assert_eq!(first.seq, 0);
+        // The message went to messages.jsonl, then the process died before group.json said so.
+        let path = home.group_dir(&row.id).join("group.json");
+        let mut saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        saved["next_seq"] = serde_json::json!(0);
+        std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+
+        let reloaded = Registry::new(home.clone(), bots.clone(), true);
+        let second = send(&reloaded, &row.id, "第二条");
+        assert_eq!(second.seq, 1, "the next message must not reuse seq 0");
+        reloaded
+            .add_member(GroupAddMemberParams {
+                id: row.id.clone(),
+                bot_id: "bot-c".into(),
+                mode: None,
+                history: None,
+            })
+            .unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let joined = saved["members"].as_array().unwrap().iter().find(|m| m["bot_id"] == "bot-c").unwrap()["joined_seq"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(joined, 2);
+    }
+
+    #[test]
+    fn a_file_must_be_given_by_its_absolute_path() {
+        let (_dir, _home, _bots, groups) = setup(true);
+        let row = group(&groups);
+        let err = groups
+            .send(GroupSendParams {
+                id: row.id,
+                text: "相对路径".into(),
+                files: vec!["relative.pdf".into()],
+                reply_to: None,
+                thread: None,
+            })
+            .unwrap_err();
+        assert!(err.message.contains("absolute path"), "{}", err.message);
+    }
+
+    #[test]
+    fn open_returns_only_the_threads_on_its_page() {
+        let (_dir, _home, _bots, groups) = setup(true);
+        let row = group(&groups);
+        let root = send(&groups, &row.id, "旧话题");
+        groups
+            .send(GroupSendParams {
+                id: row.id.clone(),
+                text: "旧话题的回复".into(),
+                files: Vec::new(),
+                reply_to: None,
+                thread: Some(root.id),
+            })
+            .unwrap();
+        send(&groups, &row.id, "这一页最后一条");
+        let open = groups
+            .open(GroupOpenParams {
+                id: row.id,
+                before_seq: None,
+                limit: Some(1),
+            })
+            .unwrap();
+        assert_eq!(open.messages.len(), 1);
+        assert!(open.threads.is_empty(), "the old thread is not on this page");
     }
 
     #[test]

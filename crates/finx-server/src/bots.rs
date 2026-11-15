@@ -327,7 +327,7 @@ impl Registry {
     }
 
     /// The bot's name now, for a conversation being loaded.
-pub(crate) fn name(&self, id: &str) -> Option<String> {
+    pub(crate) fn name(&self, id: &str) -> Option<String> {
         self.with(|bots| bots.get(id).map(|b| b.file.name.clone()))
     }
 
