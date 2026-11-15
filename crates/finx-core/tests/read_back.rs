@@ -127,6 +127,7 @@ async fn harness(config: Config) -> Harness {
         interactive_approvals: false,
         bot: None,
         peer: None,
+        group: None,
     };
     let kernel = Kernel::start(options, deps(&api, &work, &home)).await.unwrap();
     Harness {

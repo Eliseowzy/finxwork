@@ -105,6 +105,7 @@ async fn bot_with(mode: PermissionMode, interactive: bool, scripts: Vec<Script>,
             name: "研究员".into(),
         }),
         peer: None,
+        group: None,
     };
     let kernel = Kernel::start(options, deps(&api, &folder, &home, host)).await.unwrap();
     Harness { kernel, api, home, _dir: dir }

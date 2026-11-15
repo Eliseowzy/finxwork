@@ -129,6 +129,7 @@ impl Harness {
             interactive_approvals: true,
             bot,
             peer: None,
+            group: None,
         };
         let kernel = Kernel::start(options, deps(&api, &work, &home, hooks)).await.unwrap();
         Harness { kernel, api, lanes, work, home, _dir: dir }

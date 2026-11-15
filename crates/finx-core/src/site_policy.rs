@@ -418,6 +418,7 @@ mod tests {
             site_grants: grants,
             browser: Arc::new(policy),
             desktop: Default::default(),
+            group: None,
         }
     }
 

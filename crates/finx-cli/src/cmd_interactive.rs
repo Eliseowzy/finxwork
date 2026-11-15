@@ -345,6 +345,7 @@ async fn start_kernel(rt: &setup::Runtime, model: String, run: &RunArgs) -> anyh
         interactive_approvals: true,
         bot: None,
         peer: None,
+        group: None,
     };
     Ok(Kernel::start(options, deps).await?)
 }

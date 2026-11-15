@@ -90,6 +90,18 @@ pub fn undelivered_message(ts: Timestamp) -> UserMessage {
     }
 }
 
+/// A group seat was named with `@` and is ending without a word (bot-group-chat-dev-brief §4.5).
+pub fn group_unanswered_message(ts: Timestamp) -> UserMessage {
+    UserMessage {
+        content: vec![UserContent::Text {
+            text: "<group_reminder>\nYou were mentioned in the group: you must reply with send_to_user, even if only to \
+                   say you cannot help. To stay silent, call stay_silent.\n</group_reminder>"
+                .into(),
+        }],
+        ts,
+    }
+}
+
 /// The user message right after each of a bot's owner's messages (bot-design §3.14).
 pub fn reply_nudge_message(ts: Timestamp) -> UserMessage {
     UserMessage {
@@ -229,6 +241,7 @@ pub fn entry_message(kind: &EntryKind, ts: Timestamp) -> Option<Cow<'_, Message>
         EntryKind::Routines { text } => Some(Cow::Owned(Message::from(routines_message(text, ts)))),
         EntryKind::Unanswered { routine } => Some(Cow::Owned(Message::from(unanswered_message(*routine, ts)))),
         EntryKind::Undelivered => Some(Cow::Owned(Message::from(undelivered_message(ts)))),
+        EntryKind::GroupUnanswered => Some(Cow::Owned(Message::from(group_unanswered_message(ts)))),
         EntryKind::ReplyNudge => Some(Cow::Owned(Message::from(reply_nudge_message(ts)))),
         _ => None,
     }

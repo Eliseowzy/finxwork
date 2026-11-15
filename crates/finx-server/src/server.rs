@@ -535,6 +535,7 @@ impl Server {
             interactive_approvals: true,
             bot: None,
             peer: None,
+            group: None,
         };
         let kernel = Kernel::start(options, deps)
             .await

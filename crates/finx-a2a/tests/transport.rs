@@ -141,6 +141,7 @@ async fn harness(url: &str) -> Harness {
             name: "A2A Fake".into(),
         }),
         peer: Some(PeerRef { host }),
+        group: None,
     };
     let kernel = Kernel::start(options, deps).await.unwrap();
     Harness {

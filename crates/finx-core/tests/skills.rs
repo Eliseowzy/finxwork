@@ -101,6 +101,7 @@ async fn start(env: &Env, api: &Arc<ScriptedApi>, mode: PermissionMode, config: 
         interactive_approvals: false,
         bot: None,
         peer: None,
+        group: None,
     };
     Kernel::start(options, deps(api, env, tools)).await.unwrap()
 }

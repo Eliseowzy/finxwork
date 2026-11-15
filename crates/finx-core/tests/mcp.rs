@@ -111,6 +111,7 @@ fn start_options(work: &Path, home: &FinxHome, config: Config) -> StartOptions {
         interactive_approvals: false,
         bot: None,
         peer: None,
+        group: None,
     }
 }
 

@@ -109,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             name: card.name.clone(),
         }),
         peer: Some(PeerRef { host }),
+        group: None,
     };
     let mut kernel = Kernel::start(options, deps).await?;
     for line in &said {

@@ -227,6 +227,8 @@ fn is_user_message(entry: &Entry) -> bool {
 pub(crate) enum Internal {
     /// A sub-agent's report for this session.
     Mail(Mail),
+    /// A batch of group messages for a seat session.
+    Group(crate::group::GroupBatch),
     /// The main session's permissions changed; a sub-agent takes them over.
     Permissions {
         mode: PermissionMode,
@@ -299,6 +301,12 @@ pub(crate) struct Session {
     pub(crate) peer: Option<Arc<dyn crate::peer::Peer>>,
     /// An external bot's session: the other side, for the log and for the replies' model.
     pub(crate) peer_ref: Option<crate::peer::PeerRef>,
+    /// A bot's seat in a group: the group it belongs to.
+    pub(crate) group: Option<finx_protocol::group::GroupRef>,
+    /// A group seat has seen an external member's words; the fuse applies from then on.
+    pub(crate) group_tainted: AtomicBool,
+    /// The batch being answered named this bot with `@`.
+    pub(crate) group_mentioned: AtomicBool,
     /// A sub-agent's session.
     pub(crate) sub_agent: bool,
     /// What it can do about other agents.
@@ -401,7 +409,7 @@ impl Session {
         });
         // An external bot's session has no model to nudge: the other side answers
         // (bot-contacts-design §5.3, D-716).
-        if self.state.lock().bot.is_some() && self.peer.is_none() {
+        if self.state.lock().bot.is_some() && self.peer.is_none() && self.group.is_none() {
             self.record(EntryKind::ReplyNudge);
         }
     }
@@ -518,7 +526,7 @@ impl Session {
             let message = Message::from(mail.message);
             let info = Box::new(mail.info.clone());
             let entry = self.record(match mail.info.kind {
-                MailKind::Report | MailKind::Routine => EntryKind::Mail { mail: info, message: message.clone() },
+                MailKind::Report | MailKind::Routine | MailKind::Group => EntryKind::Mail { mail: info, message: message.clone() },
                 MailKind::Message => EntryKind::AgentMessage { mail: info, message: message.clone() },
                 // It never waits in the inbox: see `tell_user`.
                 MailKind::ToUser => EntryKind::AgentToUser { mail: info, message: message.clone() },
@@ -760,7 +768,48 @@ impl Session {
             site_grants: state.site_grants.clone(),
             browser: self.system.get().browser.policy.clone(),
             desktop: self.system.get().desktop.clone(),
+            group: self.group.clone(),
         }
+    }
+
+    /// Whether this is a bot's seat in a group.
+    pub(crate) fn is_group(&self) -> bool {
+        self.group.is_some()
+    }
+
+    /// Marks a seat as having seen another subject's words, once, in its log.
+    pub(crate) fn mark_group_external(&self) {
+        if self.group.is_some() && !self.group_tainted.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            self.record(EntryKind::GroupExternal);
+        }
+    }
+
+    pub(crate) fn set_group_mentioned(&self, mentioned: bool) {
+        self.group_mentioned.store(mentioned, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(crate) fn take_group_mentioned(&self) -> bool {
+        self.group_mentioned.swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether this turn already sent a word or said it stays silent, after the latest group
+    /// batch. A failed send counts as nothing.
+    pub(crate) fn group_answered(&self) -> bool {
+        for entry in self.state.lock().history.branch_back() {
+            match &entry.kind {
+                EntryKind::Mail { mail, .. } if mail.kind == MailKind::Group => return false,
+                EntryKind::Message {
+                    message: Message::ToolResult(result),
+                    ..
+                } if !result.is_error
+                    && matches!(result.tool_name.as_str(), crate::bot::SEND_TO_USER | crate::bot::STAY_SILENT) =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
     }
 
     /// Stops the current task and, in a main session, the work of every sub-agent.

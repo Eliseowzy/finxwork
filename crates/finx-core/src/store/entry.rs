@@ -11,6 +11,7 @@ use finx_protocol::CompletionReason;
 use finx_protocol::MailInfo;
 use finx_protocol::PermissionMode;
 use finx_protocol::ErrorInfo;
+use finx_protocol::group::GroupRef;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -48,6 +49,9 @@ pub struct SessionHeader {
     /// service, and the task loop only forwards and records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub peer: Option<PeerRef>,
+    /// A bot's seat in a group (bot-group-chat-dev-brief §4.3): the group's id and name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<GroupRef>,
 }
 
 /// The bot a session belongs to.
@@ -88,12 +92,13 @@ impl SessionHeader {
             agent: None,
             bot: None,
             peer: None,
+            group: None,
         }
     }
 
-    /// Whether session lists show the session: neither a sub-agent's nor a bot's.
+    /// Whether session lists show the session: neither a sub-agent's, a bot's nor a seat's.
     pub fn listed(&self) -> bool {
-        self.agent.is_none() && self.bot.is_none()
+        self.agent.is_none() && self.bot.is_none() && self.group.is_none()
     }
 }
 
@@ -212,6 +217,12 @@ pub enum EntryKind {
     /// A bot's session: its task was about to end with what came of its work unsent, and the
     /// model is reminded of it, once per task (bot-turn-design §6).
     Undelivered,
+    /// A group seat: another subject's words have reached it. The fuse applies from then on
+    /// (bot-group-chat-dev-brief §4.8); this entry keeps that true across restarts and
+    /// compaction.
+    GroupExternal,
+    /// A group seat: the batch named this bot with `@`, and the turn is ending without a word.
+    GroupUnanswered,
     /// A bot's session: follows each message from its owner. Models often answer in plain text
     /// whatever the system prompt says; a word right after the message mostly settles it
     /// (bot-design §3.14).

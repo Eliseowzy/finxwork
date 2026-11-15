@@ -105,6 +105,7 @@ async fn bot_on(store: Option<Arc<dyn SessionStore>>, name: &str, mode: Permissi
             name: name.into(),
         }),
         peer: None,
+        group: None,
     };
     let mut deps = deps(&api, &folder, &home);
     if let Some(store) = store {

@@ -256,6 +256,7 @@ mod tests {
             site_grants: Vec::new(),
             browser: Arc::default(),
             desktop: Default::default(),
+            group: None,
         }
     }
 

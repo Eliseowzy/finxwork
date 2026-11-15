@@ -100,6 +100,7 @@ impl Harness {
             interactive_approvals: interactive,
             bot: None,
             peer: None,
+            group: None,
         };
         let kernel = Kernel::start(options, deps).await.unwrap();
         Harness {
@@ -1504,6 +1505,7 @@ async fn sub_agents_can_be_turned_off() {
             interactive_approvals: false,
             bot: None,
             peer: None,
+            group: None,
         },
         KernelDeps {
             llm: Arc::new(registry),

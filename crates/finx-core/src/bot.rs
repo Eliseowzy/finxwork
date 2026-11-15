@@ -38,18 +38,28 @@ pub struct BotIdentity {
 }
 
 pub const SEND_TO_USER: &str = "send_to_user";
+pub const STAY_SILENT: &str = "stay_silent";
 
 /// The tools a bot's session gets on top of a session's. Its sub-agents have a `send_to_user` of
 /// their own (agent-messaging-design §17).
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
-    vec![send_tool(), crate::routine::tool()]
+    vec![send_tool(false), crate::routine::tool()]
+}
+
+/// The tools a bot's seat in a group gets: speaking, saying nothing, and no routines.
+pub(crate) fn group_tools() -> Vec<Arc<dyn Tool>> {
+    vec![send_tool(true), stay_silent_tool()]
 }
 
 /// The tool itself: an external bot's task describes its calls with it, so that the events a
 /// local bot produces and those of the other side's reply are the same (bot-contacts-design
 /// §5.3).
-pub(crate) fn send_tool() -> Arc<dyn Tool> {
-    Arc::new(Typed::new(SendToUser))
+pub(crate) fn send_tool(group: bool) -> Arc<dyn Tool> {
+    Arc::new(Typed::new(SendToUser { group }))
+}
+
+pub(crate) fn stay_silent_tool() -> Arc<dyn Tool> {
+    Arc::new(Typed::new(StaySilent))
 }
 
 /// What a bot about to end its turn still owes its owner.
@@ -102,6 +112,8 @@ pub(crate) fn owed(history: &History) -> Owed {
                 message: Message::Assistant(reply),
                 ..
             } if last_reply.is_none() => last_reply = Some(reply),
+            // A group batch is not a reply the owner waits for, and a seat has no reminders.
+            EntryKind::Mail { mail, .. } if mail.kind == MailKind::Group => {}
             EntryKind::Mail { mail, .. } if mail.kind == MailKind::Routine => {
                 if !last_reply.is_some_and(|reply| crate::routine::quiet_note(&reply.text()).is_some()) {
                     return Owed::RoutineReport;
@@ -195,7 +207,22 @@ pub(crate) struct SendArgs {
     /// True on your last message, once your work for now is done: the turn ends right after it. Leave it out for a first reply or an update while you keep working.
     #[serde(default)]
     end_turn: bool,
+    /// In a group, the message to start a topic on, or the first message of the topic to answer in.
+    #[serde(default)]
+    thread_on: Option<String>,
+    /// In a group, the message this one quotes. It stays in its own flow.
+    #[serde(default)]
+    reply_to: Option<String>,
 }
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub(crate) struct SilentArgs {
+    /// Why you are staying silent, for the debug log. The group does not see it.
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+struct StaySilent;
 
 /// Enough of a file for an image's size in its header.
 const IMAGE_HEAD: u64 = 256 * 1024;
@@ -241,7 +268,22 @@ pub(crate) async fn sent_file(env: &dyn Environment, raw: &str) -> Result<Value,
     Ok(file)
 }
 
-struct SendToUser;
+struct SendToUser {
+    /// A seat in a group: questions are not a group message, and files stay in the group's folder.
+    group: bool,
+}
+
+#[async_trait]
+impl TypedTool for StaySilent {
+    type Args = SilentArgs;
+    const NAME: &'static str = STAY_SILENT;
+    const DESCRIPTION: &'static str = "Say nothing in the group this turn. Use it when you have nothing useful to add.";
+
+    async fn run(&self, args: SilentArgs, _ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let _ = args.reason;
+        Ok(ToolOutput::text("Stayed silent.").ending_task())
+    }
+}
 
 #[async_trait]
 impl TypedTool for SendToUser {
@@ -282,6 +324,11 @@ impl TypedTool for SendToUser {
         if text.is_some_and(|text| crate::routine::quiet_note(text).is_some()) {
             return Err(invalid("NOTHING_TO_REPORT is not a message for the user: send nothing and write it as plain text"));
         }
+        if args.thread_on.as_deref().is_some_and(|id| id.trim().is_empty())
+            || args.reply_to.as_deref().is_some_and(|id| id.trim().is_empty())
+        {
+            return Err(invalid("thread_on and reply_to name a message id and cannot be empty"));
+        }
         let files = args.files.unwrap_or_default();
         let options = args.options.unwrap_or_default();
         let sent = ToolOutput::text("Sent.");
@@ -293,6 +340,9 @@ impl TypedTool for SendToUser {
         } else {
             MessageType::Text
         });
+        if self.group && kind == MessageType::Question {
+            return Err(invalid("a group does not take a question: send the words as type text"));
+        }
         if kind != MessageType::Attachment && !files.is_empty() {
             return Err(invalid("files goes with type attachment"));
         }
@@ -313,6 +363,16 @@ impl TypedTool for SendToUser {
                 let mut details = Vec::with_capacity(files.len());
                 let mut wrong = Vec::new();
                 for file in &files {
+                    if self.group {
+                        let root = crate::protected::canonical_lossy(ctx.env.cwd());
+                        let target = crate::protected::canonical_lossy(&ctx.env.resolve(&file.path));
+                        if !target.starts_with(&root) {
+                            return Err(ToolError::Failed(format!(
+                                "{}: a group's bot may only send files from the group's folder",
+                                file.path
+                            )));
+                        }
+                    }
                     match sent_file(ctx.env.as_ref(), &file.path).await {
                         Ok(file) => details.push(file),
                         Err(why) => wrong.push(why),

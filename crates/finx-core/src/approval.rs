@@ -606,6 +606,7 @@ mod tests {
             site_grants: vec![],
             browser: Arc::default(),
             desktop: Default::default(),
+            group: None,
         }
     }
 

@@ -734,6 +734,23 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
             turn += 1;
             continue;
         }
+        if session.is_group() {
+            // A seat has no reply debt and no `no_reply` failure. The one exception is a batch
+            // that mentioned it: then it owes the group a word, once (brief §4.5).
+            if session.take_group_mentioned() && !session.group_answered() && !reminded {
+                reminded = true;
+                session.record(EntryKind::GroupUnanswered);
+                turn += 1;
+                continue;
+            }
+            let reason = if message.stop_reason == StopReason::Length {
+                session.warn("the reply was cut off by the output token limit");
+                CompletionReason::OutputLimit
+            } else {
+                CompletionReason::Done
+            };
+            return TaskOutcome::Completed { last_message, reason };
+        }
         match owed {
             // Reminded and still silent, with nothing else to answer: the owner is told rather than
             // left waiting (D-321).
@@ -1201,7 +1218,7 @@ fn deliver_call(session: &Session, host: &str, args: Value, output: ToolOutput) 
         mail: None,
         skills: Vec::new(),
     });
-    let tool = crate::bot::send_tool();
+    let tool = crate::bot::send_tool(false);
     session.emit(tool_exec::started(session, &call, Some(tool.as_ref())));
     let result = tool_exec::completed(session, &call, output, None);
     session.record(EntryKind::message(Message::ToolResult(result)));

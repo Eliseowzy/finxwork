@@ -15,6 +15,7 @@ use finx_protocol::Op;
 use finx_protocol::PROTOCOL_VERSION;
 use finx_protocol::PermissionMode;
 use finx_protocol::PromptMode;
+use finx_protocol::group::GroupRef;
 use finx_protocol::api::SessionInfo;
 use finx_protocol::api::TaskOutcome;
 use finx_protocol::api::TranscriptItem;
@@ -135,6 +136,9 @@ pub struct StartOptions {
     /// An external bot's session (bot-contacts-design §5.3): its header names the other side,
     /// no model is resolved, and the task loop only forwards and records.
     pub peer: Option<PeerRef>,
+    /// A bot's seat in a group (bot-group-chat-dev-brief §4.3): its header names the group, its
+    /// prompt is the group's, and its files stay in the group's folder.
+    pub group: Option<GroupRef>,
 }
 
 pub struct ResumeOptions {
@@ -221,6 +225,8 @@ struct Launch {
     peer: Option<Arc<dyn Peer>>,
     /// An external bot's session: the other side, for the log.
     peer_ref: Option<PeerRef>,
+    /// A bot's seat in a group, when this is one.
+    group: Option<GroupRef>,
     sub_agent: bool,
     role: AgentRole,
     main: Option<Weak<Session>>,
@@ -336,6 +342,9 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         agents: launch.agents,
         peer: launch.peer,
         peer_ref: launch.peer_ref,
+        group: launch.group,
+        group_tainted: AtomicBool::new(false),
+        group_mentioned: AtomicBool::new(false),
         sub_agent: launch.sub_agent,
         agent_role: role,
         main: launch.main,
@@ -371,6 +380,11 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         restored_agents: Vec::new(),
     };
     (kernel, session)
+}
+
+/// Whether a group seat has ever been told another subject's words (brief §4.8).
+fn history_tainted(history: &History) -> bool {
+    history.in_order().any(|entry| matches!(entry.kind, EntryKind::GroupExternal))
 }
 
 /// What a main session is among agents: it has a tree of sub-agents, or they are turned off.
@@ -410,6 +424,13 @@ fn agent_tree(
     });
     deps.tools = if bot { extended(&deps.tools, "bot-agents", agents::bot_agent_tools) } else { with_agent_tools(&deps.tools) };
     Some(tree)
+}
+
+/// The tools `keep` lets through: a group seat has no shell or computer use, which cannot be
+/// confined to its folder (bot-group-chat-dev-brief §4.3).
+fn without_tools(tools: &Arc<ToolRegistry>, drop: impl Fn(&str) -> bool) -> Arc<ToolRegistry> {
+    let names: Vec<String> = tools.names().into_iter().filter(|name| !drop(name)).collect();
+    Arc::new(tools.subset(&names).expect("the names came from this registry"))
 }
 
 /// `tools` plus `spawn_agent` and `send_message`, built once for each registry: the two tools
@@ -513,6 +534,7 @@ pub(crate) fn start_child(mut child: ChildLaunch) -> Result<Kernel, KernelError>
         agents: None,
         peer: None,
         peer_ref: None,
+        group: None,
         sub_agent: true,
         role: if run { AgentRole::None } else { AgentRole::SubAgent },
         main: Some(child.main),
@@ -610,7 +632,12 @@ fn build_prompt(
     profile: &PromptProfile,
 ) -> Result<BuiltPrompt, KernelError> {
     let cwd = deps.env.cwd().to_path_buf();
-    let (files, mut warnings) = instructions::discover(home, &cwd, project_root, &config.instruction_files);
+    // A group seat takes no instruction files: the owner's global ones may hold private things,
+    // and the group's rules are the only rules (brief §4.3, §4.4).
+    let (files, mut warnings) = match profile {
+        PromptProfile::Group { .. } => (Vec::new(), Vec::new()),
+        _ => instructions::discover(home, &cwd, project_root, &config.instruction_files),
+    };
     let sources = skills::Sources::new(home, &cwd, project_root, &config.skills);
     let scan = skills::Scan::new(&sources, &tools.names(), context_window);
     for shadowed in scan.set.entries.iter().filter(|e| e.state == SkillState::Shadowed) {
@@ -639,7 +666,7 @@ fn build_prompt(
     let text = build(profile)?;
     let sub_agent = match profile {
         PromptProfile::Bot { .. } => Some(build(&PromptProfile::Session)?),
-        PromptProfile::Session => None,
+        PromptProfile::Session | PromptProfile::Group { .. } => None,
     };
     Ok(BuiltPrompt {
         text,
@@ -697,6 +724,7 @@ async fn start_peer(
         agents: None,
         peer: Some(peer),
         peer_ref: Some(peer_ref),
+        group: None,
         sub_agent: false,
         role: AgentRole::None,
         main: None,
@@ -816,6 +844,7 @@ async fn resume_peer(
         agents: None,
         peer: Some(peer),
         peer_ref: Some(peer_ref),
+        group: None,
         sub_agent: false,
         role: AgentRole::None,
         main: None,
@@ -872,15 +901,31 @@ impl Kernel {
             return start_peer(opts, deps, peer_ref).await;
         }
         let resolved = deps.llm.resolve(&opts.model)?;
+        let group = opts.group.clone();
+        if group.is_some() {
+            // A seat reads only the group's folder: no shell, and no computer use (brief §4.3).
+            deps.tools = without_tools(&deps.tools, |name| name == "bash" || name.starts_with("cua_"));
+            deps.hooks.push(Arc::new(crate::group_guard::GroupGuard));
+        }
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
-        let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), opts.bot.is_some());
+        let agents = if group.is_some() {
+            None
+        } else {
+            agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), opts.bot.is_some())
+        };
         // After the sub-agents took their tools: they have a `send_to_user` of their own.
-        if opts.bot.is_some() {
+        if group.is_some() {
+            deps.tools = extended(&deps.tools, "group", bot::group_tools);
+        } else if opts.bot.is_some() {
             deps.tools = extended(&deps.tools, "bot", bot::tools);
         }
-        let profile = match &opts.bot {
-            Some(bot) => PromptProfile::Bot { name: bot.name.clone() },
-            None => PromptProfile::Session,
+        let profile = match (&group, &opts.bot) {
+            (Some(group), Some(bot)) => PromptProfile::Group {
+                name: bot.name.clone(),
+                group: group.name.clone(),
+            },
+            (None, Some(bot)) => PromptProfile::Bot { name: bot.name.clone() },
+            _ => PromptProfile::Session,
         };
         let system = SystemCell::new(&opts.config);
         let starting = starting_tools(&deps, &system);
@@ -902,6 +947,7 @@ impl Kernel {
             id: bot.id.clone(),
             name: bot.name.clone(),
         });
+        header.group = group.clone();
         let created = deps.store.create(&header)?;
         let model_ref = resolved.model.reference();
         let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system, agents.is_some()));
@@ -924,7 +970,11 @@ impl Kernel {
         state.mcp_section = mcp_section;
         state.skills = Arc::from(skills);
         state.sub_agent_prompt = sub_agent.map(Arc::from);
-        state.prompt_template = opts.bot.as_ref().and_then(|_| crate::prompt::bot_template(&opts.config).ok());
+        state.prompt_template = opts
+            .bot
+            .as_ref()
+            .filter(|_| group.is_none())
+            .and_then(|_| crate::prompt::bot_template(&opts.config).ok());
         let bot_id = opts.bot.as_ref().map(|bot| bot.id.clone());
         state.bot = opts.bot.map(|bot| BotNames {
             given: bot.name.clone(),
@@ -945,6 +995,7 @@ impl Kernel {
             agents: agents.clone(),
             peer: None,
             peer_ref: None,
+            group: group.clone(),
             sub_agent: false,
             role: main_role(agents.is_some()),
             main: None,
@@ -956,7 +1007,9 @@ impl Kernel {
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
         }
-        link_routines(&session, routines, bot_id);
+        if group.is_none() {
+            link_routines(&session, routines, bot_id);
+        }
         session.record_system_prompt();
         session.record(EntryKind::Settings {
             model: Some(model_ref.clone()),
@@ -997,8 +1050,19 @@ impl Kernel {
         }
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         let bot_ref = loaded.header.bot.clone();
-        let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), bot_ref.is_some());
-        if bot_ref.is_some() {
+        let group_ref = loaded.header.group.clone();
+        if group_ref.is_some() {
+            deps.tools = without_tools(&deps.tools, |name| name == "bash" || name.starts_with("cua_"));
+            deps.hooks.push(Arc::new(crate::group_guard::GroupGuard));
+        }
+        let agents = if group_ref.is_some() {
+            None
+        } else {
+            agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), bot_ref.is_some())
+        };
+        if group_ref.is_some() {
+            deps.tools = extended(&deps.tools, "group", bot::group_tools);
+        } else if bot_ref.is_some() {
             deps.tools = extended(&deps.tools, "bot", bot::tools);
         }
         let system = SystemCell::new(&opts.config);
@@ -1099,13 +1163,20 @@ impl Kernel {
         warnings.extend(replaced);
         let context_window = u64::from(resolved.model.context_window);
         let project_root = opts.project_root.as_deref();
-        let profile = match &bot_ref {
-            Some(bot) => PromptProfile::Bot { name: bot.name.clone() },
-            None => PromptProfile::Session,
+        let profile = match (&group_ref, &bot_ref) {
+            (Some(group), Some(bot)) => PromptProfile::Group {
+                name: bot.name.clone(),
+                group: group.name.clone(),
+            },
+            (None, Some(bot)) => PromptProfile::Bot { name: bot.name.clone() },
+            _ => PromptProfile::Session,
         };
         // A bot's conversation never ends, so its prompt follows a new `bot.md`, at the cost of one
         // prompt-cache miss (bot-turn-design §8). Logs from before this have none on record.
-        let template = bot_ref.as_ref().and_then(|_| crate::prompt::bot_template(&opts.config).ok());
+        let template = bot_ref
+            .as_ref()
+            .filter(|_| group_ref.is_none())
+            .and_then(|_| crate::prompt::bot_template(&opts.config).ok());
         let new_template = template.is_some() && template != last_template;
         if new_template {
             system_prompt = None;
@@ -1122,7 +1193,7 @@ impl Kernel {
             }
         };
         // A bot's sub-agents are new sessions: their prompt is built as things are now.
-        if bot_ref.is_some() && sub_agent.is_none() {
+        if bot_ref.is_some() && group_ref.is_none() && sub_agent.is_none() {
             let built = build_prompt(
                 &opts.home,
                 &opts.config,
@@ -1135,6 +1206,7 @@ impl Kernel {
             sub_agent = Some(built.text);
         }
         let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system, agents.is_some()));
+        let group_tainted = group_ref.is_some() && history_tainted(&history);
         let mut state = SessionState::new(
             history,
             mcp::compose(&system_prompt, mcp_section.as_deref()).into(),
@@ -1173,6 +1245,7 @@ impl Kernel {
             agents: agents.clone(),
             peer: None,
             peer_ref: None,
+            group: group_ref.clone(),
             sub_agent: false,
             role: main_role(agents.is_some()),
             main: None,
@@ -1181,11 +1254,16 @@ impl Kernel {
             mcp: mcp.clone(),
             system,
         });
+        if group_tainted {
+            session.group_tainted.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
             tree.restore(&restored_agents);
         }
-        link_routines(&session, routines, bot_id);
+        if group_ref.is_none() {
+            link_routines(&session, routines, bot_id);
+        }
         kernel.restored_agents = restored_agents;
         // A new entry only when the prompt, the tools or the MCP part differ from what the log has.
         let current = (session.tools().names(), mcp_section);
@@ -1261,6 +1339,12 @@ impl Kernel {
 
     /// Starts a routine's run in the background (routine-design §2.1): the receiver gets how it
     /// went. It needs sub-agents to be on, as it is built like one.
+    /// Gives a seat session a batch of group messages, waking it when it is idle
+    /// (bot-group-chat-dev-brief §4.5).
+    pub fn deliver_group(&self, batch: crate::group::GroupBatch) {
+        let _ = self.internal.send(Box::new(Internal::Group(batch)));
+    }
+
     pub fn start_run(&self, run: RoutineRun) -> Result<oneshot::Receiver<RunOutcome>, String> {
         let session = self.session.upgrade().ok_or("the session is closed")?;
         let tree = session.agents.as_ref().ok_or("sub-agents are turned off in the configuration, and a routine runs as one")?;
@@ -1443,6 +1527,13 @@ async fn submission_loop(
             }
             Some(message) = internal.recv() => match *message {
                 Internal::Mail(mail) => task::on_mail(&session, mail),
+                Internal::Group(batch) => {
+                    session.set_group_mentioned(batch.mentioned);
+                    if batch.has_external() {
+                        session.mark_group_external();
+                    }
+                    task::on_mail(&session, batch.into_mail());
+                }
                 Internal::Permissions { mode, rules, grants } => session.apply_permissions(mode, rules, grants),
             },
         }

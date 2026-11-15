@@ -143,6 +143,7 @@ fn options(home: &FinxHome, folder: &Path, bot: &str, peer: bool, model: &str) -
         peer: peer.then(|| PeerRef {
             host: "peer.example".into(),
         }),
+        group: None,
     }
 }
 

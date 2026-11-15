@@ -109,6 +109,7 @@ async fn start(
         interactive_approvals: interactive,
         bot: None,
         peer: None,
+        group: None,
     };
     let mut deps = deps(&api, &work, &home);
     if !extra.is_empty() {

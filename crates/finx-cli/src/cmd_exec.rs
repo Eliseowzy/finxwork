@@ -63,6 +63,7 @@ pub async fn exec(
         interactive_approvals: interactive,
         bot: None,
         peer: None,
+        group: None,
     };
     let kernel = Kernel::start(options, deps).await?;
     drive(kernel, prompt, args, interactive, save, &rt.warnings).await

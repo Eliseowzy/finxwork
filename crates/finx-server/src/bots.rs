@@ -1145,6 +1145,7 @@ impl Server {
             interactive_approvals: true,
             bot: Some(BotIdentity { id: id.to_string(), name }),
             peer: remote.as_ref().map(|(_, peer)| peer.clone()),
+            group: None,
         };
         let kernel = finx_core::Kernel::start(options, deps).await.map_err(|e| errors::from_kernel(e, "new"))?;
         if let Some(text) = self.0.routines.listing_of(id) {

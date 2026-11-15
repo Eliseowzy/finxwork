@@ -525,6 +525,9 @@ pub enum MailKind {
     /// What a bot's sub-agent told the user with `send_to_user`: they have it already, and its
     /// round goes on (docs/kernel/agent-messaging-design.md §17).
     ToUser,
+    /// A batch of group messages, delivered to one bot's seat session
+    /// (docs/kernel/bot-group-chat-dev-brief.md §4.5).
+    Group,
 }
 
 /// Where a delivered message came from.

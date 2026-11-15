@@ -65,6 +65,8 @@ pub struct SessionView {
     pub browser: Arc<finx_browser::policy::SitePolicy>,
     /// The `[desktop]` settings: which apps are allowed or denied without asking.
     pub desktop: crate::config::DesktopSettings,
+    /// A bot's seat in a group: only the group's folder is readable and writable.
+    pub group: Option<finx_protocol::group::GroupRef>,
 }
 
 #[async_trait]

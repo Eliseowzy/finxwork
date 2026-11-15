@@ -12,6 +12,8 @@ use crate::instructions::InstructionFile;
 /// share are in `prompts/shared/` and come in where a base names them.
 const BASE_PROMPT: &str = include_str!("prompts/base.md");
 const BOT_PROMPT: &str = include_str!("prompts/bot.md");
+/// A bot's seat in a group (bot-group-chat-dev-brief §4.4).
+const GROUP_PROMPT: &str = include_str!("prompts/group.md");
 const SHARED: [(&str, &str); 2] = [
     ("{{numbers_and_data}}", include_str!("prompts/shared/numbers_and_data.md")),
     ("{{acting_with_care}}", include_str!("prompts/shared/acting_with_care.md")),
@@ -30,6 +32,8 @@ pub enum PromptProfile {
     Session,
     /// A bot's session: `prompts/bot.md`, or `bot_prompt_file`, given the bot's name.
     Bot { name: String },
+    /// A bot's seat in a group: `prompts/group.md`, given the bot's and the group's names.
+    Group { name: String, group: String },
 }
 
 pub struct PromptInputs<'a> {
@@ -73,6 +77,7 @@ fn base_section(profile: &PromptProfile, config: &Config) -> io::Result<String> 
     let (file, built_in) = match profile {
         PromptProfile::Session => (&config.system_prompt_file, BASE_PROMPT),
         PromptProfile::Bot { .. } => (&config.bot_prompt_file, BOT_PROMPT),
+        PromptProfile::Group { .. } => (&None, GROUP_PROMPT),
     };
     let text = match file {
         Some(path) => std::fs::read_to_string(path)?,
@@ -82,6 +87,7 @@ fn base_section(profile: &PromptProfile, config: &Config) -> io::Result<String> 
     Ok(match profile {
         PromptProfile::Session => text,
         PromptProfile::Bot { name } => text.replace("{{name}}", name),
+        PromptProfile::Group { name, group } => text.replace("{{name}}", name).replace("{{group}}", group),
     })
 }
 
@@ -109,7 +115,7 @@ pub fn build_system_prompt(inputs: &PromptInputs<'_>) -> io::Result<String> {
         prompt.push_str("\n\n");
         prompt.push_str(match inputs.profile {
             PromptProfile::Session => APP_PROMPT.trim_end(),
-            PromptProfile::Bot { .. } => BOT_APP_PROMPT.trim_end(),
+            PromptProfile::Bot { .. } | PromptProfile::Group { .. } => BOT_APP_PROMPT.trim_end(),
         });
     }
 
