@@ -131,3 +131,10 @@
 - 文档：brief §4.8 删保险丝 1、验收第 13 条删除并重排；design v0.2 的 D-721/§2.2/Q-414 改成“只留两根保险丝，保险丝 1 这一期不做”，Q-413/415/416/417 写结论，话题更早回复分页记“以后做”，M8 记成主人手动验证群规。
 - 验收：`cargo check --workspace --all-targets` 通过（只有 `tests/bot.rs` 既有 unused_mut 警告）；`cargo test -p finx-core --test group` 11、`cargo test -p finx-cli --test e2e_groups` 4、`--test e2e_groups_external` 6 通过；`pnpm typecheck` 通过；`pnpm test` 通过；`node apps/desktop/e2e/bot-group.mjs` 通过（“谁在想”那一步不再等一个线程里的回答，后面单独记）。
 - 自己定的事：`GroupsSettings` 里只留投递节奏和摘要/窗口参数；保险丝 1 的旧 `fuse` 存储字段直接不再读写（未发布，不管旧数据）；桌面 e2e 里“谁在想”截图后不再等慢回答，因为回答会进话题，页面不一定展开它。
+
+## 群文件内嵌预览 — `cb9a4cfc`
+
+- 群消息里的文件不再调用系统默认应用；点开后在应用里用 `GroupFilePreview` 打开：PDF 走 `doc/open` + `PdfView`，HTML 走 `openPageFile` + `BrowserPanel`（应用内浏览器，不是系统浏览器）；外部 Bot 的 HTML 同样只按群文件夹里的路径打开，不交给系统应用（通讯录方案 §8、DD-185）。
+- 预览面板带标题和关闭；PDF 没有安装 `finx install pdf` 时在应用里报错，不会退回系统应用。
+- 桌面端外部确认页、保险丝 3 确认卡的 e2e 和截图：**以后做**（功能已实现，Rust e2e 覆盖事件）。
+- 已知：这次没有补成“点群里的 PDF/HTML”的桌面 e2e；`bot-group.mjs` 仍只覆盖本地群聊。群文件预览的测试留到以后，和外部确认页一起补。
