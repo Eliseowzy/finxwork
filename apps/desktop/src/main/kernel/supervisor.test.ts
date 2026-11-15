@@ -158,6 +158,8 @@ test("a service of another version is replaced once no task runs", { skip: !buil
     app.s.start();
     await app.s.ready();
     await until(() => readRecord(app.s.current.endpoint)?.pid !== before.pid && app.s.current.state === "ready");
+    // The replacement can answer before the old process finishes shutting down.
+    await until(() => !alive(before.pid));
     assert.ok(!alive(before.pid), "the old service stopped");
     // The new one is the app's own: it stays, whatever version it reports.
     await new Promise((r) => setTimeout(r, 300));
@@ -181,6 +183,7 @@ test("a service running another build of the same version is replaced once no ta
     app.s.start();
     await app.s.ready();
     await takenOver(app.s, before.pid);
+    await until(() => !alive(before.pid));
     assert.ok(!alive(before.pid), "the old service stopped");
     const now = readRecord(app.s.current.endpoint)!;
     assert.equal(now.version, before.version);
@@ -455,6 +458,7 @@ test("after an update puts a new finx at the app's path, the service still runni
     updated.s.start();
     await updated.s.ready();
     await until(() => readRecord(updated.s.current.endpoint)?.pid !== before.pid && updated.s.current.state === "ready");
+    await until(() => !alive(before.pid));
     assert.ok(!alive(before.pid), "the old service stopped");
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(updated.s.current.replacing, false, "the new service, started from the new file, stays");
