@@ -56,6 +56,8 @@ export const scripts = {
   "subagent-approval": { covers: [`${renderer}session/Approval`, `${renderer}session/Agents`, `${core}agents/`, `${core}approval.rs`] },
   "system-browser": { foreground: "drives a real Chrome window", covers: [`${renderer}settings/BrowserSettings`, `${main}browser/system`, `${main}browser/host`, `${main}browser/extension`] },
   "word-ai": { covers: [`${renderer}docs/docx/`, `${renderer}session/DocxEditActions`, `${main}docx/`, `${core}word.rs`, `${core}approval.rs`, "crates/finx-word/", "crates/finx-docs/src/word.rs", `${server}words`, `${server}docx_host`] },
+  "word-drag": { covers: [`${renderer}docs/docx/`] },
+  "word-pages": { manual: "screenshots of a supplied DOCX for a person to judge", covers: [] },
   "word-look": { manual: "screenshots for a person to judge, not a check", covers: [] },
   "word-editor": { covers: [`${renderer}docs/docx/`, `${renderer}files/`, `${main}docx/`, "crates/finx-word/", "crates/finx-docs/src/word.rs", `${server}words`, `${server}docx_host`] },
   "word-pdf": { covers: [`${renderer}docs/docx/`, "crates/finx-word/src/render.rs", "crates/finx-docs/src/word.rs", `${server}words`, "crates/finx-core/src/word.rs"] },

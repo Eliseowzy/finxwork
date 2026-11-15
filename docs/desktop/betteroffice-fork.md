@@ -1,12 +1,14 @@
-# BetterOffice fork
+# NimbleOffice 引擎依赖
 
-PPT 与 Word 编辑器用的 `@betteroffice/pptx`、`pptx-react`、`pptx-i18n`、`docx`、`docx-react`、`docx-i18n` 不从 npm 安装，而是从我们的 fork 构建：
+当前锁定 release `v0.5.1`：源码提交 `65549f0e05e5edf91bd0edc85de94d55345d93c7`，八个前端包版本 `0.5.1-finx.g65549f0e`。原 `Eliseowzy/betteroffice` 地址及旧提交已不可用，Rust crate 与 JS 包已更名为 `nimbleoffice`。Rust 的 `betteroffice-docx`、`betteroffice-pptx` 依赖键保留为内部别名，实际 package 指向同版本 NimbleOffice。
 
-- 仓库：<https://github.com/Eliseowzy/betteroffice>，分支 `finx/0.5`（上游 `openooxml/betteroffice`）
+PPT 与 Word 编辑器用的 `@nimbleoffice/pptx`、`pptx-react`、`pptx-i18n`、`docx`、`docx-react`、`docx-i18n` 不从 npm 安装，而是从我们的 fork 构建：
+
+- 仓库：<https://github.com/Eliseowzy/nimbleoffice>，分支 `main`（上游 `openooxml/betteroffice`）
 - 桌面端：`pnpm-workspace.yaml` 的 `overrides` 把八个包指向 fork release 里的 tarball；`apps/desktop/package.json` 写同一个版本号
 - Rust 侧（`finx-slide`、`finx-word`）：根 `Cargo.toml` 用同一 fork 的 git `rev`，必须与 JS 包同一提交（Word 的保存由 JS 引擎读内核 Rust 引擎的状态，版本错位会读不懂），见 `crates/finx-slide/README.md`
 
-所有修改（JS 与 Rust/WASM）都直接提交在 fork 源码里，再整体构建发布。不要再用 `pnpm patch` 改发行包的 dist，也不要单独替换 wasm 文件：这两种做法改不了编译进 wasm 的逻辑，且每次升级都要重做。Calibri/Cambria 的替身字体（Carlito、Caladea）不再从 `@betteroffice/fonts` 取（它现在只带压缩字体包），渲染进程与打包检查都用 `crates/finx-slide/fonts` 里同一份文件。
+所有修改（JS 与 Rust/WASM）都直接提交在 fork 源码里，再整体构建发布。不要再用 `pnpm patch` 改发行包的 dist，也不要单独替换 wasm 文件：这两种做法改不了编译进 wasm 的逻辑，且每次升级都要重做。Calibri/Cambria 的替身字体（Carlito、Caladea）不再从 `@nimbleoffice/fonts` 取（它现在只带压缩字体包），渲染进程与打包检查都用 `crates/finx-slide/fonts` 里同一份文件。
 
 ## 版本号
 
@@ -18,17 +20,17 @@ PPT 与 Word 编辑器用的 `@betteroffice/pptx`、`pptx-react`、`pptx-i18n`�
 
 ## 改引擎的流程
 
-1. 在 fork 的 `finx/0.5` 上改代码并提交（Rust 改动跑对应 crate 的 `cargo test`，TS 改动跑包内测试）。
-2. 本地试：
+1. 在 fork 的 `main` 上改代码并提交（Rust 改动跑对应 crate 的 `cargo test`，TS 改动跑包内测试）。
+2. 本地试（假设 checkout 位于 `~/nimbleoffice`）：
    ```bash
-   cd ~/betteroffice && bun run pack:finx --out /tmp/bo-finx
+   cd ~/nimbleoffice && bun run pack:finx --out /tmp/bo-finx
    ```
-   把 `pnpm-workspace.yaml` 的三个 override 临时改成 `file:/tmp/bo-finx/betteroffice-<包>-<版本>.tgz`，`apps/desktop/package.json` 改成同一版本，`pnpm install`，然后 `pnpm --dir apps/desktop typecheck` 并 `pnpm dev` 实测。
-3. 发布：推送 fork 分支，以版本号为 tag 建 release，上传 `/tmp/bo-finx` 下的全部文件（八个 tgz、`manifest.json`、`SHA256SUMS`）：
+   把 `pnpm-workspace.yaml` 的八个 override 临时改成 `file:/tmp/bo-finx/nimbleoffice-<包>-<版本>.tgz`，`apps/desktop/package.json` 改成同一版本，`pnpm install`，然后 `pnpm --dir apps/desktop typecheck` 并 `pnpm dev` 实测。
+3. 发布：推送 fork 分支，以 `v<上游版本>` 为 tag 建 release（与 tarball 内的完整版本区分），上传 `/tmp/bo-finx` 下的全部文件（八个 tgz、`manifest.json`、`SHA256SUMS`）：
    ```bash
-   git -C ~/betteroffice push origin finx/0.5
-   gh release create v<版本> /tmp/bo-finx/* -R Eliseowzy/betteroffice --target <完整提交号> --title v<版本> --notes "<改了什么>"
+   git -C ~/nimbleoffice push origin main
+   gh release create v<上游版本> /tmp/bo-finx/* -R Eliseowzy/nimbleoffice --target <完整提交号> --title v<版本> --notes "<改了什么>"
    ```
-4. 把 override 改成 release 地址，`Cargo.toml` 的 rev 改成同一提交 `https://github.com/Eliseowzy/betteroffice/releases/download/v<版本>/betteroffice-<包>-<版本>.tgz`，`pnpm install` 更新锁文件（锁文件记录完整性哈希），提交。
+4. 把 override 改成 release 地址，`Cargo.toml` 的 rev 改成同一提交 `https://github.com/Eliseowzy/nimbleoffice/releases/download/v<上游版本>/nimbleoffice-<包>-<版本>.tgz`，`pnpm install` 更新锁文件（锁文件记录完整性哈希），提交。
 
-上游有新版本时，在 fork 上把上游合进 `finx/0.5`，按同样流程发布。上游语言包的 key 变化时，`apps/desktop/src/renderer/src/docs/pptx/zh-CN.ts` 要同步（类型检查会报出缺的和多的 key）。
+上游有新版本时，在 fork 上把上游合进 `main`，按同样流程发布。上游语言包的 key 变化时，`apps/desktop/src/renderer/src/docs/pptx/zh-CN.ts` 要同步（类型检查会报出缺的和多的 key）。

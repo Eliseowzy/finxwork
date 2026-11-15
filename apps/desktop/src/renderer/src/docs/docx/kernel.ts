@@ -5,7 +5,7 @@
 // A save waits for every local edit to be acknowledged, then asks the kernel to write
 // (`docx/save`): "saved" shows only once the kernel's write landed.
 import type { RpcClient } from "@finx/client";
-import type { AsyncCollaborationReplica, CollaborationReplica } from "@betteroffice/docx/collaboration";
+import type { AsyncCollaborationReplica, CollaborationReplica } from "@nimbleoffice/docx/collaboration";
 import { fromBase64, toBase64 } from "../pptx/document.ts";
 import { replicaClientId } from "../pptx/kernel.ts";
 

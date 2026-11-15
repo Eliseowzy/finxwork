@@ -1,6 +1,6 @@
-import zhCN from "@betteroffice/docx-i18n/zh-CN";
+import zhCN from "@nimbleoffice/docx-i18n/zh-CN";
 
-// What @betteroffice/docx-i18n 0.5.1's zh-CN leaves in English (the editor falls back to en for these):
+// What @nimbleoffice/docx-i18n 0.5.1's zh-CN leaves in English (the editor falls back to en for these):
 // the context menu's 批注, revision cards, the zoom and font controls, the commands' reasons.
 const missing: Record<string, string> = {
   "toolbar.break": "分隔符", "toolbar.sectionBreakNextPage": "分节符（下一页）", "toolbar.sectionBreakContinuous": "分节符（连续）", "toolbar.imageWrap.current": "当前",

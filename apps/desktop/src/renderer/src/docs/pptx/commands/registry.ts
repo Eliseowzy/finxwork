@@ -1,7 +1,7 @@
 // Every ribbon / shortcut / palette command. Add a command here, give it a label in
 // locales/*/session.json (pptx.ribbon.cmd.<id>), and place it in ribbon/layout.ts.
-import type { ParagraphAlignment, PptxEditStep, ShapeSnapshot } from "@betteroffice/pptx";
-import type { PptxCommandId, PptxZOrderMove } from "@betteroffice/pptx-react";
+import type { ParagraphAlignment, PptxEditStep, ShapeSnapshot } from "@nimbleoffice/pptx";
+import type { PptxCommandId, PptxZOrderMove } from "@nimbleoffice/pptx-react";
 import { align, bounds, changed, distribute, type AlignEdge, type DistributeAxis, type Placed } from "./geometry.ts";
 import { quickStyles } from "./quickStyles.ts";
 import { SHAPE_LIBRARY } from "./shapes.ts";

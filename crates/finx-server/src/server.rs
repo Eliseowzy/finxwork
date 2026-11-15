@@ -169,6 +169,10 @@ pub(crate) struct Inner {
 
 impl Server {
     pub fn new(options: ServerOptions) -> Result<Server, RuntimeError> {
+        Self::with_save_engine(options, finx_docs::word::SaveEngine::from_env())
+    }
+
+    pub(crate) fn with_save_engine(options: ServerOptions, save_engine: finx_docs::word::SaveEngine) -> Result<Server, RuntimeError> {
         let workspace = Workspace::open(&options.home, &options.cwd, &options.overrides)?;
         for warning in &workspace.warnings {
             tracing::warn!("{warning}");
@@ -190,7 +194,7 @@ impl Server {
             finx_docs::deck::DeckLauncher::like(&options.doc_worker),
         ));
         let docx_host = Arc::new(crate::docx_host::DocxHost::default());
-        let words = Arc::new(finx_docs::word::WordStore::new(options.home.root().join("docx"), &decks, docx_host.clone()));
+        let words = Arc::new(finx_docs::word::WordStore::new(options.home.root().join("docx"), &decks, docx_host.clone()).with_engine(save_engine));
         let docs = Arc::new(finx_docs::DocStore::new(options.home.root().join("docs"), options.doc_worker));
         let bots = Arc::new(crate::bots::Registry::new(options.home.clone()));
         let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());

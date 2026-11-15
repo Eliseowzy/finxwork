@@ -1490,7 +1490,7 @@
           "type": "integer"
         },
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "from": {
@@ -1515,7 +1515,7 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "query": {
@@ -1531,7 +1531,7 @@
     }
   },
   {
-    "description": "Look at a page of a Word document (.docx) as an image, unsaved edits included: its layout, tables, pictures and tracked changes as Word shows them. Needs the FinxWork desktop app when there are unsaved edits.",
+    "description": "Look at a page of a Word document (.docx) as an image, unsaved edits included: its layout, tables, pictures and tracked changes as Word shows them.",
     "group": "word",
     "kind": "read_only",
     "loaded": false,
@@ -1540,7 +1540,7 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "page": {
@@ -1566,7 +1566,7 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "edits": {
@@ -2025,7 +2025,7 @@
           "type": "string"
         },
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "ids": {
@@ -2046,7 +2046,7 @@
     }
   },
   {
-    "description": "Write a Word document's unsaved changes, yours and the user's, tracked changes included, to its file (or, with `path`, to another .docx). Needs the FinxWork desktop app.",
+    "description": "Write a Word document's unsaved changes, yours and the user's, tracked changes included, to its file (or, with `path`, to another .docx).",
     "group": "word",
     "kind": "mutating",
     "loaded": false,
@@ -2055,7 +2055,7 @@
       "additionalProperties": false,
       "properties": {
         "docx": {
-          "description": "Path of the document (.docx).",
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
           "type": "string"
         },
         "force": {
@@ -2067,6 +2067,48 @@
           "default": null,
           "description": "Save as another .docx instead (absolute, or relative to the working directory).",
           "type": "string"
+        }
+      },
+      "required": [
+        "docx"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Export a Word document (.docx) as a PDF, unsaved edits included, laid out as its pages are: text stays selectable, links and the table of contents stay clickable, headings become bookmarks. Optionally a page range, and with tracked changes shown (markup). Does not change the .docx.",
+    "group": "word",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "docx_export_pdf",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "docx": {
+          "description": "Path of the document (.docx), or the docx_id of one already open.",
+          "type": "string"
+        },
+        "from_page": {
+          "default": null,
+          "description": "First page to export, from 1. Defaults to the first.",
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "markup": {
+          "default": false,
+          "description": "Show tracked changes and their marks. Default false: the document as if every change were accepted, which is what people normally want to send.",
+          "type": "boolean"
+        },
+        "path": {
+          "default": null,
+          "description": "The .pdf to write (absolute, or relative to the working directory). Defaults to the document's own path with a .pdf extension.",
+          "type": "string"
+        },
+        "to_page": {
+          "default": null,
+          "description": "Last page to export. Defaults to the last.",
+          "minimum": 1.0,
+          "type": "integer"
         }
       },
       "required": [

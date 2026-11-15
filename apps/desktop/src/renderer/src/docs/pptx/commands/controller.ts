@@ -1,7 +1,7 @@
 // One editor's ribbon state: selection, document reads, host-only state (painter, clipboard,
 // panes, multi-select) and command dispatch. React subscribes through `subscribe`/`state`.
-import type { ShapeSnapshot } from "@betteroffice/pptx";
-import type { PptxAsyncEditorApi, PptxPluginContext, PptxPluginEvent } from "@betteroffice/pptx-react";
+import type { ShapeSnapshot } from "@nimbleoffice/pptx";
+import type { PptxAsyncEditorApi, PptxPluginContext, PptxPluginEvent } from "@nimbleoffice/pptx-react";
 import { detectCapabilities, type Capability } from "./capabilities.ts";
 import { createEngine, type PlacementSurface } from "./engine.ts";
 import { applyFormat, command } from "./registry.ts";

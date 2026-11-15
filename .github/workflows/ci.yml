@@ -28,6 +28,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Activate pinned Rust toolchain
+        run: rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: PDFium for the document tests
         run: |
           case "$RUNNER_OS" in
@@ -38,7 +43,7 @@ jobs:
           curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/$PDFIUM_TAG/$archive" | tar xz -C "$RUNNER_TEMP/pdfium"
           echo "FINX_PDFIUM=$RUNNER_TEMP/pdfium/lib/$lib" >> "$GITHUB_ENV"
       - name: Rust tests, every crate
-        run: cargo test --workspace --no-fail-fast
+        run: cargo test --locked --workspace --no-fail-fast
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -46,7 +51,7 @@ jobs:
           cache: pnpm
       - name: The public build compiles and the generated reference is current
         run: |
-          cargo check -p finx-cli --no-default-features
+          cargo check --locked -p finx-cli --no-default-features
           node tools/gen-protocol-docs.mjs --check
           sh tools/check-public.sh
       - name: Client and desktop tests

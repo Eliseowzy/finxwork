@@ -150,7 +150,7 @@ async fn a_workbook_is_read_edited_and_saved_over_the_protocol() {
 
 /// The agent's side (spreadsheet-design §9): the scripted model opens the model, reads the
 /// inputs, tries 9%, makes the change, traces what reads WACC and saves. In manual mode the
-/// edit and the save are asked about; the tool results say what a model needs to know.
+/// edit is asked about; approving file edits for the session covers its save too.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_agent_reads_tries_edits_and_saves_a_workbook() {
     let env = TestEnv::new("manual", "").await;
@@ -165,7 +165,7 @@ async fn an_agent_reads_tries_edits_and_saves_a_workbook() {
 
     let turn = native_prompt(&client, &mut events, &session, "[[mock:sheet:模型.xlsx]] 把 WACC 调到 9% 看看估值", true).await;
     assert_eq!(turn.end["type"], "task_completed", "{:#?}", turn.events);
-    assert_eq!(turn.approvals, 2, "doc_edit and doc_save are asked about");
+    assert_eq!(turn.approvals, 1, "approving doc_edit for the session covers doc_save too");
     let results: Vec<String> = turn
         .events
         .iter()

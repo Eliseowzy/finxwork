@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import zlib from "node:zlib";
-import { createYrsSession, type YrsAuthor } from "@betteroffice/docx/yrs";
+import { createYrsSession, type YrsAuthor } from "@nimbleoffice/docx/yrs";
 import { serializeDocx, serializeFiles } from "./serialize.ts";
 
 const source = new Uint8Array(fs.readFileSync(path.join(import.meta.dirname, "fixtures/demo.docx")));

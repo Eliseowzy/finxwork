@@ -1,9 +1,9 @@
-import type { PptxFontFace } from "@betteroffice/pptx";
+import type { PptxFontFace } from "@nimbleoffice/pptx";
 import type { FontLoadProgress } from "./PresentationLoading";
 
 // Fonts come straight from the machine through the Local Font Access API
 // (`queryLocalFonts`); no font CDN or kernel round trip. Only the metric-compatible stand-ins
-// for Calibri and Cambria (Carlito, Caladea, from @betteroffice/fonts) are bundled, so a deck
+// for Calibri and Cambria (Carlito, Caladea, from @nimbleoffice/fonts) are bundled, so a deck
 // breaks its lines as PowerPoint does on a machine without Office's fonts.
 
 /** One installed family the editor can draw. */

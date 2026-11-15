@@ -1,7 +1,7 @@
 // The command layer's contract. Ribbon buttons, shortcuts, the ⌘K palette and (later) AI actions
 // all go through `CommandSpec.run(engine, state, args)`; only `Engine` talks to BetterOffice.
-import type { PptxEditStep, PptxFindMatch, ShapeSnapshot, SlideSnapshot } from "@betteroffice/pptx";
-import type { PptxAsyncEditorAccess, PptxCommandArgs, PptxCommandId, PptxCommandState, PptxPluginSelection } from "@betteroffice/pptx-react";
+import type { PptxEditStep, PptxFindMatch, ShapeSnapshot, SlideSnapshot } from "@nimbleoffice/pptx";
+import type { PptxAsyncEditorAccess, PptxCommandArgs, PptxCommandId, PptxCommandState, PptxPluginSelection } from "@nimbleoffice/pptx-react";
 import type { Capability } from "./capabilities.ts";
 import type { Rect } from "./geometry.ts";
 import type { LayoutInfo, ThemeColors } from "./theme.ts";

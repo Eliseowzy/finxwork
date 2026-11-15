@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import type { DocxEditorRef } from "@betteroffice/docx-react";
+import type { DocxEditorRef } from "@nimbleoffice/docx-react";
 import { quoteToComposer } from "../state";
 import { dismissWordRequest, onWordRequests, reviewWordRequest, sendWordRequest, stopWordRequest, wordRequestOf, type WordAiRequest } from "./ai";
 import { aiQuestion, commentText, selectedParagraphs, wordCommentInput, wordQuote, wordRequestInput, WORD_ACTIONS, type WordAction, type WordParagraph } from "./aiPrompt";

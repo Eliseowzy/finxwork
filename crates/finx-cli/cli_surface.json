@@ -132,6 +132,8 @@
     "FINX_TEST_NO_SUCH_TOKEN": { "job": "test", "stability": "internal" },
     "FINX_TEST_SURELY_UNSET_KEY": { "job": "test", "stability": "internal" },
     "FINX_TEST_UNSIGNED_BROWSER": { "job": "test", "stability": "internal" },
+    "FINX_TEST_WORKBUDDY_MODEL": { "job": "test", "stability": "internal" },
+    "FINX_WORD_SAVE": { "job": "diagnostics", "stability": "internal" },
     "FINX_CORPUS_SEED": { "job": "test", "stability": "internal", "legacy": true },
     "FINX_DESKTOP_E2E": { "job": "test", "stability": "internal", "legacy": true },
     "FINX_DOC_CORPUS": { "job": "test", "stability": "internal", "legacy": true },

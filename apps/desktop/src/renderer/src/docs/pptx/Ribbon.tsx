@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   ToolbarButton, ToolbarCommand, ToolbarCommandButton, ToolbarDropdown, ToolbarMenuItem, ToolbarMenuSeparator,
   usePptxCommand, usePptxCommandState, usePptxCommands, useTranslation as useOfficeTranslation,
-} from "@betteroffice/pptx-react";
+} from "@nimbleoffice/pptx-react";
 import { COLLAPSED, COMPACT, FULL, narrower, type RibbonLevel } from "./ribbonFit";
 import { RibbonIcon, type RibbonIconName } from "./ribbonIcons";
 import { fontMenu, type FontEntry } from "./fontMenu";
