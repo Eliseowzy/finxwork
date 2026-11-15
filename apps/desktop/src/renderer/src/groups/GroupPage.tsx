@@ -367,10 +367,18 @@ function MessageRow({ m, group, thread, onThread, onQuote }: {
           {(m.files ?? []).length > 0 && (
             <div className="gfiles">
               {(m.files ?? []).map((f) => (
-                <span key={f.path} className="gfile" title={f.path}>
+                <button
+                  key={f.path}
+                  className="gfile"
+                  title={f.path}
+                  onClick={() => {
+                    const abs = group.files_dir ? `${group.files_dir}/${f.path.replace(/^files\//, "")}` : null;
+                    if (abs) void window.finx?.openFile(abs, { app: "system" });
+                  }}
+                >
                   <Icon name="file" className="sm" />
                   {f.name}
-                </span>
+                </button>
               ))}
             </div>
           )}

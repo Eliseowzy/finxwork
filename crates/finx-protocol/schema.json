@@ -13298,6 +13298,13 @@
           "description": "At least one member is another subject's bot.",
           "type": "boolean"
         },
+        "files_dir": {
+          "description": "Where the group's files are on this computer, for opening them from the page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "fuse": {
           "anyOf": [
             {

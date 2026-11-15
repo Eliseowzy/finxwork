@@ -2980,6 +2980,8 @@ export type GroupSummary = {
   created_at: string;
   /** At least one member is another subject's bot. */
   external?: boolean;
+  /** Where the group's files are on this computer, for opening them from the page. */
+  files_dir?: string | null;
   fuse?: GroupFuse | null;
   id: string;
   last?: GroupLast | null;

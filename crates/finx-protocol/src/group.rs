@@ -211,6 +211,9 @@ pub struct GroupSummary {
     pub stopped: Option<GroupStop>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fuse: Option<GroupFuse>,
+    /// Where the group's files are on this computer, for opening them from the page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_dir: Option<String>,
     /// RFC 3339.
     pub created_at: String,
 }
