@@ -327,7 +327,12 @@ const REMINDER: &str = "<reply_reminder>";
 
 fn entries(h: &Harness) -> Vec<finx_core::store::Entry> {
     let store = JsonlStore::new(h.home.sessions_dir());
-    store.read(&SessionRef::Id(h.kernel.session_id().to_string())).unwrap().1
+    match store.read(&SessionRef::Id(h.kernel.session_id().to_string())) {
+        Ok((_, entries)) => entries,
+        // The asynchronous writer may not have created the file at the first event.
+        Err(finx_core::store::StoreError::NotFound(_)) => Vec::new(),
+        Err(error) => panic!("reading bot log: {error}"),
+    }
 }
 
 fn reminders(h: &Harness) -> usize {
