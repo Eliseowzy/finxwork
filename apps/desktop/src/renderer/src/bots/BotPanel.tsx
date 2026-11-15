@@ -84,30 +84,45 @@ function ExternalSection({ bot }: { bot: BotSummary }) {
   const [credential, setCredential] = useState("");
   const local = /^(localhost|127\.|\[::1\]|::1)/.test(source.host);
   return (
-    <section>
-      <h3 className="fhead">{t("external.description")}</h3>
+    <section className="bs-ext">
+      {source.description && (
+        <>
+          <h3 className="fhead">{t("external.description")}</h3>
+          <div className="fgroup">
+            <p className="bs-desc">{source.description}</p>
+          </div>
+        </>
+      )}
       <div className="fgroup">
-        <p className="set-note">{source.description}</p>
-        <p className="set-note mono">
-          {source.provider ? `${source.provider} · ` : ""}
-          {source.host}
-          {local && <span className="bs-local"> · {t("external.host")}</span>}
-        </p>
-        {source.skills.length > 0 && (
-          <>
-            <div className="frow">
-              <span className="fl">{t("external.skills")}</span>
-            </div>
-            <ul className="bs-skills">
-              {source.skills.map((skill) => (
-                <li key={skill.name}>
-                  <b>{skill.name}</b> <span className="sub">{skill.description}</span>
-                </li>
-              ))}
-            </ul>
-          </>
+        {source.provider && (
+          <div className="frow">
+            <span className="fl">{t("external.provider")}</span>
+            <div className="fv">{source.provider}</div>
+          </div>
         )}
+        <div className="frow">
+          <span className="fl">{t("external.host")}</span>
+          <div className="fv">
+            <span className="mono">{source.host}</span>
+            {local && <span className="bs-tag">{t("external.local")}</span>}
+          </div>
+        </div>
       </div>
+      {source.skills.length > 0 && (
+        <>
+          <h3 className="fhead">{t("external.skills")}</h3>
+          <div className="fgroup">
+            {source.skills.map((skill) => (
+              <div className="frow bs-skill" key={skill.name}>
+                <div>
+                  <div className="bs-skill-n">{skill.name}</div>
+                  {skill.description && <div className="fdesc">{skill.description}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {source.needs_review && (
         <div className="knote" role="status">
           <p className="knote-b">{t("external.needsReview", { what: source.needs_review })}</p>
