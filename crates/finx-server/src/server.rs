@@ -276,10 +276,12 @@ impl Server {
         spawn_memory_upkeep(&server.0);
     spawn_bot_sweep(&server.0);
         server.0.groups.set_host(Arc::downgrade(&server.0));
-        let resume = server.handle();
-        tokio::spawn(async move {
-            resume.resume_external_tasks().await;
-        });
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let resume = server.handle();
+            runtime.spawn(async move {
+                resume.resume_external_tasks().await;
+            });
+        }
         Ok(server)
     }
 

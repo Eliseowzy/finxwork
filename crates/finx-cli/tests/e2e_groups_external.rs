@@ -563,15 +563,16 @@ async fn a_task_left_running_is_picked_up_after_a_restart() {
     // The fake drops the stream but leaves the task WORKING; wait for the task id to be saved.
     let group_file = env.home.path().join("groups").join(&group).join("group.json");
     let mut saved = false;
+    let mut last_text = String::new();
     for _ in 0..100 {
-        let text = std::fs::read_to_string(&group_file).unwrap_or_default();
-        if text.contains("\"task_id\"") {
+        last_text = std::fs::read_to_string(&group_file).unwrap_or_default();
+        if last_text.contains("\"task_id\"") {
             saved = true;
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(saved, "the task id is written down");
+    assert!(saved, "the task id is written down: {last_text}");
     let _ = wire;
     child.kill().await.expect("stop the service");
     let _ = child.wait().await;
