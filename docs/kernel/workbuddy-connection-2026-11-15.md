@@ -80,5 +80,5 @@ node --test crates/finx-connections/src/workbuddy/reader.test.cjs
 pnpm --filter @finx/desktop typecheck
 cargo check -p finx-connections --no-default-features
 cargo test -p finx-connections live_workbuddy_connection -- --ignored --nocapture
-FINX_WORKBUDDY_TEST_MODEL=glm-5.3-flash cargo test -p finx-connections live_workbuddy_connection -- --ignored --nocapture
+FINX_TEST_WORKBUDDY_MODEL=glm-5.3-flash cargo test -p finx-connections live_workbuddy_connection -- --ignored --nocapture
 ```

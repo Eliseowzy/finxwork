@@ -320,7 +320,7 @@ async fn live_workbuddy_connection() {
         .unwrap();
     let connection = &snapshot.connections[0];
     let provider = registry.provider(&connection.provider_id).unwrap();
-    let model_id = std::env::var("FINX_WORKBUDDY_TEST_MODEL").unwrap_or_else(|_| "auto".into());
+    let model_id = std::env::var("FINX_TEST_WORKBUDDY_MODEL").unwrap_or_else(|_| "auto".into());
     let model = registry.lookup(&provider, &model_id).unwrap();
     eprintln!(
         "WorkBuddy live: {} catalog models; testing {}",
@@ -331,13 +331,13 @@ async fn live_workbuddy_connection() {
         &registry,
         model.clone(),
         Context {
-            system: "Reply only FINX_WORKBUDDY_OK.".into(),
+            system: "Reply only WORKBUDDY_LIVE_OK.".into(),
             messages: vec![UserMessage::text("Follow the system instruction.").into()],
             tools: vec![],
         },
     )
     .await;
-    assert!(message.text().contains("FINX_WORKBUDDY_OK"));
+    assert!(message.text().contains("WORKBUDDY_LIVE_OK"));
     eprintln!("WorkBuddy live: system/text/SSE passed");
     let mut context = Context {
         system:
@@ -361,7 +361,7 @@ async fn live_workbuddy_connection() {
         call_id: call.id.clone(),
         tool_name: call.name.clone(),
         content: vec![finx_llm::UserContent::Text {
-            text: "FINX_WORKBUDDY_TOOL_OK".into(),
+            text: "WORKBUDDY_TOOL_OK".into(),
         }],
         is_error: false,
         details: None,
@@ -375,7 +375,7 @@ async fn live_workbuddy_connection() {
         answer(&registry, model, context)
             .await
             .text()
-            .contains("FINX_WORKBUDDY_TOOL_OK")
+            .contains("WORKBUDDY_TOOL_OK")
     );
     eprintln!("WorkBuddy live: tool result roundtrip passed");
     let saved = std::fs::read_to_string(home.path().join("connections/config.json")).unwrap();
