@@ -30,7 +30,8 @@ concurrency:
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # A first build includes both native tests and a fat-LTO musl binary.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install benchmark and static linker
