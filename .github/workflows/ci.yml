@@ -28,6 +28,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Activate pinned Rust toolchain
+        run: rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: PDFium for the document tests
         run: |
           case "$RUNNER_OS" in
