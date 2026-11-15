@@ -924,7 +924,7 @@ impl Registry {
             *count
         };
         if count >= settings.bot_run_without_owner {
-            self.stop_group(id, GroupStopReason::OwnerSilent, "主人在群里说句话就会继续")?;
+            self.stop_group(id, GroupStopReason::OwnerSilent, "你在群里说句话就会继续")?;
         }
         Ok(())
     }
@@ -938,7 +938,7 @@ impl Registry {
         self.save(id)?;
         let tokens = self.with(|groups| groups.get(id).map(|g| g.file.fuse.tokens).unwrap_or(0));
         if tokens >= settings.daily_tokens {
-            self.stop_group(id, GroupStopReason::DailyTokens, "今天的群额度用完了；主人可以在群设置里点继续")?;
+            self.stop_group(id, GroupStopReason::DailyTokens, "今天的群额度用完了；在提示条上点“继续”")?;
         }
         Ok(())
     }
@@ -1285,7 +1285,7 @@ impl Registry {
         self.save(id)?;
         let calls = self.with(|groups| groups.get(id).map(|g| g.file.fuse.peer_calls).unwrap_or(0));
         if calls >= settings.daily_peer_calls {
-            self.stop_group(id, GroupStopReason::DailyPeerCalls, "今天给外部 Bot 的调用额度用完了；主人可以在群设置里点继续")?;
+            self.stop_group(id, GroupStopReason::DailyPeerCalls, "今天给外部 Bot 的调用额度用完了；在提示条上点“继续”")?;
         }
         Ok(())
     }
