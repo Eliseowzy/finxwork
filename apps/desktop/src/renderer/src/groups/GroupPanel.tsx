@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GroupMember, GroupMemberMode, GroupSummary } from "@finx/protocol";
-import { Dialog } from "../components";
+import { Dialog, RenameField } from "../components";
 import { useLists, useStore } from "../store";
 import { Icon } from "../icons";
 import { Avatar } from "../bots/Avatar";
+import { MenuButton, MenuItem } from "../composer/Composer";
+import { GroupAvatar } from "./GroupAvatar";
 
-const modes: GroupMemberMode[] = ["mentions", "normal", "lazy"];
+/** How a member takes part, as one would say of a person in a group: joins in, or speaks when spoken to. "lazy" is offered only to a member already on it. */
+const modes: GroupMemberMode[] = ["normal", "mentions"];
 
 /**
  * A group's settings (bot-group-chat-dev-brief §5): its name and note, how much each member
@@ -17,15 +20,9 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
   const { t } = useTranslation("groups");
   const st = useStore();
   const bots = useLists((l) => l.bots);
-  const [name, setName] = useState(group.name);
   const [note, setNote] = useState(group.note ?? "");
   const [deleting, setDeleting] = useState(false);
   const save = (patch: { name?: string; note?: string }) => st.run(() => st.call("groups/update", { id: group.id, ...patch }));
-  const saveName = () => {
-    const n = name.trim();
-    if (!n || n === group.name) return setName(group.name);
-    void save({ name: n });
-  };
   const saveNote = () => {
     if (note.trim() === (group.note ?? "")) return;
     void save({ note });
@@ -57,6 +54,7 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
       st.set({ selection: { kind: "new" }, lastGroup: null, groupPanel: false, groupThread: null });
     });
   };
+  const externals = group.members.some((m) => m.external);
   return (
     <aside className="bgp bpn gpanel" aria-label={t("panel.title")}>
       <div className="bpn-top drag">
@@ -65,60 +63,75 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
         </button>
       </div>
       <div className="bpn-body">
+        <div className="bpn-hero gpanel-hero">
+          <GroupAvatar members={group.members} size={64} />
+          <GroupName group={group} />
+          <span className="gpanel-count">{t("panel.count", { count: group.members.length })}</span>
+        </div>
         <div className="form">
-          <section>
-            <h3 className="fhead">{t("panel.title")}</h3>
-            <div className="fgroup">
-              <div className="frow gpanel-field">
-                <span className="fl">{t("panel.name")}</span>
-                <input className="field" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), saveName())} />
-              </div>
-              <div className="frow gpanel-field">
-                <span className="fl">{t("panel.note")}</span>
-                <textarea className="field gnote" rows={3} value={note} maxLength={2000} placeholder={t("panel.notePlaceholder")} onChange={(e) => setNote(e.target.value)} onBlur={saveNote} />
-              </div>
-              <div className="frow">
-                <span className="fl">{t("panel.pinned")}</span>
-                <div className="fv">
-                  <button
-                    className={`sw ${group.pinned ? "on" : ""}`}
-                    role="switch"
-                    aria-checked={!!group.pinned}
-                    aria-label={t("panel.pinned")}
-                    onClick={() => void st.run(() => st.call("groups/update", { id: group.id, pinned: !group.pinned }))}
-                  />
-                </div>
+          <section className="fgroup">
+            <textarea
+              className="gpanel-note"
+              rows={2}
+              value={note}
+              maxLength={2000}
+              aria-label={t("panel.note")}
+              placeholder={t("panel.notePlaceholder")}
+              onChange={(e) => setNote(e.target.value)}
+              onBlur={saveNote}
+            />
+            <div className="frow">
+              <span className="fl">{t("panel.pinned")}</span>
+              <div className="fv">
+                <button
+                  className={`sw ${group.pinned ? "on" : ""}`}
+                  role="switch"
+                  aria-checked={!!group.pinned}
+                  aria-label={t("panel.pinned")}
+                  onClick={() => void st.run(() => st.call("groups/update", { id: group.id, pinned: !group.pinned }))}
+                />
               </div>
             </div>
           </section>
           <section>
-            <h3 className="fhead">{t("panel.members")}</h3>
+            <h3 className="fhead">
+              {t("panel.members")}
+              <span className="gpanel-n">{group.members.length}</span>
+            </h3>
             <div className="fgroup">
-              {group.members.length === 0 && <p className="set-note">{t("panel.empty")}</p>}
+              {group.members.length === 0 && <div className="frow gpanel-empty">{t("panel.empty")}</div>}
               {group.members.map((m) => (
                 <MemberRow key={m.bot_id} group={group} m={m} />
               ))}
+              {canAdd.length > 0 && (
+                <MenuButton
+                  className="frow gpanel-add"
+                  title={t("panel.add")}
+                  label={
+                    <>
+                      <span className="gpanel-plus" aria-hidden="true">
+                        <Icon name="plus" />
+                      </span>
+                      <span>{t("panel.addBot")}</span>
+                    </>
+                  }
+                >
+                  {(close) =>
+                    canAdd.map((b) => (
+                      <button key={b.id} className="mi gpanel-mi" role="menuitem" onClick={() => (close(), choose(b.id))}>
+                        <Avatar spec={b.avatar} name={b.name} size={22} />
+                        <span className="gpanel-mi-n">{b.name}</span>
+                        {b.source?.host && <span className="gpanel-mi-h mono">{b.source.host}</span>}
+                      </button>
+                    ))
+                  }
+                </MenuButton>
+              )}
             </div>
-            {canAdd.length > 0 && (
-              <div className="fgroup gpanel-add">
-                <label className="frow">
-                  <span className="fl">{t("panel.add")}</span>
-                  <select className="field" defaultValue="" onChange={(e) => (choose(e.target.value), (e.target.value = ""))}>
-                    <option value="" disabled>
-                      {t("panel.addPlaceholder")}
-                    </option>
-                    {canAdd.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
+            {externals && <p className="set-note">{t("panel.externalNote")}</p>}
           </section>
           <section className="fgroup">
-            <button className="frow bpn-end bpn-del" onClick={() => setDeleting(true)}>
+            <button className="frow bpn-end bpn-del gpanel-del" onClick={() => setDeleting(true)}>
               {t("panel.delete")}
             </button>
           </section>
@@ -127,15 +140,21 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
       {pending && (
         <Dialog label={t("sheet.confirmTitle")} width={440} onClose={() => setPending(null)}>
           <h3>{t("sheet.confirmTitle")}</h3>
-          <p className="gconfirm-line">{t("sheet.confirmLine", { name: bots.find((b) => b.id === pending)?.name, host: bots.find((b) => b.id === pending)?.source?.host })}</p>
-          <div className="gconfirm-h">{t("sheet.history")}</div>
-          <div className="ghist" role="radiogroup" aria-label={t("sheet.history")}>
-            {(["none", "summary", "recent"] as const).map((h) => (
-              <label key={h} className={`ghist-i ${history === h ? "on" : ""}`}>
-                <input type="radio" name="panel-history" checked={history === h} onChange={() => setHistory(h)} />
-                {t(`sheet.history_${h}`)}
-              </label>
-            ))}
+          <div className="gconfirm">
+            <div className="gconfirm-row">
+              <p className="gconfirm-line">{t("sheet.confirmLine", { name: bots.find((b) => b.id === pending)?.name, host: bots.find((b) => b.id === pending)?.source?.host })}</p>
+            </div>
+            <div className="gconfirm-row gconfirm-hist">
+              <span className="gconfirm-k">{t("sheet.history")}</span>
+              <div className="ghist" role="radiogroup" aria-label={t("sheet.history")}>
+                {(["none", "summary", "recent"] as const).map((h) => (
+                  <label key={h} className={`ghist-i ${history === h ? "on" : ""}`}>
+                    <input type="radio" name="panel-history" checked={history === h} onChange={() => setHistory(h)} />
+                    {t(`sheet.history_${h}`)}
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="sheet-foot">
             <button className="btn" onClick={() => setPending(null)}>{t("sheet.cancel")}</button>
@@ -161,52 +180,72 @@ export function GroupPanel({ group, onClose }: { group: GroupSummary; onClose: (
   );
 }
 
+/** Its name; a double click makes it a field. ↩ or leaving it keeps what is written, Esc what was there. */
+function GroupName({ group }: { group: GroupSummary }) {
+  const { t } = useTranslation("groups");
+  const st = useStore();
+  const [editing, setEditing] = useState(false);
+  if (editing) {
+    return (
+      <RenameField
+        initial={group.name}
+        className="bpn-rename"
+        maxLength={40}
+        end={(name) => {
+          setEditing(false);
+          const v = name?.trim();
+          if (v && v !== group.name) void st.run(() => st.call("groups/update", { id: group.id, name: v }));
+        }}
+      />
+    );
+  }
+  return (
+    <h3 className="bpn-name" title={t("panel.nameHint")} onDoubleClick={() => setEditing(true)}>
+      {group.name}
+    </h3>
+  );
+}
+
+/** A member: its face, where it lives, how it takes part (a menu), and on hover a way out. Whether another subject's bot needs what came before sent along is found out when it joins (the stateless probe), not asked. */
 function MemberRow({ group, m }: { group: GroupSummary; m: GroupMember }) {
   const { t } = useTranslation("groups");
   const st = useStore();
   const bots = useLists((l) => l.bots);
   const host = m.external ? bots.find((b) => b.id === m.bot_id)?.source?.host : undefined;
+  const set = (patch: { mode: GroupMemberMode }) => void st.run(() => st.call("groups/set_member", { id: group.id, bot_id: m.bot_id, ...patch }));
   return (
-    <div className="frow gpanel-member">
-      <Avatar spec={m.avatar} name={m.name} size={28} />
-      <span className="gpanel-who">
-        <span className="gpanel-name">
-          {m.name}
-          {m.external && <span className="bext" title={t("panel.external")} aria-label={t("panel.external")}><Icon name="globe" /></span>}
+    <div className="gpanel-member">
+      <div className="frow gpanel-mrow">
+        <span className="gpanel-face">
+          <Avatar spec={m.avatar} name={m.name} size={36} />
+          {m.external && (
+            <span className="bext" title={t("panel.external")} aria-label={t("panel.external")}>
+              <Icon name="globe" />
+            </span>
+          )}
         </span>
-        <span className="sub">
-          {t(`panel.modes.${m.mode}`)}
-          {host && <span className="gpanel-host mono"> · {host}</span>}
+        <span className="gpanel-who">
+          <span className="gpanel-name">{m.name}</span>
+          <span className={`gpanel-sub ${host ? "mono" : ""}`}>{host ?? t("panel.local")}</span>
         </span>
-      </span>
-      <div className="gpanel-modes" role="group" aria-label={t("panel.mode")}>
-        {modes.map((mode) => (
-          <button
-            key={mode}
-            className={`gmode ${m.mode === mode ? "on" : ""}`}
-            aria-pressed={m.mode === mode}
-            onClick={() => void st.run(() => st.call("groups/set_member", { id: group.id, bot_id: m.bot_id, mode }))}
-          >
-            {t(`panel.modes.${mode}`)}
-          </button>
-        ))}
+        <MenuButton className="mb gpanel-mode" align="right" below title={t("panel.mode")} label={<><span className="lbl">{t(`panel.modes.${m.mode}`)}</span><Icon name="chevD" /></>}>
+          {(close) => (
+            <>
+              {(m.mode === "lazy" ? [...modes, "lazy" as const] : modes).map((mode) => (
+                <MenuItem key={mode} checked={m.mode === mode} label={t(`panel.modes.${mode}`)} desc={t(`panel.modeDesc.${mode}`)} onClick={() => (close(), set({ mode }))} />
+              ))}
+            </>
+          )}
+        </MenuButton>
+        <button
+          className="gpanel-remove"
+          title={t("panel.remove")}
+          aria-label={`${t("panel.remove")} ${m.name}`}
+          onClick={() => void st.run(() => st.call("groups/remove_member", { id: group.id, bot_id: m.bot_id }))}
+        >
+          <Icon name="minus" />
+        </button>
       </div>
-      <button className="link gpanel-remove" onClick={() => void st.run(() => st.call("groups/remove_member", { id: group.id, bot_id: m.bot_id }))}>
-        {t("panel.remove")}
-      </button>
-      {m.external && (
-        <div className="gpanel-ext">
-          <p className="set-note">{t("panel.externalNote")}</p>
-          <label className="frow gpanel-stateless">
-            <span className="fl">{t("panel.stateless")}</span>
-            <input
-              type="checkbox"
-              checked={!!m.stateless}
-              onChange={(e) => void st.run(() => st.call("groups/set_member", { id: group.id, bot_id: m.bot_id, stateless: e.target.checked }))}
-            />
-          </label>
-        </div>
-      )}
     </div>
   );
 }

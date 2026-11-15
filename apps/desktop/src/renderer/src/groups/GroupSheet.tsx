@@ -23,6 +23,7 @@ export function GroupSheet() {
   const canExternal = st.capabilities?.bots_external === true;
   const local = bots.filter((b) => !b.source);
   const external = canExternal ? bots.filter((b) => b.source) : [];
+  const shown = [...local, ...external];
   const chosenExternal = external.filter((b) => members.includes(b.id));
   const close = () => st.set({ groupSheet: null });
   const toggle = (id: string) => setMembers((was) => (was.includes(id) ? was.filter((x) => x !== id) : [...was, id]));
@@ -53,11 +54,10 @@ export function GroupSheet() {
         }}
       >
         <h3>{t("sheet.title")}</h3>
-        <p className="sub">{t("sheet.sub")}</p>
-        <label className="bs-name">
-          <span>{t("sheet.name")}</span>
+        <label className="gs-sec">
+          <span className="gs-k">{t("sheet.name")}</span>
           <input
-            className="field"
+            className="field gs-name"
             value={name}
             autoFocus
             maxLength={40}
@@ -67,63 +67,60 @@ export function GroupSheet() {
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <div className="bs-k">{t("sheet.members")}</div>
-        {local.length === 0 ? (
-          <p className="sub">{t("sheet.noBots")}</p>
-        ) : (
-          <div className="gmembers" role="group" aria-label={t("sheet.members")}>
-            {local.map((b) => (
-              <label key={b.id} className={`gmember ${members.includes(b.id) ? "on" : ""}`}>
-                <input type="checkbox" checked={members.includes(b.id)} onChange={() => toggle(b.id)} />
-                <Avatar spec={b.avatar} name={b.name} size={28} />
-                <span>{b.name}</span>
-                <span className="gcheck" aria-hidden="true">
-                  {members.includes(b.id) && <Icon name="check" className="sm" />}
-                </span>
-              </label>
-            ))}
+        <div className="gs-sec">
+          <div className="gs-k">
+            <span>{t("sheet.members")}</span>
+            {members.length > 0 && <span className="gs-count">{t("sheet.chosen", { count: members.length })}</span>}
           </div>
-        )}
-        {canExternal && external.length > 0 && (
-          <>
-            <div className="bs-k">{t("sheet.externalMembers")}</div>
-            <div className="gmembers" role="group" aria-label={t("sheet.externalMembers")}>
-              {external.map((b) => (
-                <label key={b.id} className={`gmember ${members.includes(b.id) ? "on" : ""}`} data-external="true">
-                  <input type="checkbox" checked={members.includes(b.id)} onChange={() => toggle(b.id)} />
-                  <Avatar spec={b.avatar} name={b.name} size={28} />
-                  <span>{b.name}</span>
-                  <span className="gmember-host mono">{b.source?.host}</span>
-                  <span className="gcheck" aria-hidden="true">
-                    {members.includes(b.id) && <Icon name="check" className="sm" />}
-                  </span>
-                </label>
-              ))}
+          {shown.length === 0 ? (
+            <p className="gs-empty">{t("sheet.noBots")}</p>
+          ) : (
+            <div className="gmembers" role="group" aria-label={t("sheet.members")}>
+              {shown.map((b) => {
+                const on = members.includes(b.id);
+                return (
+                  <label key={b.id} className={`gmember ${on ? "on" : ""}`} data-external={b.source ? "true" : undefined}>
+                    <input type="checkbox" checked={on} onChange={() => toggle(b.id)} />
+                    <Avatar spec={b.avatar} name={b.name} size={28} />
+                    <span className="gmember-who">
+                      <span className="gmember-name">{b.name}</span>
+                      {b.source?.host && <span className="gmember-host mono">{b.source.host}</span>}
+                    </span>
+                    <span className={`gtag ${b.source ? "ext" : ""}`}>{b.source ? t("sheet.tagExternal") : t("sheet.tagLocal")}</span>
+                    <span className="gcheck" aria-hidden="true">
+                      {on && <Icon name="check" className="sm" />}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
-          </>
-        )}
-        {chosenExternal.length > 0 && (
-          <div className="gconfirm" role="note">
-            <p className="gconfirm-h">{t("sheet.confirmTitle")}</p>
-            {chosenExternal.map((b) => (
-              <p key={b.id} className="gconfirm-line">
-                {t("sheet.confirmLine", { name: b.name, host: b.source?.host })}
-              </p>
-            ))}
-            <div className="gconfirm-h">{t("sheet.history")}</div>
-            <div className="ghist" role="radiogroup" aria-label={t("sheet.history")}>
-              {(["none", "summary", "recent"] as const).map((h) => (
-                <label key={h} className={`ghist-i ${history === h ? "on" : ""}`}>
-                  <input type="radio" name="group-history" checked={history === h} onChange={() => setHistory(h)} />
-                  {t(`sheet.history_${h}`)}
-                </label>
-              ))}
+          )}
+          {chosenExternal.length > 0 && (
+            <div className="gconfirm" role="note" aria-label={t("sheet.confirmTitle")}>
+              <div className="gconfirm-row">
+                {chosenExternal.map((b) => (
+                  <p key={b.id} className="gconfirm-line">
+                    {t("sheet.confirmLine", { name: b.name, host: b.source?.host })}
+                  </p>
+                ))}
+              </div>
+              <div className="gconfirm-row gconfirm-hist">
+                <span className="gconfirm-k">{t("sheet.history")}</span>
+                <div className="ghist" role="radiogroup" aria-label={t("sheet.history")}>
+                  {(["none", "summary", "recent"] as const).map((h) => (
+                    <label key={h} className={`ghist-i ${history === h ? "on" : ""}`}>
+                      <input type="radio" name="group-history" checked={history === h} onChange={() => setHistory(h)} />
+                      {t(`sheet.history_${h}`)}
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-        {!canExternal && <p className="sub gsheet-note">{t("sheet.localOnly")}</p>}
-        <label className="bs-name">
-          <span>{t("sheet.note")}</span>
+          )}
+          {!canExternal && <p className="gs-hint">{t("sheet.localOnly")}</p>}
+        </div>
+        <label className="gs-sec">
+          <span className="gs-k">{t("sheet.note")}</span>
           <textarea className="field gnote" rows={3} value={note} placeholder={t("sheet.notePlaceholder")} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
         </label>
         <div className="sheet-foot">

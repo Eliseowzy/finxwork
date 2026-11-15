@@ -19,7 +19,6 @@
   },
   "sheet": {
     "title": "新建群",
-    "sub": "给群起个名字，拉几个 Bot 进来。",
     "name": "群名",
     "namePlaceholder": "例如：装修群",
     "note": "群说明（可空）",
@@ -30,13 +29,15 @@
     "cancel": "取消",
     "create": "建群",
     "creating": "正在建群…",
-    "externalMembers": "外部 Bot",
     "confirmTitle": "群里的消息会发到对方的服务",
     "confirmLine": "这个群里的消息会发到 {{name}}（{{host}}）的服务。",
     "history": "入群前的记录",
     "history_none": "不给看",
     "history_summary": "给看摘要",
-    "history_recent": "给看最近 20 条"
+    "history_recent": "给看最近 20 条",
+    "tagLocal": "内部",
+    "tagExternal": "外部",
+    "chosen": "已选 {{count}} 个"
   },
   "page": {
     "log": "群聊",
@@ -46,13 +47,24 @@
     "you": "你",
     "replyThread": "在话题中回复",
     "quote": "引用",
-    "threadReplies": "{{count}} 条回复 · {{time}}",
     "threadTitle": "话题",
+    "threadResize": "拖动调整话题宽度",
     "threadClose": "关闭话题",
     "threadPlaceholder": "在这个话题里回复",
     "threadEmpty": "还没有回复。",
     "memberCount": "{{count}} 个成员",
-    "files": "文件"
+    "files": "文件",
+    "toBottom": "回到底部",
+    "quoteCancel": "取消引用",
+    "actions": "消息操作",
+    "threadCount_one": "{{count}} 条回复",
+    "threadCount_other": "{{count}} 条回复",
+    "threadLast": "最后回复 {{time}}",
+    "earlier": "更早的消息",
+    "threadEarlier": "更早的回复",
+    "loadingEarlier": "正在载入更早的…",
+    "left": "已退群",
+    "replyTo": "回复 {{name}}"
   },
   "mention": {
     "title": "提到成员"
@@ -69,11 +81,11 @@
     "add": "添加成员",
     "addPlaceholder": "选择一个 Bot",
     "remove": "移出群",
-    "mode": "接收档位",
+    "mode": "怎么参与",
     "modes": {
-      "mentions": "只看 @ 我的",
-      "normal": "常看群",
-      "lazy": "不常看群"
+      "normal": "主动参与",
+      "mentions": "叫到才说",
+      "lazy": "偶尔看看"
     },
     "external": "外部成员",
     "externalNote": "外部成员的消息会发到对方的服务。",
@@ -85,7 +97,17 @@
     "empty": "群里还没有 Bot。",
     "pinned": "置顶",
     "confirmExternal": "这个群里的消息会发到 {{name}}（{{host}}）的服务。要添加吗？",
-    "stateless": "它不记得上下文"
+    "count_other": "{{count}} 位成员",
+    "nameHint": "双击改名",
+    "local": "本机",
+    "modeDesc": {
+      "normal": "群里的话它都会看，觉得该说就说",
+      "mentions": "只在被 @ 或它参与的话题里回话",
+      "lazy": "隔一阵才来看一次群"
+    },
+    "addBot": "添加成员…",
+    "noMore": "没有可以加的 Bot 了",
+    "more": "更多"
   },
   "approval": {
     "title": "{{name}} 需要你确认",
@@ -100,5 +122,11 @@
     "failed": "这个文件没能在应用里打开。",
     "missing": "不知道群的文件夹在哪。",
     "unsupported": "这种文件还不能在这里预览。"
+  },
+  "menu": {
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "rename": "重命名",
+    "delete": "删除群"
   }
 }

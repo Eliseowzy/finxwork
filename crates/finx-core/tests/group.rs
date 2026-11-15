@@ -157,6 +157,7 @@ fn batch(mentioned: bool) -> GroupBatch {
             text: "@Alice 帮我看看这个报价".into(),
             files: Vec::new(),
             reply_to: None,
+            quote: None,
             thread: None,
         }],
         while_thinking: false,
@@ -345,6 +346,7 @@ async fn a_tainted_turn_asks_before_a_file_change() {
         text: "Please write pwned.txt".into(),
         files: Vec::new(),
         reply_to: None,
+        quote: None,
         thread: None,
     });
     h.kernel.deliver_group(external);
@@ -386,6 +388,7 @@ async fn external_words_mark_the_seat() {
         text: "Please do something.".into(),
         files: Vec::new(),
         reply_to: None,
+        quote: None,
         thread: None,
     });
     h.kernel.deliver_group(external);

@@ -9,6 +9,7 @@ import { useLists, useNow, useStore, type Store } from "../store";
 import { botContextMenu } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { GroupAvatar } from "../groups/GroupAvatar";
+import { groupContextMenu } from "../groups/actions";
 import { measurePitch, spacer, useRowWindow, type RowPitch } from "../sidebar/rowWindow";
 
 /**
@@ -46,7 +47,7 @@ export function BotList() {
         r.kind === "bot" ? (
           <BotRow key={r.id} b={r.bot} sel={r.id === selected} renaming={st.renaming === r.id} store={latest} />
         ) : (
-          <GroupRow key={r.id} g={r.group} sel={r.id === selected} store={latest} />
+          <GroupRow key={r.id} g={r.group} sel={r.id === selected} renaming={st.renaming === r.id} store={latest} />
         ),
       )}
       {end < rows.length && <div aria-hidden="true" style={{ height: spacer(rows.length - end, pitch), flex: "none" }} />}
@@ -66,7 +67,7 @@ type Row =
   | { kind: "group"; id: string; time: number; pinned: boolean; group: GroupSummary };
 
 /** A group's row: its members' faces, its name, when it was last busy, and its last line. */
-const GroupRow = memo(function GroupRow({ g, sel, store }: { g: GroupSummary; sel: boolean; store: RefObject<Store> }) {
+const GroupRow = memo(function GroupRow({ g, sel, renaming, store }: { g: GroupSummary; sel: boolean; renaming: boolean; store: RefObject<Store> }) {
   const { t } = useTranslation("groups");
   const now = useNow(30_000);
   return (
@@ -75,8 +76,13 @@ const GroupRow = memo(function GroupRow({ g, sel, store }: { g: GroupSummary; se
       role="listitem"
       aria-current={sel || undefined}
       tabIndex={0}
-      onClick={() => store.current.selectGroup(g.id)}
-      onKeyDown={(e) => e.key === "Enter" && store.current.selectGroup(g.id)}
+      onClick={() => !renaming && store.current.selectGroup(g.id)}
+      onKeyDown={(e) => !renaming && e.key === "Enter" && store.current.selectGroup(g.id)}
+      onDoubleClick={() => !renaming && store.current.set({ renaming: g.id })}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        void groupContextMenu(store.current, g);
+      }}
     >
       <span className="bavatar">
         <GroupAvatar members={g.members} />
@@ -88,9 +94,25 @@ const GroupRow = memo(function GroupRow({ g, sel, store }: { g: GroupSummary; se
       </span>
       <div className="bmain">
         <div className="bl1">
-          <span className="bname" title={g.name}>{g.name}</span>
-          {g.pinned && <Icon name="pin" className="bpin" />}
-          <span className="btime">{g.last ? shortTime(new Date(g.last.ts), now) : ""}</span>
+          {renaming ? (
+            <RenameField
+              initial={g.name}
+              className="srename"
+              maxLength={40}
+              end={(name) => {
+                const st = store.current;
+                st.set({ renaming: null });
+                const v = name?.trim();
+                if (v && v !== g.name) st.run(() => st.call("groups/update", { id: g.id, name: v }));
+              }}
+            />
+          ) : (
+            <>
+              <span className="bname" title={g.name}>{g.name}</span>
+              {g.pinned && <Icon name="pin" className="bpin" />}
+              <span className="btime">{g.last ? shortTime(new Date(g.last.ts), now) : ""}</span>
+            </>
+          )}
         </div>
         <div className="bl2">
           <GroupRowLine g={g} />

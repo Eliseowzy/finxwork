@@ -27,11 +27,10 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::groups::ExternalMember;
+use crate::groups::MAIN_STREAM as MAIN;
 use crate::groups::PeerIncomingFile;
 use crate::server::Server;
 
-/// The stream key of the main message flow (brief §4.7).
-const MAIN: &str = "main";
 /// The largest file an external bot may give, as in direct conversations.
 const FILE_MAX: usize = 50 * 1024 * 1024;
 /// Calls without an answer that pause delivery to one member (brief §4.7).
@@ -233,15 +232,7 @@ impl Server {
             let mut included: Vec<GroupMessage> = Vec::new();
             if first && is_thread {
                 // Pulled into a thread: its first message and the last replies (brief §4.7).
-                if let Some(root) = messages.iter().find(|m| m.id == stream && m.thread.is_none()) {
-                    included.push(root.clone());
-                }
-                let replies: Vec<&GroupMessage> = messages
-                    .iter()
-                    .filter(|m| m.thread.as_deref() == Some(stream.as_str()))
-                    .collect();
-                let start = replies.len().saturating_sub(self.0.group_settings.recent_count as usize);
-                included.extend(replies[start..].iter().map(|m| (*m).clone()));
+                included.extend(thread_opening(&messages, &stream, member, self.0.group_settings.recent_count as usize));
             } else {
                 if first && !is_thread && member.history == GroupHistory::Recent {
                     let older: Vec<&GroupMessage> = messages
@@ -391,7 +382,7 @@ impl Server {
                 if let Some(asked) = received.asked.clone() {
                     if let Ok(message) =
                         self.groups()
-                            .append_external(group_id, bot_id, asked, Vec::new(), is_thread.then(|| stream.clone()), None)
+                            .append_external(group_id, bot_id, asked, Vec::new(), is_thread.then(|| stream.clone()), None, Some(to_seq))
                     {
                         self.pass_on_reply(group_id, bot_id, message);
                     }
@@ -413,6 +404,7 @@ impl Server {
                         files,
                         is_thread.then(|| stream.clone()),
                         None,
+                        Some(to_seq),
                     ) {
                         self.pass_on_reply(group_id, bot_id, message);
                     }
@@ -425,13 +417,16 @@ impl Server {
                         files,
                         is_thread.then(|| stream.clone()),
                         None,
+                        Some(to_seq),
                     )
                 {
                     self.pass_on_reply(group_id, bot_id, message);
                 }
             }
             self.0.group_peers.succeeded(group_id, bot_id);
-            let _ = self.groups().advance_peer_sent(group_id, bot_id, &stream, to_seq);
+            if let Err(error) = self.groups().advance_peer_sent(group_id, bot_id, &stream, to_seq) {
+                tracing::warn!(group_id, bot_id, "cannot record what an external member has seen: {}", error.message);
+            }
             if extension && !state.members_sent {
                 let _ = self.groups().mark_peer_members_sent(group_id, bot_id);
                 state.members_sent = true;
@@ -712,6 +707,9 @@ impl Server {
 
 fn check_send<F: std::future::Future + Send>(f: F) -> F { f }
 
+/// How much of a quoted message is repeated to an external member.
+const QUOTE_MAX: usize = 300;
+
 fn speaker_name(from: &GroupSpeaker) -> &str {
     match from {
         GroupSpeaker::Owner => "Owner",
@@ -721,7 +719,17 @@ fn speaker_name(from: &GroupSpeaker) -> &str {
 }
 
 fn text_of(message: &GroupMessage) -> String {
-    let mut text = message.text.clone();
+    // The quoted words come along: the member may never have got that message (brief §4.7).
+    let mut text = match &message.reply_preview {
+        Some(quote) => {
+            let mut excerpt: String = quote.text.chars().take(QUOTE_MAX).collect();
+            if quote.text.chars().count() > QUOTE_MAX {
+                excerpt.push('…');
+            }
+            format!("> {}: {}\n{}", speaker_name(&quote.from), excerpt.replace('\n', " "), message.text)
+        }
+        None => message.text.clone(),
+    };
     for file in &message.files {
         if !text.is_empty() {
             text.push('\n');
@@ -774,6 +782,23 @@ fn speaker_json(message: &GroupMessage) -> Value {
 
 /// The words a first batch carries before the new messages: the summary the member may see, and
 /// for a stateless member every batch repeats the summary and the last few messages (brief §4.7).
+/// What an external member first gets of a thread it is pulled into: the first message and the
+/// last `recent` replies. What was said before it joined goes only if the owner let it see
+/// recent history (DD-188): being mentioned in an old thread does not widen that.
+fn thread_opening(messages: &[GroupMessage], root: &str, member: &ExternalMember, recent: usize) -> Vec<GroupMessage> {
+    let visible = |m: &GroupMessage| m.seq >= member.joined_seq || member.history == GroupHistory::Recent;
+    let mut out: Vec<GroupMessage> = messages
+        .iter()
+        .find(|m| m.id == root && m.thread.is_none())
+        .filter(|m| visible(m))
+        .cloned()
+        .into_iter()
+        .collect();
+    let replies: Vec<&GroupMessage> = messages.iter().filter(|m| m.thread.as_deref() == Some(root) && visible(m)).collect();
+    out.extend(replies[replies.len().saturating_sub(recent)..].iter().map(|m| (*m).clone()));
+    out
+}
+
 fn history_header(
     history_applies: bool,
     history: GroupHistory,
@@ -907,7 +932,7 @@ impl Server {
             let _ = self.groups().silence(group_id, bot_id, 0, 0, false, Some("no content after restart"));
         } else {
             if let Some(asked) = received.asked {
-                if let Ok(message) = self.groups().append_external(group_id, bot_id, asked, Vec::new(), thread_of.clone(), None) {
+                if let Ok(message) = self.groups().append_external(group_id, bot_id, asked, Vec::new(), thread_of.clone(), None, None) {
                     self.pass_on_reply(group_id, bot_id, message);
                 }
             }
@@ -917,12 +942,12 @@ impl Server {
                     continue;
                 }
                 let files = if index == 0 { std::mem::take(&mut files) } else { Vec::new() };
-                if let Ok(message) = self.groups().append_external(group_id, bot_id, text, files, thread_of.clone(), None) {
+                if let Ok(message) = self.groups().append_external(group_id, bot_id, text, files, thread_of.clone(), None, None) {
                     self.pass_on_reply(group_id, bot_id, message);
                 }
             }
             if !files.is_empty()
-                && let Ok(message) = self.groups().append_external(group_id, bot_id, String::new(), files, thread_of, None)
+                && let Ok(message) = self.groups().append_external(group_id, bot_id, String::new(), files, thread_of, None, None)
             {
                 self.pass_on_reply(group_id, bot_id, message);
             }
@@ -931,5 +956,58 @@ impl Server {
         let stream = stream.map(str::to_string);
         let _ = self.groups().set_peer_task(group_id, bot_id, task, stream);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(id: &str, seq: u64, thread: Option<&str>) -> GroupMessage {
+        GroupMessage {
+            id: id.into(),
+            seq,
+            ts: String::new(),
+            from: GroupSpeaker::Owner,
+            text: id.into(),
+            files: Vec::new(),
+            mentions: Vec::new(),
+            reply_to: None,
+            thread: thread.map(str::to_string),
+            reply_preview: None,
+        }
+    }
+
+    fn member(history: GroupHistory, joined_seq: u64) -> ExternalMember {
+        ExternalMember {
+            bot_id: "ext".into(),
+            name: "外部".into(),
+            mode: GroupMemberMode::default(),
+            history,
+            joined_seq,
+            stateless: false,
+        }
+    }
+
+    fn ids(messages: Vec<GroupMessage>) -> Vec<String> {
+        messages.into_iter().map(|m| m.id).collect()
+    }
+
+    #[test]
+    fn an_old_thread_shows_only_what_the_member_may_see() {
+        // A thread from before the member joined, and a reply that mentions it afterwards.
+        let messages = vec![
+            message("root", 0, None),
+            message("old", 1, Some("root")),
+            message("new", 5, Some("root")),
+        ];
+        assert_eq!(ids(thread_opening(&messages, "root", &member(GroupHistory::None, 3), 20)), vec!["new"]);
+        assert_eq!(ids(thread_opening(&messages, "root", &member(GroupHistory::Summary, 3), 20)), vec!["new"]);
+        assert_eq!(
+            ids(thread_opening(&messages, "root", &member(GroupHistory::Recent, 3), 20)),
+            vec!["root", "old", "new"]
+        );
+        // A thread it was there for from the start is whole, up to the recent window.
+        assert_eq!(ids(thread_opening(&messages, "root", &member(GroupHistory::None, 0), 1)), vec!["root", "new"]);
     }
 }

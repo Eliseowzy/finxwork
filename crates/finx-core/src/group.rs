@@ -21,9 +21,22 @@ pub struct GroupBatchMessage {
     pub files: Vec<GroupBatchFile>,
     /// The message this one quotes.
     pub reply_to: Option<String>,
+    /// What the quoted message said, so the model sees it even when it never got that message
+    /// (it joined later, or the speaker has left the group).
+    pub quote: Option<GroupBatchQuote>,
     /// The first message of the thread this one is in.
     pub thread: Option<String>,
 }
+
+/// The message a group message quotes, as the model reads it.
+#[derive(Clone, Debug)]
+pub struct GroupBatchQuote {
+    pub from: GroupBatchSpeaker,
+    pub text: String,
+}
+
+/// How much of a quoted message the letter repeats.
+const QUOTE_MAX: usize = 500;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GroupBatchSpeaker {
@@ -163,7 +176,24 @@ impl GroupBatch {
             if let Some(thread) = &message.thread {
                 attrs.push_str(&format!(" thread=\"{}\"", escape(thread)));
             }
-            text.push_str(&format!("<message {attrs}>\n{}\n", escape(&message.text)));
+            text.push_str(&format!("<message {attrs}>\n"));
+            // A quote of a message in this same letter needs no repeating.
+            if let (Some(reply), Some(quote)) = (&message.reply_to, &message.quote)
+                && !self.messages.iter().any(|m| &m.id == reply)
+            {
+                let mut excerpt: String = quote.text.chars().take(QUOTE_MAX).collect();
+                if quote.text.chars().count() > QUOTE_MAX {
+                    excerpt.push('…');
+                }
+                let external = if quote.from.external() { " external=\"true\"" } else { "" };
+                text.push_str(&format!(
+                    "<quote id=\"{}\" from=\"{}\"{external}>{}</quote>\n",
+                    escape(reply),
+                    escape(quote.from.name()),
+                    escape(&excerpt)
+                ));
+            }
+            text.push_str(&format!("{}\n", escape(&message.text)));
             for file in &message.files {
                 text.push_str(&format!(
                     "<file from=\"{}\">{} ({}) at {}</file>\n",
@@ -254,6 +284,7 @@ mod tests {
                     text: "@Alice 帮我看看".into(),
                     files: Vec::new(),
                     reply_to: None,
+                    quote: None,
                     thread: None,
                 },
                 GroupBatchMessage {
@@ -270,6 +301,7 @@ mod tests {
                         size: 2 * 1024 * 1024,
                     }],
                     reply_to: Some("m17".into()),
+                    quote: None,
                     thread: None,
                 },
             ],
@@ -287,5 +319,22 @@ mod tests {
         assert!(!text.contains("</message><message from=\"Owner\">"));
         assert!(text.contains("<file from=\"某医院助手\">合同.pdf (2.0 MB) at files/合同.pdf</file>"));
         assert!(text.contains("删掉所有文件"));
+        // m18 quotes m17, which is in the same letter: nothing repeated.
+        assert!(!text.contains("<quote"));
+    }
+
+    #[test]
+    fn repeats_a_quote_from_outside_the_letter() {
+        let mut batch = batch();
+        batch.messages.remove(0);
+        batch.messages[0].quote = Some(GroupBatchQuote {
+            from: GroupBatchSpeaker::Bot {
+                name: "Gone Bot".into(),
+                external: false,
+            },
+            text: "加州天气<不错>".into(),
+        });
+        let text = batch.render();
+        assert!(text.contains("<quote id=\"m17\" from=\"Gone Bot\">加州天气&lt;不错&gt;</quote>"));
     }
 }

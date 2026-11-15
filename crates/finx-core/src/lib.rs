@@ -68,6 +68,7 @@ pub use group::GroupBatch;
 pub use group::GroupBatchFile;
 pub use group::GroupBatchMember;
 pub use group::GroupBatchMessage;
+pub use group::GroupBatchQuote;
 pub use group::GroupBatchSpeaker;
 pub use kernel::A2A_MODEL;
 pub use kernel::Kernel;

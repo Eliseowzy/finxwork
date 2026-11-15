@@ -64,6 +64,10 @@
 .bhead-go{position:absolute;right:6px;width:14px;height:14px;color:var(--l2);opacity:0;transition:opacity .12s var(--ease-out)}
 .bhead:hover .bhead-go,.bhead:focus-visible .bhead-go,.bhead[aria-expanded="true"] .bhead-go{opacity:1}
 .bhead-gap{flex:1}
+.ghead-n{min-width:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ghead-c{flex:none;margin-left:-3px;font-size:12.5px;color:var(--l3);font-variant-numeric:tabular-nums}
+.ghead-ext{flex:none;display:flex;color:var(--l3)}
+.ghead-ext .ic,.ghead-ext svg{width:13px;height:13px}
 
 /* A bot's settings: the avatar and name over groups of rows, like an iOS or macOS settings page. */
 .bgp.bpn{width:340px;animation:bpn-in .18s var(--ease-out)}
@@ -295,87 +299,180 @@ button.wb-h{cursor:pointer}
 .gav.g36 .bav{width:15px !important;height:15px !important;font-size:8px !important}
 .gav.g64 .bav{width:28px !important;height:28px !important;font-size:13px !important}
 
-/* The group page: the flow, with each speaker's face and name, as a chat app with several people. */
-.gtr{gap:14px}
+/* The group page: the flow, as a chat app with several people. A speaker's run shows its face and
+   name once; the owner's bubbles sit on the right with no face. A hover bar replies or quotes. */
+.gtr{gap:0}
 .gbody{max-width:calc(var(--conversation-width) + 120px)}
-.grow{display:flex;align-items:flex-start;gap:10px;position:relative;border-radius:var(--r-md);outline-offset:2px}
-.grow.own{flex-direction:row-reverse}
-.gface{flex:none;width:22px;padding-top:2px}
-.gface-you{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:10.5px;font-weight:600}
+.gmsg{display:flex;align-items:flex-start;gap:10px;position:relative;margin-top:14px;padding:2px 8px;margin-left:-8px;margin-right:-8px;border-radius:var(--r-lg);outline-offset:2px;transition:background .12s var(--ease-out)}
+.gmsg.cont{margin-top:3px}
+.gmsg:first-child{margin-top:0}
+.gmsg:hover,.gmsg:focus-within{background:color-mix(in srgb,var(--fill) 55%,transparent)}
+.gmsg.own{flex-direction:row-reverse}
+.gface{flex:none;width:28px;padding-top:1px}
 .gmain{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:min(640px,100%)}
-.grow.own .gmain{align-items:flex-end}
-.gsender{display:flex;align-items:center;gap:5px;min-height:16px;font-size:12px;color:var(--l2)}
-.grow.own .gsender{justify-content:flex-end}
-.gext{display:inline-flex;color:var(--l3)}
+.gmsg.own .gmain{align-items:flex-end;max-width:min(560px,85%)}
+.gsender{display:flex;align-items:baseline;gap:6px;min-height:16px;font-size:12.5px;color:var(--l2)}
+.gsender-n{font-weight:500;color:var(--l1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gext{display:inline-flex;align-self:center;color:var(--l3)}
+.ggone{align-self:center;padding:0 6px;border-radius:999px;background:var(--fill);font-size:10.5px;line-height:17px;color:var(--l3);white-space:nowrap}
+.gmsg.gone .gface,.gmsg.gone .gsender-n{opacity:.55}
+.gmsg.gone .gface{filter:grayscale(.6)}
 .gtime{font-size:11px;color:var(--l3);font-variant-numeric:tabular-nums}
 .gcontent{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;max-width:100%}
-.grow.own .gcontent{align-items:flex-end}
-.gcontent .bub{max-width:min(640px,100%);padding:9px 15px;border-radius:var(--r-xl);background:var(--bub);color:var(--bub-fg);font-size:var(--chat-size);line-height:1.625;white-space:pre-wrap;overflow-wrap:anywhere}
-.grow.qflash .bub,.grow.qflash .bbub{box-shadow:inset 0 0 0 1.5px var(--accent);animation:qflash 1.4s var(--ease-out)}
+.gmsg.own .gcontent{align-items:flex-end}
+.gcontent .bub{max-width:100%;padding:9px 15px;border-radius:var(--r-xl);background:var(--bub);color:var(--bub-fg);font-size:var(--chat-size);line-height:1.625;white-space:pre-wrap;overflow-wrap:anywhere}
+.gmsg.qflash .bub,.gmsg.qflash .bbub{box-shadow:inset 0 0 0 1.5px var(--accent);animation:qflash 1.4s var(--ease-out)}
 .gfiles{display:flex;flex-wrap:wrap;gap:6px}
-.gfile{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:4px 9px;border-radius:var(--r-sm);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gsys{align-self:center;margin:2px 28px;padding:3px 0;font-size:12px;color:var(--l3);text-align:center}
+.gfile{display:inline-flex;align-items:center;gap:6px;max-width:100%;height:28px;padding:0 10px;border:0;border-radius:var(--r-md);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);font:inherit;font-size:12.5px;color:var(--l1)}
+.gfile:hover{background:var(--fill)}
+.gfile .ic{flex:none;color:var(--l2)}
+.gfile-n{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gsys{display:flex;justify-content:center;margin:14px 28px 0;font-size:12px;line-height:1.5;color:var(--l3);text-align:center}
+.gtdiv{margin:20px 0 0;text-align:center}
+.gtdiv+.gmsg,.gtdiv+.gsys{margin-top:8px}
 
-/* A hover's way into a thread, and to quote; they take no room under the message. */
-.gacts{display:flex;gap:10px;opacity:0;pointer-events:none;transition:opacity .12s var(--ease-out)}
-.grow:hover .gacts,.grow:focus-within .gacts{opacity:1;pointer-events:auto}
-.gact{padding:0;border:0;background:none;font:inherit;font-size:12px;color:var(--l2)}
-.gact:hover{color:var(--l1)}
-.gthread-link{display:inline-flex;align-items:center;gap:5px;padding:1px 0;border:0;background:none;font:inherit;font-size:12px;color:var(--accent)}
-.gthread-link:hover{text-decoration:underline}
+/* The hover bar: into a thread, and quote. It floats over the row's corner and takes no room. */
+.gacts{position:absolute;top:-12px;right:12px;z-index:2;display:flex;gap:1px;padding:2px;border-radius:var(--r-md);background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 2px 8px rgba(0,0,0,.12);opacity:0;pointer-events:none;transform:translateY(2px);transition:opacity .12s var(--ease-out),transform .12s var(--ease-out)}
+.gmsg.own .gacts{right:auto;left:12px}
+.gmsg:first-child .gacts{top:2px}
+.gmsg:hover .gacts,.gmsg:focus-within .gacts{opacity:1;pointer-events:auto;transform:none}
+.gact{display:flex;align-items:center;justify-content:center;width:26px;height:24px;padding:0;border:0;border-radius:calc(var(--r-md) - 2px);background:none;color:var(--l2)}
+.gact:hover{background:var(--fill);color:var(--l1)}
+.gact .ic,.gact svg{width:14px;height:14px}
+
+/* Under a message that started a thread: its last face, how many replies, when. */
+.gthread-link{display:inline-flex;align-items:center;gap:6px;height:26px;margin-top:2px;padding:0 8px 0 4px;border:0;border-radius:var(--r-md);background:none;font:inherit;font-size:12px;color:var(--accent)}
+.gthread-link:hover,.gthread-link.on{background:var(--accent-bg)}
+.gthread-faces{display:flex}
+.gthread-faces:empty{display:none}
+.gthread-n{font-weight:500}
+.gthread-t{color:var(--l3)}
+.gthread-go{opacity:0;transition:opacity .12s}
+.gthread-link:hover .gthread-go,.gthread-link.on .gthread-go{opacity:1}
 
 /* A reply's quote card: who said it, then the words. A click finds it in the flow. */
-.gquote{display:flex;flex-direction:column;gap:1px;max-width:min(560px,100%);padding:5px 10px;border:0;border-left:2px solid var(--accent);border-radius:var(--r-sm);background:var(--fill);color:var(--l2);font:inherit;text-align:left}
-.gquote:hover{background:var(--fill2)}
-.gquote-who{font-size:11.5px;font-weight:500;color:var(--accent)}
-.gquote-text{max-width:100%;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gquote{display:flex;max-width:min(480px,100%);padding:4px 9px;border:0;border-radius:var(--r-sm);background:var(--fill);color:var(--l3);font:inherit;font-size:12px;line-height:1.5;text-align:left}
+.gquote:hover{background:var(--fill2);color:var(--l2)}
+.gquote-who{color:var(--l2)}
+.gquote-text{min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Above the composer: who is thinking, a fuse's line, the quote being replied to, and the @ menu. */
-.gtyping{display:flex;align-items:center;gap:8px;padding:0 4px 8px;font-size:12.5px;color:var(--l2)}
+.gtyping{display:flex;align-items:center;gap:7px;width:max-content;max-width:100%;margin:0 0 8px;padding:4px 10px 4px 5px;border-radius:999px;background:var(--glass);box-shadow:var(--glass-sh);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);font-size:12px;color:var(--l2)}
+.gtyping-faces{display:flex}
+.gtyping-faces>*+*{margin-left:-5px;box-shadow:0 0 0 1.5px var(--menu-solid);border-radius:50%}
+.gtyping-t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gtyping-dots{display:inline-flex;gap:3px}
 .gtyping-dots i{width:4px;height:4px;border-radius:50%;background:var(--l3);animation:gthink 1.2s var(--ease-in-out) infinite}
 .gtyping-dots i:nth-child(2){animation-delay:.15s}
 .gtyping-dots i:nth-child(3){animation-delay:.3s}
 @keyframes gthink{0%,60%,100%{opacity:.35;transform:none}30%{opacity:1;transform:translateY(-2px)}}
-@media (prefers-reduced-motion:reduce){.gtyping-dots i{animation:none}}
+@media (prefers-reduced-motion:reduce){.gtyping-dots i{animation:none}.gacts{transition:none}}
 .gfuse{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:8px 12px;border-radius:var(--r-md);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);font-size:12.5px;color:var(--l1)}
 .gfuse-i{flex:none;color:var(--orange)}
 .gfuse-t{flex:1;min-width:0}
-.gquote-draft{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:6px 8px 6px 10px;border-radius:var(--r-md);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep)}
-.gquote-main{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
-.gmenu{display:flex;flex-direction:column;max-height:240px;overflow-y:auto;margin:0 0 8px;padding:4px;border-radius:var(--r-md);background:var(--menu-solid);box-shadow:var(--menu-sh)}
-.gmenu-i{display:flex;align-items:center;gap:8px;width:100%;padding:5px 8px;border:0;border-radius:var(--r-sm);background:none;font:inherit;font-size:13px;color:var(--l1);text-align:left}
-.gmenu-i:hover,.gmenu-i:focus-visible{background:var(--fill)}
+.gquote-draft{display:flex;align-items:center;gap:6px;margin:0 0 6px;padding:0 4px 0 12px;font-size:12px;line-height:24px;color:var(--l3)}
+.gquote-draft .gquote-text{flex:1}
+.gquote-draft .gquote-who{margin-right:6px}
+.gquote-x{flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:none;color:var(--l3)}
+.gquote-x:hover{background:var(--fill);color:var(--l1)}
+.gquote-x .ic{width:12px;height:12px}
+.gmenu{display:flex;flex-direction:column;max-height:260px;overflow-y:auto;margin:0 0 8px;padding:4px;border-radius:var(--r-lg);background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 12px 32px rgba(0,0,0,.2),0 2px 6px rgba(0,0,0,.08);animation:fadein .12s var(--ease-out)}
+.gmenu-h{padding:4px 8px 3px;font-size:11.5px;color:var(--l3)}
+.gmenu-i{display:flex;align-items:center;gap:9px;width:100%;height:32px;padding:0 8px;border:0;border-radius:var(--r-sm);background:none;font:inherit;font-size:13px;color:var(--l1);text-align:left}
+.gmenu-i.on{background:var(--accent);color:#fff}
+.gmenu-n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gmenu-ext{color:var(--l3)}
+.gmenu-i.on .gmenu-ext{color:inherit;opacity:.8}
 
-/* Making a group: the name, the bots, the note. */
-.gmembers{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;padding:2px 0}
-.gmember{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:var(--r-md);font-size:13.5px;cursor:default}
+/* Making a group: the name, the bots, the note. One rhythm: a small label, its control, 16px to the next. */
+.gsheet h3{margin-bottom:16px}
+.gs-sec{display:block;margin:0 0 16px}
+.gs-k{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 6px;font-size:12px;color:var(--l2)}
+.gs-count{color:var(--l3);font-variant-numeric:tabular-nums}
+.gs-empty,.gs-hint{margin:0;font-size:12.5px;line-height:1.5;color:var(--l3)}
+.gs-hint{margin-top:6px}
+.field.gs-name{height:32px;padding:0 10px;font-size:14px;border-radius:var(--r-md)}
+.gmembers{max-height:228px;overflow-y:auto;border-radius:var(--r-md);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep)}
+.gmember{position:relative;display:flex;align-items:center;gap:10px;height:44px;padding:0 12px 0 10px;font-size:13.5px;cursor:default}
+.gmember+.gmember::before{content:"";position:absolute;left:46px;right:0;top:0;height:.5px;background:var(--sep)}
 .gmember:hover{background:var(--fill)}
-.gmember.on{background:var(--side-sel)}
 .gmember input{position:absolute;opacity:0;pointer-events:none}
-.gmember .gcheck{margin-left:auto;width:16px;height:16px;color:var(--accent)}
-.gsheet-note{margin:4px 0 12px}
-.gnote{resize:vertical;min-height:64px;font:inherit}
+.gmember:has(input:focus-visible){box-shadow:inset 0 0 0 2px var(--accent-bg)}
+.gmember-who{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px}
+.gmember-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
+.gmember-host{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;line-height:1.2;color:var(--l3)}
+.gtag{flex:none;font-size:11px;color:var(--l3)}
+.gtag.ext{color:var(--orange)}
+.gcheck{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 1px var(--field-bd);color:#fff;transition:background .12s,box-shadow .12s}
+.gmember.on .gcheck{background:var(--accent);box-shadow:none}
+.gcheck .ic,.gcheck svg{width:11px;height:11px}
+.gconfirm{margin-top:8px;border-radius:var(--r-md);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep)}
+.gconfirm-row{padding:9px 12px}
+.gconfirm-row+.gconfirm-row{border-top:.5px solid var(--sep)}
+.gconfirm-line{margin:0;font-size:12.5px;line-height:1.5;color:var(--l2)}
+.gconfirm-line+.gconfirm-line{margin-top:2px}
+.gconfirm-hist{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:7px;padding-bottom:7px}
+.gconfirm-k{font-size:12.5px;color:var(--l1);white-space:nowrap}
+.ghist{display:flex;gap:2px;padding:2px;border-radius:var(--r-sm);background:var(--fill)}
+.ghist-i{position:relative;padding:3px 9px;border-radius:calc(var(--r-sm) - 1px);font-size:12px;color:var(--l2);white-space:nowrap;cursor:default}
+.ghist-i input{position:absolute;opacity:0;pointer-events:none}
+.ghist-i.on{background:var(--menu-solid);color:var(--l1);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.ghist-i:has(input:focus-visible){box-shadow:0 0 0 2px var(--accent-bg)}
+.field.gnote{display:block;height:auto;min-height:72px;padding:8px 10px;font:inherit;font-size:13.5px;line-height:1.55;resize:none;border-radius:var(--r-md)}
+.gnote::placeholder{color:var(--l3)}
+.gsheet .sheet-foot{margin-top:4px}
 
 /* A group's settings, and its thread beside the flow. */
-.gpanel{width:380px}
-.gpanel-field{flex-direction:column;align-items:stretch;gap:5px}
-.gpanel-member{flex-wrap:wrap;align-items:flex-start;gap:8px}
-.gpanel-who{display:flex;flex-direction:column;gap:1px;flex:1;min-width:100px}
-.gpanel-name{display:flex;align-items:center;gap:5px;font-size:13.5px}
-.gpanel-modes{display:flex;gap:2px;width:100%;padding:2px;border-radius:var(--r-sm);background:var(--win)}
-.gmode{flex:1;padding:4px 2px;border:0;border-radius:calc(var(--r-sm) - 1px);background:none;font:inherit;font-size:11.5px;color:var(--l2);white-space:nowrap}
-.gmode.on{background:var(--menu-solid);color:var(--l1);box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.gpanel-remove{flex:none;font-size:12px;color:var(--l2)}
-.gpanel-ext{flex-basis:100%;margin:0 0 2px 36px}
+.gpanel{width:360px}
+.gpanel-hero{gap:8px;padding:6px 0 22px}
+.gpanel-hero .gav{margin-bottom:4px}
+.gpanel-count{font-size:12.5px;color:var(--l3);font-variant-numeric:tabular-nums}
+.gpanel-note{display:block;width:100%;min-height:58px;padding:11px 14px;border:0;outline:0;background:none;font:inherit;font-size:13px;line-height:1.55;color:var(--l1);resize:none;field-sizing:content;max-height:180px}
+.gpanel-note::placeholder{color:var(--l3)}
+.gpanel-note+.frow{border-top:.5px solid var(--sep)}
+.gpanel .fhead{display:flex;align-items:center;gap:6px}
+.gpanel-n{font-weight:500;color:var(--l3);font-variant-numeric:tabular-nums}
+.gpanel-empty{color:var(--l3);font-size:12.5px;border-top:0}
+.gpanel-member+.gpanel-member,.gpanel-member+.gpanel-add{border-top:.5px solid var(--sep)}
+.gpanel-member>.frow{border-top:0}
+.gpanel-mrow{gap:10px;padding:8px 8px 8px 12px}
+.gpanel-face{position:relative;flex:none;display:flex}
+.gpanel-who{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.gpanel-name{font-size:13.5px;color:var(--l1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpanel-sub{font-size:11.5px;color:var(--l3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpanel-sub.mono{font-size:11px}
+.gpanel-mode{flex:none}
+.gpanel-mode .lbl{color:var(--l1)}
+.gpanel-remove{flex:none;display:flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:-4px;padding:0;border:0;border-radius:50%;background:none;color:var(--l3);opacity:0;transition:opacity .12s var(--ease-out),background .12s,color .12s}
+.gpanel-remove .ic{width:13px;height:13px;stroke-width:2.2}
+.gpanel-mrow:hover .gpanel-remove,.gpanel-remove:focus-visible{opacity:1}
+.gpanel-remove:hover{background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red)}
+.gpanel-add{width:100%;gap:10px;padding:8px 12px;border-width:0;background:none;font:inherit;font-size:13px;color:var(--accent);text-align:left;border-bottom-left-radius:inherit;border-bottom-right-radius:inherit}
+.gpanel-add:first-child{border-top-left-radius:inherit;border-top-right-radius:inherit}
+.gpanel-add:hover,.gpanel-add[aria-expanded="true"]{background:var(--fill)}
+.gpanel-plus{flex:none;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--accent-bg);color:var(--accent)}
+.gpanel-plus .ic{width:15px;height:15px;stroke-width:2.2}
+.gpanel-mi{gap:8px}
+.gpanel-mi-n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpanel-mi-h{margin-left:12px;font-size:11px;color:var(--l3)}
+.gpanel-del{justify-content:center;text-align:center}
 
-.gthread{width:400px;display:flex;flex-direction:column;min-height:0}
-.gthread-top{flex:none;display:flex;align-items:center;gap:8px;height:var(--top);padding:0 10px 0 14px;border-bottom:.5px solid var(--sep)}
-.gthread-title{display:flex;align-items:center;gap:7px;flex:1;min-width:0;font-size:13.5px;font-weight:600}
-.gthread-scroll{flex:1;min-height:0;overflow-y:auto;padding:14px 14px 10px;display:flex;flex-direction:column;gap:14px}
-.gthread-empty{margin:8px 0;font-size:12.5px;color:var(--l3);text-align:center}
+.gthread.resizing{user-select:none}
+.gthread.resizing .brp-grip{background:var(--sel)}
+.gthread{position:relative;width:var(--brp-w,400px);display:flex;flex-direction:column;min-height:0}
+.gthread-top{flex:none;display:flex;align-items:center;gap:8px;height:var(--top);padding:0 calc(10px + var(--caption)) 0 16px;border-bottom:.5px solid var(--sep)}
+.gthread-title{display:flex;align-items:baseline;gap:8px;flex:1;min-width:0;font-size:14px;font-weight:600}
+.gthread-sub{font-size:12px;font-weight:400;color:var(--l3)}
+.gthread-scroll{flex:1;min-height:0;overflow-y:auto;padding:12px 16px 16px;display:flex;flex-direction:column}
+.gthread-scroll .gmsg{margin-top:10px}
+.gthread-scroll .gmsg.cont{margin-top:3px}
+.gthread-root .gmsg{margin-top:0}
+.gthread-scroll .gmain{max-width:100%}
+.gthread-scroll .gmsg.own .gmain{max-width:85%}
+.gthread-sep{display:flex;align-items:center;gap:10px;margin:14px 0 2px;font-size:11.5px;color:var(--l3)}
+.gthread-sep::before,.gthread-sep::after{content:"";flex:1;height:.5px;background:var(--sep)}
 .gthread-cmp{position:relative;flex:none;border-top:.5px solid var(--sep)}
-.gthread-cmp .gmenu{position:absolute;left:10px;right:10px;bottom:calc(100% - 4px);z-index:6;box-shadow:var(--menu-sh);background:var(--menu-solid)}
+.gthread-cmp .gmenu{position:absolute;left:10px;right:10px;bottom:calc(100% - 4px);z-index:6}
 .gthread-cmp .cmp-zone{position:static;padding:8px 10px 12px;background:none}
 .gthread-cmp .cmp-zone .cmp-meta{display:none}
 
@@ -395,3 +492,8 @@ button.wb-h{cursor:pointer}
 .gfilepreview .gfilepreview-body { height: 70vh; min-height: 320px; overflow: hidden; position: relative; }
 .gfilepreview .gfilepreview-body .bgp { position: relative; width: 100%; height: 100%; }
 .gfilepreview .gfilepreview-body .brp { width: 100%; }
+.gtyping-faces .bav,.gthread-faces .bav{width:16px !important;height:16px !important;font-size:8px !important}
+.gthread-earlier{margin:10px 0 0}
+
+/* "@Name" in a group message (mentionHighlight.ts). */
+::highlight(group-mention){color:var(--accent-t)}

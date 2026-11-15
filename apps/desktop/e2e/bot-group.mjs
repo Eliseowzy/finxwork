@@ -64,6 +64,9 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxg-"));
 const userHome = path.join(work, "home");
 fs.mkdirSync(userHome);
 const home = path.join(work, "finx");
+// A row's menu is native: finx's test seam records it and answers from a file.
+const menus = path.join(work, "menus");
+fs.mkdirSync(menus);
 const profile = path.join(work, "profile");
 fs.mkdirSync(home, { recursive: true });
 const place = () => {
@@ -78,7 +81,7 @@ const place = () => {
 let app = null;
 async function launch() {
   const port = cdpPort();
-  const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" };
+  const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_MENU: menus };
   delete env.DEEPSEEK_API_KEY;
   // A terminal that runs Node through Electron would keep Electron from opening a window.
   delete env.ELECTRON_RUN_AS_NODE;
@@ -139,10 +142,27 @@ async function devtools(url) {
 }
 
 async function quit() {
-  if (!app || app.exitCode !== null) return;
-  const exited = new Promise((r) => app.once("exit", r));
-  app.kill("SIGTERM");
-  await exited;
+  if (app && app.exitCode === null) {
+    const exited = new Promise((r) => app.once("exit", r));
+    app.kill("SIGTERM");
+    await exited;
+  }
+  // finx serves on after the app is gone (until it has been idle a while), and two bots answering
+  // each other never leave it idle: stop this home's finx too.
+  const sock = path.join(home, "run", "finx.sock");
+  try {
+    execFileSync("pkill", ["-f", sock]);
+  } catch {
+    return; // none was running
+  }
+  for (let i = 0; i < 50; i++) {
+    try {
+      execFileSync("pgrep", ["-f", sock]);
+    } catch {
+      return;
+    }
+    await sleep(100);
+  }
 }
 
 /** A click with the mouse, where the element is on screen: what is over it gets it. */
@@ -154,8 +174,8 @@ async function press(page, expr) {
 }
 const $ = (s) => `document.querySelector(${JSON.stringify(s)})`;
 const rows = `[...document.querySelectorAll(".brow")].map((r) => r.textContent)`;
-const sent = `[...document.querySelectorAll(".grow.own .bub, .grow.own .bbub")].map((b) => b.innerText)`;
-const answers = `[...document.querySelectorAll(".grow.other .bbub")].map((b) => b.innerText)`;
+const sent = `[...document.querySelectorAll(".gmsg.own .bub, .gmsg.own .bbub")].map((b) => b.innerText)`;
+const answers = `[...document.querySelectorAll(".gmsg.other .bbub")].map((b) => b.innerText)`;
 const mentionMenu = `document.querySelector(".gmenu")`;
 const menuItem = (name) => `[...document.querySelectorAll(".gmenu .gmenu-i")].find((b) => b.textContent.includes(${JSON.stringify(name)}))`;
 
@@ -183,7 +203,7 @@ async function chooseMembers(page, names) {
   }
 }
 const createGroup = `document.querySelector("dialog.gsheet .sheet-foot .btn.primary")`;
-const inGroup = (name) => `document.querySelector(".gpage .bhead-n")?.textContent.includes(${JSON.stringify(name)}) && !!document.querySelector(".gpage .cmp-in")`;
+const inGroup = (name) => `document.querySelector(".gpage .ghead-n")?.textContent.includes(${JSON.stringify(name)}) && !!document.querySelector(".gpage .cmp-in")`;
 async function say(page, text) {
   await page.run(`document.querySelector(".gpage .cmp-in").focus()`);
   await page.cdp("Input.insertText", { text });
@@ -220,7 +240,7 @@ try {
   step("an answer in the group");
   await say(page, "大家好");
   await page.until("Alice's or Bob's answer", `${answers}.some((b) => b.includes("好的，收到"))`);
-  const messages = await page.run(`document.querySelectorAll(".grow").length`);
+  const messages = await page.run(`document.querySelectorAll(".gmsg").length`);
   check(messages >= 2, `the flow has the owner's message and an answer: ${messages}`);
   await page.shot("chat");
 
@@ -237,29 +257,50 @@ try {
   check(await page.run(`document.querySelector(".gthread-link").innerText.includes("1 条回复")`), "the first message says how many replies it has");
   await press(page, `document.querySelector(".gthread-link")`);
   await page.until("the thread panel", `!!document.querySelector(".gthread")`);
-  check(await page.run(`document.querySelectorAll(".gthread .grow").length >= 2`), "the thread shows its first message and the reply");
+  check(await page.run(`document.querySelectorAll(".gthread .gmsg").length >= 2`), "the thread shows its first message and the reply");
   await page.shot("thread");
 
   step("a reply in the thread panel sends into the thread");
   await page.run(`document.querySelector(".gthread .cmp-in").focus()`);
   await page.cdp("Input.insertText", { text: "那就按这个价" });
   await page.run(`document.querySelector(".gthread button.send").click()`);
-  await page.until("the thread's second answer", `document.querySelectorAll(".gthread .grow.other").length >= 2`);
+  await page.until("the thread's second answer", `document.querySelectorAll(".gthread .gmsg.other").length >= 2`);
   await page.run(`document.querySelector(".gthread-top .tb").click()`);
   await page.until("the thread closed", `!document.querySelector(".gthread")`);
 
+  step("an older thread keeps its replies after the group is opened again");
+  // `groups/open` carries only the main flow: the panel asks for the thread's own replies.
+  const row = (name) => `[...document.querySelectorAll(".brow:not(.grow)")].find((r) => r.textContent.includes(${JSON.stringify(name)}))`;
+  await press(page, `document.querySelector(".gthread-link")`);
+  await page.until("the thread open before leaving", `!!document.querySelector(".gthread")`);
+  await page.run(`${row("Alice")}.click()`);
+  await page.until("away from the group", `!document.querySelector(".gpage")`);
+  await page.run(`document.querySelector(".brow.grow").click()`);
+  await page.until("the group again", `${inGroup("装修群")} && !!document.querySelector(".gthread-link")`);
+  check(await page.run(`!document.querySelector(".gthread")`), "a thread left open does not follow into another page");
+  await press(page, `document.querySelector(".gthread-link")`);
+  await page.until("the thread's replies, loaded", `document.querySelectorAll(".gthread .gmsg.other").length >= 2 && !document.querySelector(".gthread .mini-spin")`);
+  await page.shot("thread-again");
+  await page.run(`document.querySelector(".gthread-top .tb").click()`);
+  await page.until("the thread closed again", `!document.querySelector(".gthread")`);
+
   step("a quote shows the words it quotes, and its click finds them");
-  const quoteButton = `[...document.querySelectorAll(".grow.other")].at(-1).querySelectorAll(".gact")[1]`;
+  const quoteButton = `[...document.querySelectorAll(".gmsg.other")].at(-1).querySelectorAll(".gact")[1]`;
   await press(page, quoteButton);
   await page.until("the quote over the composer", `!!document.querySelector(".gquote-draft")`);
-  const quoted = await page.run(`document.querySelector(".gquote-draft .gquote-text").innerText`);
+  const quoted = await page.run(`document.querySelector(".gquote-draft .gquote-words").innerText`);
   check(quoted.length > 0, "the quote card carries the words");
   await say(page, "收到");
-  await page.until("the sent quote card", `!!document.querySelector(".grow.own .gquote")`);
-  check(await page.run(`document.querySelector(".grow.own .gquote").innerText.includes(${JSON.stringify(quoted)})`), "the sent message shows what it quotes");
-  await press(page, `document.querySelector(".grow.own .gquote")`);
-  await page.until("the quote's light", `!!document.querySelector(".grow.qflash")`);
+  await page.until("the sent quote card", `!!document.querySelector(".gmsg.own .gquote")`);
+  check(await page.run(`document.querySelector(".gmsg.own .gquote").innerText.includes(${JSON.stringify(quoted)})`), "the sent message shows what it quotes");
+  await press(page, `document.querySelector(".gmsg.own .gquote")`);
+  await page.until("the quote's light", `!!document.querySelector(".gmsg.qflash")`);
   await page.shot("quote");
+  await press(page, quoteButton);
+  await page.until("a quote again, for its picture", `!!document.querySelector(".gquote-draft")`);
+  await page.shot("quote-draft");
+  await page.run(`document.querySelector(".gquote-x").click()`);
+  await page.until("the quote put away", `!document.querySelector(".gquote-draft")`);
 
   step("who is thinking, before the answer comes");
   await say(page, "@Alice 慢慢想");
@@ -272,6 +313,90 @@ try {
   await page.until("the group's settings", `!!document.querySelector(".gpanel")`);
   check(await page.run(`document.querySelector(".gpanel").innerText.includes("Alice")`), "the settings list the members");
   await page.shot("settings");
+
+  step("a member who leaves: a line in the flow, and its old words marked");
+  await page.run(`[...document.querySelectorAll(".gpanel-member")].find((r) => r.innerText.includes("Bob")).querySelector(".gpanel-remove").click()`);
+  await page.until("the leaving line", `[...document.querySelectorAll(".gpage .gsys")].some((e) => e.innerText.includes("Bob 离开了群"))`);
+  await page.until("Bob's old words marked", `[...document.querySelectorAll(".gpage .gmsg.gone")].some((e) => e.innerText.includes("Bob") && !!e.querySelector(".ggone"))`);
+  check(!(await page.run(`[...document.querySelectorAll(".gpage .gmsg.gone")].some((e) => e.innerText.includes("Alice"))`)), "a member still here is not marked");
+  await page.until("the one who left is not thinking", `!document.querySelector(".gtyping") || !document.querySelector(".gtyping").innerText.includes("-")`);
+  await page.shot("left");
+
+  step("a group's row: right-click to pin and rename, double-click to rename");
+  const groupRow = `[...document.querySelectorAll(".brow.grow")].find((x) => x.querySelector(".bname")?.textContent === name || x.querySelector(".srename"))`;
+  const rowMenu = async (name, pick) => {
+    fs.writeFileSync(path.join(menus, "pick"), pick);
+    await page.run(`((name) => ${groupRow})(${JSON.stringify(name)}).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
+    await sleep(300);
+    return JSON.parse(fs.readFileSync(path.join(menus, "shown.jsonl"), "utf8").trim().split("\n").at(-1));
+  };
+  const typeName = async (text) => {
+    await page.run(`document.activeElement.select()`);
+    await page.cdp("Input.insertText", { text });
+    await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+    await page.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  };
+  const shown = await rowMenu("装修群", "pin");
+  const labels = JSON.stringify(shown);
+  check(["置顶", "重命名", "删除群"].every((l) => labels.includes(l)), `the group's menu: ${labels}`);
+  await page.until("the group pinned", `!!document.querySelector(".brow.grow .bpin")`);
+  await rowMenu("装修群", "rename");
+  await page.until("the name as a field", `document.activeElement?.matches(".brow.grow .srename")`);
+  await typeName("新装修群");
+  await page.until("renamed in the list and the title", `[...document.querySelectorAll(".brow.grow .bname")].some((e) => e.textContent === "新装修群") && document.querySelector(".ghead").innerText.includes("新装修群")`);
+  await page.shot("group-menu");
+  await page.run(`[...document.querySelectorAll(".brow.grow")].find((x) => x.querySelector(".bname")?.textContent === "新装修群").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+  await page.until("the name as a field, double-clicked", `document.activeElement?.matches(".brow.grow .srename")`);
+  await typeName("装修群");
+  await page.until("renamed back", `[...document.querySelectorAll(".brow.grow .bname")].some((e) => e.textContent === "装修群")`);
+
+  step("a long group pages back, in the main flow and in a thread");
+  // Written straight into the group's files while the app is closed: 130 messages in the main flow and a thread of 70.
+  await page.close();
+  await quit();
+  const groupsDir = path.join(home, "groups");
+  const gid = fs.readdirSync(groupsDir).find((d) => fs.existsSync(path.join(groupsDir, d, "group.json")));
+  const gfile = path.join(groupsDir, gid, "group.json");
+  const data = JSON.parse(fs.readFileSync(gfile, "utf8"));
+  let seq = data.next_seq;
+  const ts = new Date().toISOString();
+  const lines = [];
+  const line = (id, text, thread) => lines.push(JSON.stringify({ id, seq: seq++, ts, from: { kind: "owner" }, text, ...(thread ? { thread } : {}) }));
+  for (let i = 1; i <= 130; i++) line(`seed-main-${i}`, `第 ${i} 条`);
+  line("seed-root", "长话题");
+  for (let i = 1; i <= 70; i++) line(`seed-reply-${i}`, `话题第 ${i} 条`, "seed-root");
+  fs.appendFileSync(path.join(groupsDir, gid, "messages.jsonl"), `${lines.join("\n")}\n`);
+  fs.writeFileSync(gfile, JSON.stringify({ ...data, next_seq: seq }, null, 2));
+  page = await launch();
+  await intoBots(page);
+  await page.run(`document.querySelector(".brow.grow").click()`);
+  await page.until("the long group", `${inGroup("装修群")} && !!document.querySelector(".gpage .tdiv.earlier")`);
+  const mainCount = `document.querySelectorAll(".gpage .gtr > .gmsg").length`;
+  const before = await page.run(mainCount);
+  // The last 100 of the main flow: seed-main-32 to 130 and the thread's root (a bot may have said one more since).
+  check(before >= 100, `the first page holds 100 messages: ${before}`);
+  check(await page.run(`!document.querySelector('.gpage [data-mid="seed-main-31"]')`), "older messages wait for their page");
+  // Scrolling to the top asks for the page before; what was in sight stays where it was.
+  const seen = `document.querySelector('.gpage [data-mid="seed-main-40"]').getBoundingClientRect().top`;
+  await page.run(`document.querySelector(".gpage .cscroll").style.scrollBehavior = "auto"`);
+  await page.run(`document.querySelector(".gpage .cscroll").scrollTop = 1`);
+  const was = await page.run(seen);
+  await page.run(`document.querySelector(".gpage .cscroll").scrollTop = 0`);
+  await page.until("the page before", `!!document.querySelector('.gpage [data-mid="seed-main-31"]') && !document.querySelector(".gpage .tdiv.earlier")`);
+  const kept = await page.run(seen);
+  // Within the height of the line that offered the page, which goes once there is nothing older.
+  check(Math.abs(kept - was) < 60, `the view stays on what was in sight: ${was} → ${kept}`);
+  check(await page.run(`${mainCount} > 100`), "the main flow grew by the earlier page");
+  await page.shot("earlier");
+
+  await page.run(`document.querySelector('.gpage [data-mid="seed-root"]').scrollIntoView()`);
+  await press(page, `document.querySelector('.gpage [data-mid="seed-root"] .gthread-link')`);
+  await page.until("the long thread", `!!document.querySelector(".gthread .gthread-earlier") && document.querySelectorAll(".gthread .gthread-scroll > .gmsg").length === 49`);
+  check(await page.run(`document.querySelector(".gthread-sub").innerText.includes("70")`), "the thread's header counts every reply, loaded or not");
+  await page.run(`document.querySelector(".gthread-scroll").scrollTop = 0`);
+  await page.until("the thread's earlier replies", `!!document.querySelector('.gthread [data-mid="seed-reply-1"]') && !document.querySelector(".gthread .gthread-earlier")`);
+  check(await page.run(`document.querySelectorAll(".gthread .gthread-scroll > .gmsg").length === 70`), "every reply is there once");
+  await page.shot("thread-earlier");
   console.log("\nok");
 } catch (e) {
   failed = true;

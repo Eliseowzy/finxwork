@@ -19,7 +19,6 @@
   },
   "sheet": {
     "title": "New group",
-    "sub": "Give the group a name and add some bots.",
     "name": "Name",
     "namePlaceholder": "For example: Renovation",
     "note": "Group notes (optional)",
@@ -30,13 +29,15 @@
     "cancel": "Cancel",
     "create": "Create group",
     "creating": "Creating…",
-    "externalMembers": "Other subjects’ bots",
     "confirmTitle": "These messages go to another service",
     "confirmLine": "Messages in this group will be sent to {{name}} at {{host}}.",
     "history": "Before it joined",
     "history_none": "Show nothing",
     "history_summary": "Show a summary",
-    "history_recent": "Show the last 20 messages"
+    "history_recent": "Show the last 20 messages",
+    "tagLocal": "Local",
+    "tagExternal": "External",
+    "chosen": "{{count}} selected"
   },
   "page": {
     "log": "Group chat",
@@ -46,13 +47,24 @@
     "you": "You",
     "replyThread": "Reply in thread",
     "quote": "Quote",
-    "threadReplies": "{{count}} replies · {{time}}",
     "threadTitle": "Thread",
+    "threadResize": "Drag to resize the thread",
     "threadClose": "Close thread",
     "threadPlaceholder": "Reply in this thread",
     "threadEmpty": "No replies yet.",
     "memberCount": "{{count}} members",
-    "files": "Files"
+    "files": "Files",
+    "toBottom": "Back to bottom",
+    "quoteCancel": "Cancel quote",
+    "actions": "Message actions",
+    "threadCount_one": "{{count}} reply",
+    "threadCount_other": "{{count}} replies",
+    "threadLast": "Last reply {{time}}",
+    "earlier": "Earlier messages",
+    "threadEarlier": "Earlier replies",
+    "loadingEarlier": "Loading earlier…",
+    "left": "Left",
+    "replyTo": "Replying to {{name}}"
   },
   "mention": {
     "title": "Mention a member"
@@ -69,11 +81,11 @@
     "add": "Add member",
     "addPlaceholder": "Pick a bot",
     "remove": "Remove",
-    "mode": "How much it receives",
+    "mode": "How it takes part",
     "modes": {
-      "mentions": "Only mentions",
-      "normal": "Watches the group",
-      "lazy": "Rarely checks"
+      "normal": "Joins in",
+      "mentions": "Only when called",
+      "lazy": "Drops by"
     },
     "external": "External member",
     "externalNote": "What is said here goes to the other side's service.",
@@ -85,7 +97,18 @@
     "empty": "No bots in this group yet.",
     "pinned": "Pin to top",
     "confirmExternal": "Messages in this group will be sent to {{name}} at {{host}}. Add it?",
-    "stateless": "It does not remember its context"
+    "count_one": "{{count}} member",
+    "count_other": "{{count}} members",
+    "nameHint": "Double-click to rename",
+    "local": "On this Mac",
+    "modeDesc": {
+      "normal": "Reads everything and speaks up when it has something to add",
+      "mentions": "Replies only when @-mentioned, or in threads it is in",
+      "lazy": "Checks the group now and then"
+    },
+    "addBot": "Add member…",
+    "noMore": "No more bots to add",
+    "more": "More"
   },
   "approval": {
     "title": "{{name}} needs your confirmation",
@@ -100,5 +123,11 @@
     "failed": "The file could not be opened in the app.",
     "missing": "The group’s folder is not known.",
     "unsupported": "This file type is not previewed here yet."
+  },
+  "menu": {
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "rename": "Rename",
+    "delete": "Delete group"
   }
 }

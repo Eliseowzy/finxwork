@@ -353,8 +353,9 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
     // The groups beside the bots (bot-group-chat-dev-brief §5): the rows finx pushes, who is
     // answering now, and each new message so a row's last line is never a push behind.
+    // Who is thinking is kept here, not pushed with the row; one who has left the group is no longer in it.
     const sameTyping = (old: GroupSummary | undefined, next: GroupSummary) =>
-      old?.typing?.length && !next.typing?.length ? { ...next, typing: old.typing } : next;
+      old?.typing?.length && !next.typing?.length ? { ...next, typing: old.typing.filter((id) => next.members.some((m) => m.bot_id === id)) } : next;
     const offGroups = rpc.on("groups/changed", (c) =>
       lists.update((l) => {
         const next = mergeGroups(l.groups, c.groups, c.deleted ?? []).map((g) => sameTyping(l.groups.find((old) => old.id === g.id), g));
@@ -377,7 +378,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       lists.update((l) => ({
         groups: l.groups.map((g) => {
           if (g.id !== group_id) return g;
-          const typing = busy ? [...new Set([...(g.typing ?? []), bot_id])] : (g.typing ?? []).filter((id) => id !== bot_id);
+          const typing = busy && g.members.some((m) => m.bot_id === bot_id) ? [...new Set([...(g.typing ?? []), bot_id])] : (g.typing ?? []).filter((id) => id !== bot_id);
           return { ...g, typing };
         }),
       })),
@@ -416,7 +417,15 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);
   const select = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "session", id } })), []);
   const selectBot = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "bot", id }, lastBot: id })), []);
-  const selectGroup = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "group", id }, lastGroup: id })), []);
+  // A thread or the settings belong to the group they were opened in: another group starts with neither.
+  const selectGroup = useCallback(
+    (id: string) =>
+      setUI((u) => {
+        const same = u.selection.kind === "group" && u.selection.id === id;
+        return { ...u, selection: { kind: "group", id }, lastGroup: id, ...(same ? {} : { groupThread: null, groupPanel: false }) };
+      }),
+    [],
+  );
   const setMode = useCallback(
     (mode: Mode) =>
       setUI((u) => {

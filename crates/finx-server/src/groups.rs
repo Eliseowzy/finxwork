@@ -176,6 +176,9 @@ struct MessageFile {
     reply_to: Option<String>,
     #[serde(default)]
     thread: Option<String>,
+    /// An external member's reply: the last `seq` of the batch it answers (brief §4.7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ack: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -190,17 +193,73 @@ struct Group {
     file: GroupData,
     /// Read from `messages.jsonl` when first needed.
     messages: Option<Vec<MessageFile>>,
+    /// A message's place in `messages`, by id: quotes and checks must not scan the group.
+    by_id: HashMap<String, usize>,
 }
 
 impl Group {
+    fn new(file: GroupData, messages: Option<Vec<MessageFile>>) -> Self {
+        let mut group = Self { file, messages: None, by_id: HashMap::new() };
+        if let Some(messages) = messages {
+            group.set_messages(messages);
+        }
+        group
+    }
+
     /// Reads this group's messages into memory, once.
     fn ensure_messages(&mut self, home: &FinxHome) -> Result<(), RpcError> {
         if self.messages.is_none() {
-            self.messages = Some(read_messages(&home.group_dir(&self.file.id))?);
+            let messages = read_messages(&home.group_dir(&self.file.id))?;
+            self.set_messages(messages);
         }
         Ok(())
     }
+
+    fn set_messages(&mut self, messages: Vec<MessageFile>) {
+        self.by_id = messages.iter().enumerate().map(|(i, m)| (m.id.clone(), i)).collect();
+        // A reply is written before `group.json` moves the read position it answers: after a
+        // crash in between, the reply itself says how far the other side got.
+        for m in &messages {
+            let (Some(ack), FromFile::Bot { bot_id }) = (m.ack, &m.from) else {
+                continue;
+            };
+            // Only for the membership it was given in: one that left and came back starts over.
+            let current = self.file.members.iter().any(|x| &x.bot_id == bot_id && x.joined_seq <= m.seq);
+            let Some(peer) = self.file.peers.get_mut(bot_id).filter(|_| current) else {
+                continue;
+            };
+            let stream = m.thread.clone().unwrap_or_else(|| MAIN_STREAM.to_string());
+            let context = peer.contexts.entry(stream).or_insert(ContextFile {
+                context_id: String::new(),
+                sent_seq: 0,
+            });
+            context.sent_seq = context.sent_seq.max(ack);
+        }
+        self.messages = Some(messages);
+    }
+
+    fn all(&self) -> &[MessageFile] {
+        self.messages.as_deref().expect("read before use")
+    }
+
+    fn find(&self, id: &str) -> Option<&MessageFile> {
+        self.by_id.get(id).and_then(|&i| self.messages.as_ref()?.get(i))
+    }
+
+    /// Whether `id` is a message of the main flow, so it can start a thread.
+    fn is_root(&self, id: &str) -> bool {
+        self.find(id).is_some_and(|m| m.thread.is_none())
+    }
+
+    fn push(&mut self, message: MessageFile) {
+        let messages = self.messages.as_mut().expect("read before use");
+        self.by_id.insert(message.id.clone(), messages.len());
+        messages.push(message);
+    }
 }
+
+/// The stream name of the main flow, as `PeerFile::contexts` keys it.
+pub(crate) const MAIN_STREAM: &str = "main";
 
 /// Every group, and who follows the list.
 pub(crate) struct Registry {
@@ -208,8 +267,9 @@ pub(crate) struct Registry {
     bots: Arc<bots::Registry>,
     /// `bots.external`: whether another subject's bot may join.
     external: bool,
-    /// `None` until read from disk, on first use.
-    groups: Mutex<Option<BTreeMap<String, Group>>>,
+    /// `None` until read from disk, on first use. Each group has its own lock: a long group
+    /// being read or written must not hold up the others.
+    groups: Mutex<Option<BTreeMap<String, Arc<Mutex<Group>>>>>,
     feed: ListFeed,
     /// One `group.json` write at a time.
     writing: Mutex<()>,
@@ -304,24 +364,36 @@ impl Registry {
         self.feed.cancel(conn);
     }
 
-    fn with<R>(&self, f: impl FnOnce(&mut BTreeMap<String, Group>) -> R) -> R {
+    /// The map of groups, held only long enough to look one up, add or remove one.
+    fn map<R>(&self, f: impl FnOnce(&mut BTreeMap<String, Arc<Mutex<Group>>>) -> R) -> R {
         let mut groups = self.groups.lock();
         let groups = groups.get_or_insert_with(|| read_all(&self.home));
         f(groups)
     }
 
+    fn group(&self, id: &str) -> Option<Arc<Mutex<Group>>> {
+        self.map(|groups| groups.get(id).cloned())
+    }
+
+    /// Every group, each one locked in turn.
+    fn each<R>(&self, mut f: impl FnMut(&Group) -> Option<R>) -> Vec<R> {
+        let all: Vec<Arc<Mutex<Group>>> = self.map(|groups| groups.values().cloned().collect());
+        all.iter().filter_map(|g| f(&g.lock())).collect()
+    }
+
     fn with_group<R>(&self, id: &str, f: impl FnOnce(&mut Group) -> Result<R, RpcError>) -> Result<R, RpcError> {
-        self.with(|groups| {
-            let group = groups.get_mut(id).ok_or_else(|| errors::group_not_found(id))?;
-            f(group)
-        })
+        let group = self.group(id).ok_or_else(|| errors::group_not_found(id))?;
+        let mut group = group.lock();
+        f(&mut group)
     }
 
     fn save(&self, id: &str) -> Result<(), RpcError> {
         let _writing = self.writing.lock();
-        let Some(file) = self.with(|groups| groups.get(id).map(|g| g.file.clone())) else {
+        // Looked up again under `writing`: a group deleted meanwhile is not written back.
+        let Some(group) = self.group(id) else {
             return Ok(());
         };
+        let file = group.lock().file.clone();
         write_file(&self.home, &file)
     }
 
@@ -345,7 +417,7 @@ impl Registry {
 
     /// Every group's row, or those `keep` says.
     fn rows(&self, keep: impl Fn(&str) -> bool) -> Vec<GroupSummary> {
-        self.with(|groups| groups.values().filter(|g| keep(&g.file.id)).map(|g| self.summary(g)).collect())
+        self.each(|g| keep(&g.file.id).then(|| self.summary(g)))
     }
 
     fn summary(&self, group: &Group) -> GroupSummary {
@@ -389,7 +461,7 @@ impl Registry {
     }
 
     pub(crate) fn row(&self, id: &str) -> Result<GroupSummary, RpcError> {
-        self.with(|groups| groups.get(id).map(|g| self.summary(g))).ok_or_else(|| errors::group_not_found(id))
+        self.with_group(id, |g| Ok(self.summary(g)))
     }
 
     pub(crate) fn create(&self, p: GroupCreateParams) -> Result<GroupSummary, RpcError> {
@@ -420,8 +492,8 @@ impl Registry {
         make_dirs(&self.home, &id)?;
         write_file(&self.home, &file)?;
         touch_messages(&self.home, &id)?;
-        self.with(|groups| {
-            groups.insert(id.clone(), Group { file, messages: Some(Vec::new()) });
+        self.map(|groups| {
+            groups.insert(id.clone(), Arc::new(Mutex::new(Group::new(file, Some(Vec::new())))));
         });
         let row = self.row(&id)?;
         self.announce(&[&id], Vec::new());
@@ -481,13 +553,13 @@ impl Registry {
         // A save that started before this delete must finish before the folder moves, or it
         // would write a fresh group.json at the old path (and the group would come back).
         let _writing = self.writing.lock();
-        let existing = self.with(|groups| groups.get(id).map(|g| g.file.id.clone())).ok_or_else(|| errors::group_not_found(id))?;
+        let existing = self.with_group(id, |g| Ok(g.file.id.clone()))?;
         let dir = self.home.group_dir(&existing);
         let trash = self.home.trash_groups_dir();
         private_dir(&trash).map_err(io_error)?;
         let target = unique_dir(&trash, &existing);
         std::fs::rename(&dir, &target).map_err(io_error)?;
-        self.with(|groups| groups.remove(id));
+        self.map(|groups| groups.remove(id));
         self.announce(&[], vec![id.to_string()]);
         Ok(())
     }
@@ -507,12 +579,17 @@ impl Registry {
             Ok(())
         })?;
         self.save(&p.id)?;
+        // Everyone sees who came in, as in a chat app; the bots hear it as the group's own line.
+        if let Some(info) = self.bots.member_info(&p.bot_id) {
+            self.system(&p.id, format!("{} 加入了群", info.name))?;
+        }
         let row = self.row(&p.id)?;
         self.announce(&[&p.id], Vec::new());
         Ok(row)
     }
 
     pub(crate) fn remove_member(&self, p: GroupRemoveMemberParams) -> Result<(), RpcError> {
+        let name = self.bots.member_info(&p.bot_id).map(|i| i.name);
         self.with_group(&p.id, |g| {
             let before = g.file.members.len();
             g.file.members.retain(|m| m.bot_id != p.bot_id);
@@ -523,6 +600,10 @@ impl Registry {
             Ok(())
         })?;
         self.save(&p.id)?;
+        // Its words stay in the flow; this line says from when on it is no longer here.
+        if let Some(name) = name {
+            self.system(&p.id, format!("{name} 离开了群"))?;
+        }
         self.announce(&[&p.id], Vec::new());
         Ok(())
     }
@@ -561,7 +642,7 @@ impl Registry {
             let before = p.before_seq.unwrap_or(u64::MAX);
             let main: Vec<&MessageFile> = messages.iter().filter(|m| m.thread.is_none() && m.seq < before).collect();
             let start = main.len().saturating_sub(limit);
-            let shown: Vec<GroupMessage> = main[start..].iter().map(|m| self.message(m, messages)).collect();
+            let shown: Vec<GroupMessage> = main[start..].iter().map(|m| self.message(m, g)).collect();
             // One pass over the replies, then only the roots on this page: opening a long
             // group must not scan every message for every root.
             let mut counts: HashMap<&str, (u32, Option<&MessageFile>)> = HashMap::new();
@@ -590,9 +671,9 @@ impl Registry {
         self.with_group(&p.id, |g| {
             g.ensure_messages(&self.home)?;
             let messages = g.messages.as_ref().expect("read above");
-            let root = messages
-                .iter()
-                .find(|m| m.id == p.root && m.thread.is_none())
+            let root = g
+                .find(&p.root)
+                .filter(|m| m.thread.is_none())
                 .ok_or_else(|| RpcError::invalid_params("that message does not start a thread"))?;
             let before = p.before_seq.unwrap_or(u64::MAX);
             let replies: Vec<&MessageFile> = messages
@@ -600,8 +681,8 @@ impl Registry {
                 .filter(|m| m.thread.as_deref() == Some(root.id.as_str()) && m.seq < before)
                 .collect();
             let start = replies.len().saturating_sub(limit.saturating_sub(1));
-            let mut shown = vec![self.message(root, messages)];
-            shown.extend(replies[start..].iter().map(|m| self.message(m, messages)));
+            let mut shown = vec![self.message(root, g)];
+            shown.extend(replies[start..].iter().map(|m| self.message(m, g)));
             Ok(GroupThreadResult { messages: shown })
         })
     }
@@ -619,37 +700,9 @@ impl Registry {
         let files = self.ingest_files(&p.id, &p.files)?;
         let message = self.with_group(&p.id, |g| {
             g.ensure_messages(&self.home)?;
-            let messages = g.messages.as_ref().expect("read above");
-            let reply_to = match &p.reply_to {
-                Some(reply) if messages.iter().any(|x| &x.id == reply) => Some(reply.clone()),
-                Some(_) => return Err(RpcError::invalid_params("that message is not in the group")),
-                None => None,
-            };
-            let thread = match &p.thread {
-                Some(root) if messages.iter().any(|x| &x.id == root && x.thread.is_none()) => Some(root.clone()),
-                Some(_) => return Err(RpcError::invalid_params("that message does not start a thread")),
-                None => None,
-            };
+            let (reply_to, thread) = check_links(g, p.reply_to.clone(), p.thread.clone())?;
             let mentions = self.mentions(&text, &g.file.members);
-            let seq = g.file.next_seq;
-            let message = MessageFile {
-                id: uuid::Uuid::now_v7().to_string(),
-                seq,
-                ts: now(),
-                from: FromFile::Owner,
-                text,
-                files,
-                mentions,
-                reply_to,
-                thread,
-            };
-            let line = serde_json::to_vec(&message).map_err(|e| RpcError::internal(e.to_string()))?;
-            append_message(&self.home, &p.id, &line)?;
-            g.file.next_seq = seq + 1;
-            g.file.summary_list.last = Some(self.last(&message));
-            g.messages.as_mut().expect("read above").push(message.clone());
-            let shown = self.message(&message, g.messages.as_ref().expect("read above"));
-            Ok(shown)
+            self.append(g, FromFile::Owner, text, files, mentions, reply_to, thread, None)
         })?;
         // fsync and the group file are outside the lock too: a slow disk must not stop the
         // other groups.
@@ -663,8 +716,7 @@ impl Registry {
     /// The local bots of a group, with what a seat needs: id, name, mode.
     pub(crate) fn local_members(&self, id: &str) -> Result<Vec<(String, String, GroupMemberMode)>, RpcError> {
         let members = self
-            .with(|groups| groups.get(id).map(|g| g.file.members.clone()))
-            .ok_or_else(|| errors::group_not_found(id))?;
+            .with_group(id, |g| Ok(g.file.members.clone()))?;
         Ok(members
             .into_iter()
             .filter_map(|m| {
@@ -690,39 +742,44 @@ impl Registry {
 
     /// A bot's word in a group: the service got it from its seat session's `send_to_user`.
     pub(crate) fn append_bot(&self, id: &str, bot_id: &str, text: String, files: Vec<GroupFile>, thread: Option<String>, reply_to: Option<String>) -> Result<GroupMessage, RpcError> {
+        self.append_reply(id, bot_id, text, files, thread, reply_to, None)
+    }
+
+    /// A bot's word; for an external member, `ack` is the last `seq` of the batch it answers.
+    #[allow(clippy::too_many_arguments)]
+    fn append_reply(
+        &self,
+        id: &str,
+        bot_id: &str,
+        text: String,
+        files: Vec<GroupFile>,
+        thread: Option<String>,
+        reply_to: Option<String>,
+        ack: Option<u64>,
+    ) -> Result<GroupMessage, RpcError> {
         let message = self.with_group(id, |g| {
+            // One that has left, its turn still running, says nothing more here.
+            if !g.file.members.iter().any(|m| m.bot_id == bot_id) {
+                return Err(RpcError::invalid_params(format!("bot {bot_id} is not in the group")));
+            }
             g.ensure_messages(&self.home)?;
-            let messages = g.messages.as_ref().expect("read above");
-            let reply_to = match reply_to {
-                Some(reply) if messages.iter().any(|x| x.id == reply) => Some(reply),
-                Some(_) => return Err(RpcError::invalid_params("that message is not in the group")),
-                None => None,
-            };
-            let thread = match thread {
-                Some(root) if messages.iter().any(|x| x.id == root && x.thread.is_none()) => Some(root),
-                Some(_) => return Err(RpcError::invalid_params("that message does not start a thread")),
-                None => None,
-            };
+            let (reply_to, thread) = check_links(g, reply_to, thread)?;
             let mentions = self.mentions(&text, &g.file.members);
-            let seq = g.file.next_seq;
-            let message = MessageFile {
-                id: uuid::Uuid::now_v7().to_string(),
-                seq,
-                ts: now(),
-                from: FromFile::Bot { bot_id: bot_id.to_string() },
-                text,
-                files,
-                mentions,
-                reply_to,
-                thread,
-            };
-            let line = serde_json::to_vec(&message).map_err(|e| RpcError::internal(e.to_string()))?;
-            append_message(&self.home, id, &line)?;
-            g.file.next_seq = seq + 1;
-            g.file.summary_list.last = Some(self.last(&message));
+            let from = FromFile::Bot { bot_id: bot_id.to_string() };
+            let shown = self.append(g, from, text, files, mentions, reply_to, thread.clone(), ack)?;
             g.file.summary_list.unread = g.file.summary_list.unread.saturating_add(1);
-            g.messages.as_mut().expect("read above").push(message.clone());
-            Ok(self.message(&message, g.messages.as_ref().expect("read above")))
+            if let Some(ack) = ack {
+                // In the same step as the reply: after a crash in between, the reply's `ack`
+                // moves the position on when the messages are read back.
+                let stream = thread.unwrap_or_else(|| MAIN_STREAM.to_string());
+                let peer = g.file.peers.entry(bot_id.to_string()).or_default();
+                let context = peer.contexts.entry(stream).or_insert(ContextFile {
+                    context_id: String::new(),
+                    sent_seq: 0,
+                });
+                context.sent_seq = context.sent_seq.max(ack);
+            }
+            Ok(shown)
         })?;
         self.sync_messages(id)?;
         self.save(id)?;
@@ -757,14 +814,12 @@ impl Registry {
     /// Fuse 2: the first time an external member is in the group, everyone hears it once.
     pub(crate) fn notice_external(&self, id: &str) -> Result<(), RpcError> {
         let names: Vec<String> = self
-            .with(|groups| {
-                groups.get(id).map(|g| {
-                    g.file
-                        .members
-                        .iter()
-                        .filter_map(|m| self.bots.member_info(&m.bot_id).filter(|i| i.external).map(|i| i.name))
-                        .collect()
-                })
+            .with_group(id, |g| {
+                Ok(g.file
+                    .members
+                    .iter()
+                    .filter_map(|m| self.bots.member_info(&m.bot_id).filter(|i| i.external).map(|i| i.name))
+                    .collect())
             })
             .unwrap_or_default();
         if names.is_empty() {
@@ -823,30 +878,48 @@ impl Registry {
         let text = text.into();
         let message = self.with_group(id, |g| {
             g.ensure_messages(&self.home)?;
-            let seq = g.file.next_seq;
-            let message = MessageFile {
-                id: uuid::Uuid::now_v7().to_string(),
-                seq,
-                ts: now(),
-                from: FromFile::System,
-                text,
-                files: Vec::new(),
-                mentions: Vec::new(),
-                reply_to: None,
-                thread: None,
-            };
-            let line = serde_json::to_vec(&message).map_err(|e| RpcError::internal(e.to_string()))?;
-            append_message(&self.home, id, &line)?;
-            g.file.next_seq = seq + 1;
-            g.file.summary_list.last = Some(self.last(&message));
-            g.messages.as_mut().expect("read above").push(message.clone());
-            Ok(self.message(&message, g.messages.as_ref().expect("read above")))
+            self.append(g, FromFile::System, text, Vec::new(), Vec::new(), None, None, None)
         })?;
         self.sync_messages(id)?;
         self.save(id)?;
         self.announce(&[id], Vec::new());
         self.publish(id, &message);
         Ok(message)
+    }
+
+    /// Writes a message at the end of the group, under its lock. The caller fsyncs and saves.
+    #[allow(clippy::too_many_arguments)]
+    fn append(
+        &self,
+        g: &mut Group,
+        from: FromFile,
+        text: String,
+        files: Vec<GroupFile>,
+        mentions: Vec<String>,
+        reply_to: Option<String>,
+        thread: Option<String>,
+        ack: Option<u64>,
+    ) -> Result<GroupMessage, RpcError> {
+        let seq = g.file.next_seq;
+        let message = MessageFile {
+            id: uuid::Uuid::now_v7().to_string(),
+            seq,
+            ts: now(),
+            from,
+            text,
+            files,
+            mentions,
+            reply_to,
+            thread,
+            ack,
+        };
+        let line = serde_json::to_vec(&message).map_err(|e| RpcError::internal(e.to_string()))?;
+        append_message(&self.home, &g.file.id, &line)?;
+        g.file.next_seq = seq + 1;
+        g.file.summary_list.last = Some(self.last(&message));
+        let shown = self.message(&message, g);
+        g.push(message);
+        Ok(shown)
     }
 
     pub(crate) fn read(&self, id: &str) -> Result<(), RpcError> {
@@ -882,11 +955,10 @@ impl Registry {
                 return Err(RpcError::invalid_params(format!("{}: not a file", source.display())));
             }
             let name = clean_file_name(source.file_name().and_then(|n| n.to_str()).unwrap_or("file"));
-            let target = unique_file(&dir, &name);
+            // Reserved before copying: two senders of `report.pdf` at once get two files.
+            let target = reserve_file(&dir, &name).map_err(io_error)?;
             let target_name = target.file_name().and_then(|n| n.to_str()).unwrap_or(&name).to_string();
-            if std::fs::canonicalize(&source).ok() != std::fs::canonicalize(&target).ok() {
-                std::fs::copy(&source, &target).map_err(io_error)?;
-            }
+            std::fs::copy(&source, &target).map_err(io_error)?;
             let size = std::fs::metadata(&target).map_err(io_error)?.len();
             out.push(GroupFile {
                 path: format!("files/{target_name}"),
@@ -947,8 +1019,8 @@ impl Registry {
         }
     }
 
-    fn message(&self, m: &MessageFile, all: &[MessageFile]) -> GroupMessage {
-        let reply_preview = m.reply_to.as_ref().and_then(|id| all.iter().find(|x| &x.id == id)).map(|x| GroupQuote {
+    fn message(&self, m: &MessageFile, g: &Group) -> GroupMessage {
+        let reply_preview = m.reply_to.as_ref().and_then(|id| g.find(id)).map(|x| GroupQuote {
             id: x.id.clone(),
             from: self.speaker(&x.from),
             text: x.text.clone(),
@@ -985,7 +1057,7 @@ impl Registry {
         self.with_group(id, |g| {
             g.ensure_messages(&self.home)?;
             let messages = g.messages.as_ref().expect("read above");
-            let root_message = messages.iter().find(|m| m.id == root && m.thread.is_none());
+            let root_message = g.find(root).filter(|m| m.thread.is_none());
             if root_message.is_some_and(|m| m.mentions.iter().any(|id| id == bot_id)) {
                 return Ok(true);
             }
@@ -999,8 +1071,7 @@ impl Registry {
     /// The external members of a group, with what a batch needs (brief §4.7).
     pub(crate) fn external_members(&self, id: &str) -> Result<Vec<ExternalMember>, RpcError> {
         let (members, peers) = self
-            .with(|groups| groups.get(id).map(|g| (g.file.members.clone(), g.file.peers.clone())))
-            .ok_or_else(|| errors::group_not_found(id))?;
+            .with_group(id, |g| Ok((g.file.members.clone(), g.file.peers.clone())))?;
         Ok(members
             .into_iter()
             .filter_map(|m| {
@@ -1022,10 +1093,11 @@ impl Registry {
 
     /// A task this member is still working on, and the stream it belongs to.
     pub(crate) fn peer_task(&self, id: &str, bot_id: &str) -> Option<(String, Option<String>)> {
-        self.with(|groups| {
-            let peer = groups.get(id)?.file.peers.get(bot_id)?;
-            Some((peer.task_id.clone()?, peer.task_stream.clone()))
+        self.with_group(id, |g| {
+            Ok(g.file.peers.get(bot_id).and_then(|peer| Some((peer.task_id.clone()?, peer.task_stream.clone()))))
         })
+        .ok()
+        .flatten()
     }
 
     pub(crate) fn set_peer_task(&self, id: &str, bot_id: &str, task: Option<String>, stream: Option<String>) -> Result<(), RpcError> {
@@ -1040,23 +1112,28 @@ impl Registry {
 
     /// Every external member with a task still in flight, for the startup sweep.
     pub(crate) fn external_tasks(&self) -> Vec<(String, String, String, Option<String>)> {
-        self.with(|groups| {
-            groups
+        self.each(|group| {
+            let id = &group.file.id;
+            let tasks: Vec<_> = group
+                .file
+                .peers
                 .iter()
-                .flat_map(|(id, group)| {
-                    group.file.peers.iter().filter_map(move |(bot, peer)| {
-                        Some((id.clone(), bot.clone(), peer.task_id.clone()?, peer.task_stream.clone()))
-                    })
-                })
-                .collect()
+                .filter_map(|(bot, peer)| Some((id.clone(), bot.clone(), peer.task_id.clone()?, peer.task_stream.clone())))
+                .collect();
+            Some(tasks)
         })
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// One external member's contexts and read positions.
     pub(crate) fn peer_state(&self, id: &str, bot_id: &str) -> Result<PeerState, RpcError> {
-        let peer = self
-            .with(|groups| groups.get(id).map(|g| g.file.peers.get(bot_id).cloned()))
-            .ok_or_else(|| errors::group_not_found(id))?;
+        // The messages first: a reply written before a crash may move a read position on.
+        let peer = self.with_group(id, |g| {
+            g.ensure_messages(&self.home)?;
+            Ok(g.file.peers.get(bot_id).cloned())
+        })?;
         Ok(match peer {
             Some(peer) => PeerState {
                 stateless: peer.stateless,
@@ -1138,8 +1215,7 @@ impl Registry {
     pub(crate) fn messages(&self, id: &str) -> Result<Vec<GroupMessage>, RpcError> {
         self.with_group(id, |g| {
             g.ensure_messages(&self.home)?;
-            let all = g.messages.as_ref().expect("read above");
-            Ok(all.iter().map(|m| self.message(m, all)).collect())
+            Ok(g.all().iter().map(|m| self.message(m, g)).collect())
         })
     }
 
@@ -1159,6 +1235,7 @@ impl Registry {
 
     /// Another subject's bot said something: its words go into the group like a local bot's,
     /// with the files it gave written into the group's folder (brief §4.7).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn append_external(
         &self,
         id: &str,
@@ -1167,13 +1244,14 @@ impl Registry {
         files: Vec<PeerIncomingFile>,
         thread: Option<String>,
         reply_to: Option<String>,
+        ack: Option<u64>,
     ) -> Result<GroupMessage, RpcError> {
         let dir = self.home.group_files_dir(id);
         private_dir(&dir).map_err(io_error)?;
         let mut written = Vec::new();
         for file in files {
             let name = clean_file_name(&file.name);
-            let target = unique_file(&dir, &name);
+            let target = reserve_file(&dir, &name).map_err(io_error)?;
             let target_name = target.file_name().and_then(|n| n.to_str()).unwrap_or(&name).to_string();
             std::fs::write(&target, &file.bytes).map_err(io_error)?;
             written.push(GroupFile {
@@ -1183,7 +1261,30 @@ impl Registry {
                 media_type: file.media_type.or_else(|| media_type(&target_name).map(str::to_string)),
             });
         }
-        self.append_bot(id, bot_id, text, written, thread, reply_to)
+        self.append_reply(id, bot_id, text, written, thread, reply_to, ack)
+    }
+}
+
+/// The quoted message and the thread root of a new message, both checked against the group.
+fn check_links(g: &Group, reply_to: Option<String>, thread: Option<String>) -> Result<(Option<String>, Option<String>), RpcError> {
+    if let Some(reply) = &reply_to
+        && g.find(reply).is_none()
+    {
+        return Err(RpcError::invalid_params("that message is not in the group"));
+    }
+    if let Some(root) = &thread
+        && !g.is_root(root)
+    {
+        return Err(RpcError::invalid_params("that message does not start a thread"));
+    }
+    Ok((reply_to, thread))
+}
+
+fn batch_speaker(from: GroupSpeaker) -> finx_core::GroupBatchSpeaker {
+    match from {
+        GroupSpeaker::Owner => finx_core::GroupBatchSpeaker::Owner,
+        GroupSpeaker::Bot { name, external, .. } => finx_core::GroupBatchSpeaker::Bot { name, external },
+        GroupSpeaker::System => finx_core::GroupBatchSpeaker::System,
     }
 }
 
@@ -1191,11 +1292,11 @@ fn batch_message(message: GroupMessage) -> finx_core::GroupBatchMessage {
     finx_core::GroupBatchMessage {
         id: message.id.clone(),
         seq: message.seq,
-        from: match message.from {
-            GroupSpeaker::Owner => finx_core::GroupBatchSpeaker::Owner,
-            GroupSpeaker::Bot { name, external, .. } => finx_core::GroupBatchSpeaker::Bot { name, external },
-            GroupSpeaker::System => finx_core::GroupBatchSpeaker::System,
-        },
+        from: batch_speaker(message.from),
+        quote: message.reply_preview.map(|q| finx_core::GroupBatchQuote {
+            from: batch_speaker(q.from),
+            text: q.text,
+        }),
         text: message.text,
         files: message
             .files
@@ -1302,9 +1403,23 @@ fn append_message(home: &FinxHome, id: &str, line: &[u8]) -> Result<(), RpcError
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&path).map_err(io_error)?;
-    file.write_all(line).map_err(io_error)?;
-    file.write_all(b"\n").map_err(io_error)?;
+    let mut file = options.read(true).open(&path).map_err(io_error)?;
+    // A crash may have left half a line at the end. Written straight after it, this message
+    // would share its line and be lost when the file is read back: start a new line first.
+    let mut record = Vec::with_capacity(line.len() + 2);
+    if file.metadata().map_err(io_error)?.len() > 0 {
+        let mut last = [0u8; 1];
+        file.seek(SeekFrom::End(-1)).map_err(io_error)?;
+        file.read_exact(&mut last).map_err(io_error)?;
+        if last[0] != b'\n' {
+            tracing::warn!(path = %path.display(), "a group's messages ended in half a line");
+            record.push(b'\n');
+        }
+    }
+    record.extend_from_slice(line);
+    record.push(b'\n');
+    // One write: a line is whole or, at worst, the last one in the file.
+    file.write_all(&record).map_err(io_error)?;
     Ok(())
 }
 
@@ -1357,7 +1472,7 @@ fn read_messages(dir: &Path) -> Result<Vec<MessageFile>, RpcError> {
     Ok(out)
 }
 
-fn read_all(home: &FinxHome) -> BTreeMap<String, Group> {
+fn read_all(home: &FinxHome) -> BTreeMap<String, Arc<Mutex<Group>>> {
     let mut out = BTreeMap::new();
     let Ok(dir) = std::fs::read_dir(home.groups_dir()) else {
         return out;
@@ -1373,7 +1488,7 @@ fn read_all(home: &FinxHome) -> BTreeMap<String, Group> {
                 if let Some(seq) = last_seq(&home.group_dir(&file.id).join("messages.jsonl")) {
                     file.next_seq = file.next_seq.max(seq + 1);
                 }
-                out.insert(file.id.clone(), Group { file, messages: None });
+                out.insert(file.id.clone(), Arc::new(Mutex::new(Group::new(file, None))));
             }
             Err(err) => tracing::warn!(path = %entry.path().display(), "cannot read a group: {err}"),
         }
@@ -1387,22 +1502,32 @@ fn write_file(home: &FinxHome, file: &GroupData) -> Result<(), RpcError> {
     replace_file(&home.group_dir(&file.id).join("group.json"), &bytes).map_err(io_error)
 }
 
-fn unique_file(dir: &Path, name: &str) -> PathBuf {
-    let candidate = dir.join(name);
-    if !candidate.exists() {
-        return candidate;
-    }
+/// A new, empty file in `dir` named after `name`, created here so that no one else can pick the
+/// same name before it is written.
+fn reserve_file(dir: &Path, name: &str) -> std::io::Result<PathBuf> {
     let (stem, ext) = match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
         _ => (name, String::new()),
     };
-    for n in 2..1000 {
-        let candidate = dir.join(format!("{stem}-{n}{ext}"));
-        if !candidate.exists() {
-            return candidate;
+    let candidates = std::iter::once(dir.join(name))
+        .chain((2..1000).map(|n| dir.join(format!("{stem}-{n}{ext}"))))
+        .chain(std::iter::once(dir.join(format!("{stem}-{}{ext}", uuid::Uuid::now_v7()))));
+    let mut last = None;
+    for candidate in candidates {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&candidate) {
+            Ok(_) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
+            Err(e) => return Err(e),
         }
     }
-    dir.join(format!("{stem}-{}", uuid::Uuid::now_v7()))
+    Err(last.unwrap_or_else(|| std::io::Error::other("no free file name")))
 }
 
 fn unique_dir(parent: &Path, id: &str) -> PathBuf {
@@ -2056,6 +2181,64 @@ mod tests {
             })
             .unwrap_err();
         assert_eq!(err.code, error_code::GROUP_EXTERNAL_DISABLED);
+    }
+
+    #[test]
+    fn half_a_line_at_the_end_does_not_take_the_next_message() {
+        let (_dir, home, bots, groups) = setup(true);
+        let row = group(&groups);
+        send(&groups, &row.id, "第一条");
+        // The process died in the middle of writing a line.
+        let path = home.group_dir(&row.id).join("messages.jsonl");
+        let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(br#"{"id":"torn","seq":1,"#).unwrap();
+        drop(file);
+
+        let reloaded = Registry::new(home.clone(), bots.clone(), true);
+        send(&reloaded, &row.id, "第二条");
+        let again = Registry::new(home, bots, true);
+        let texts: Vec<String> = again.messages(&row.id).unwrap().into_iter().map(|m| m.text).collect();
+        assert_eq!(texts, vec!["第一条", "第二条"]);
+    }
+
+    #[test]
+    fn a_reply_moves_the_read_position_even_if_the_group_file_was_not_written() {
+        let (_dir, home, bots, groups) = setup(true);
+        bots.add_external_for_test("ext", "医院助手");
+        let row = groups
+            .create(GroupCreateParams {
+                name: "医院群".into(),
+                note: None,
+                members: vec![GroupMemberInput {
+                    bot_id: "ext".into(),
+                    mode: None,
+                    history: Some(GroupHistory::None),
+                }],
+            })
+            .unwrap();
+        let asked = send(&groups, &row.id, "在吗");
+        groups.set_peer_context(&row.id, "ext", MAIN_STREAM, "ctx-1").unwrap();
+        let path = home.group_dir(&row.id).join("group.json");
+        let before = std::fs::read(&path).unwrap();
+        groups
+            .append_external(&row.id, "ext", "在".into(), Vec::new(), None, None, Some(asked.seq))
+            .unwrap();
+        assert_eq!(groups.peer_state(&row.id, "ext").unwrap().contexts[MAIN_STREAM].sent_seq, asked.seq);
+
+        // The reply reached messages.jsonl; group.json is still the one from before it.
+        std::fs::write(&path, before).unwrap();
+        let reloaded = Registry::new(home, bots, true);
+        let state = reloaded.peer_state(&row.id, "ext").unwrap();
+        assert_eq!(state.contexts[MAIN_STREAM].sent_seq, asked.seq, "the batch must not be sent again");
+        assert_eq!(state.contexts[MAIN_STREAM].context_id, "ctx-1");
+    }
+
+    #[test]
+    fn two_files_of_the_same_name_do_not_overwrite_each_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let names: Vec<PathBuf> = (0..3).map(|_| reserve_file(dir.path(), "report.pdf").unwrap()).collect();
+        let file_names: Vec<&str> = names.iter().map(|p| p.file_name().unwrap().to_str().unwrap()).collect();
+        assert_eq!(file_names, vec!["report.pdf", "report-2.pdf", "report-3.pdf"]);
     }
 
     #[test]
