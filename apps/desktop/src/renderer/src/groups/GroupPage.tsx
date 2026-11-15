@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { insertMention, mentionChoices, memberName, threadMessages, typingMention } from "@finx/client";
-import type { GroupApprovalParams, GroupMessage, GroupQuote, GroupSummary, GroupThread } from "@finx/protocol";
+import type { GroupApprovalParams, GroupFile, GroupMessage, GroupQuote, GroupSummary, GroupThread } from "@finx/protocol";
+import { GroupFilePreview } from "./GroupFilePreview";
 import { SidebarToggle } from "../components";
 import { Composer } from "../composer/Composer";
 import { Markdown } from "../session/Markdown";
@@ -37,6 +38,7 @@ export function GroupPage({ group }: { group: GroupSummary }) {
   const [reply, setReply] = useState<GroupQuote | null>(null);
   // A seat session's call waiting for the owner (M7's card, wired for it): the group page asks.
   const [approvals, setApprovals] = useState<GroupApprovalParams[]>([]);
+  const [preview, setPreview] = useState<GroupFile | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const [dock, setDock] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -193,7 +195,7 @@ export function GroupPage({ group }: { group: GroupSummary }) {
                 ) : (
                   <div className="tr bots gtr" role="log" aria-label={t("page.log")}>
                     {main.map((m) => (
-                      <MessageRow key={m.id} m={m} group={group} thread={threads[m.id]} onThread={() => openThread(m.id)} onQuote={() => setReply({ id: m.id, from: m.from, text: m.text })} />
+                      <MessageRow key={m.id} m={m} group={group} thread={threads[m.id]} onThread={() => openThread(m.id)} onQuote={() => setReply({ id: m.id, from: m.from, text: m.text })} onPreview={setPreview} />
                     ))}
                   </div>
                 )}
@@ -215,6 +217,7 @@ export function GroupPage({ group }: { group: GroupSummary }) {
       </div>
       {settings && <GroupPanel group={group} onClose={() => st.set({ groupPanel: false })} />}
       {thread && <ThreadPanel group={group} root={thread} messages={messages} onClose={() => st.set({ groupThread: null })} onSend={(text) => send(text, thread)} />}
+      {preview && <GroupFilePreview group={group} file={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }
@@ -313,12 +316,13 @@ function speakerName(from: GroupMessage["from"], you: string): string {
   return from.kind === "owner" ? you : from.kind === "bot" ? from.name : "";
 }
 
-function MessageRow({ m, group, thread, onThread, onQuote }: {
+function MessageRow({ m, group, thread, onThread, onQuote, onPreview }: {
   m: GroupMessage;
   group: GroupSummary;
   thread?: GroupThread;
   onThread: () => void;
   onQuote: () => void;
+  onPreview?: (file: GroupFile) => void;
 }) {
   const { t } = useTranslation("groups");
   const now = useNow(30_000);
@@ -352,15 +356,7 @@ function MessageRow({ m, group, thread, onThread, onQuote }: {
           {(m.files ?? []).length > 0 && (
             <div className="gfiles">
               {(m.files ?? []).map((f) => (
-                <button
-                  key={f.path}
-                  className="gfile"
-                  title={f.path}
-                  onClick={() => {
-                    const abs = group.files_dir ? `${group.files_dir}/${f.path.replace(/^files\//, "")}` : null;
-                    if (abs) void window.finx?.openFile(abs, { app: "system" });
-                  }}
-                >
+                <button key={f.path} className="gfile" title={f.path} onClick={() => onPreview?.(f)}>
                   <Icon name="file" className="sm" />
                   {f.name}
                 </button>

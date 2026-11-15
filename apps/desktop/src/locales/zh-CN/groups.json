@@ -94,5 +94,11 @@
     "external": "外部成员",
     "allow": "允许这一次",
     "deny": "拒绝"
+  },
+  "preview": {
+    "loading": "正在载入…",
+    "failed": "这个文件没能在应用里打开。",
+    "missing": "不知道群的文件夹在哪。",
+    "unsupported": "这种文件还不能在这里预览。"
   }
 }

@@ -94,5 +94,11 @@
     "external": "an external member",
     "allow": "Allow once",
     "deny": "Deny"
+  },
+  "preview": {
+    "loading": "Loading…",
+    "failed": "The file could not be opened in the app.",
+    "missing": "The group’s folder is not known.",
+    "unsupported": "This file type is not previewed here yet."
   }
 }

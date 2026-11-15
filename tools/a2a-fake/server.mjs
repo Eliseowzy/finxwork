@@ -204,13 +204,15 @@ function complete(res, id, task, text) {
 
 // ---------------------------------------------------------------- files
 
-const PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n').toString('base64');
+const PDF = Buffer.from('JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0NyA+PgpzdHJlYW0KQlQgL0YxIDI0IFRmIDUwIDEwMCBUZCAoSGVsbG8gZ3JvdXAgZmlsZSkgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDAzMzggMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0MDgKJSVFT0YK', 'base64');
 const BIG = Buffer.alloc(1024 * 1024, 0x20).toString('base64');
 
 function fileParts(text) {
   switch (text) {
     case 'file':
       return [{ raw: PDF, mediaType: 'application/pdf', filename: 'fake.pdf' }];
+    case 'file-html':
+      return [{ raw: Buffer.from('<!doctype html><html><body><h1>group file</h1></body></html>'), mediaType: 'text/html', filename: 'fake.html' }];
     case 'file2':
       return [{ raw: PDF, mediaType: 'application/pdf', filename: '../../x' }];
     case 'file-url':
@@ -331,7 +333,14 @@ function handleStreaming(req, res, id, params) {
     return res.end();
   }
 
-  const parts = fileParts(lower);
+  const scenario = groupExt && lower.includes('drop')
+    ? 'drop'
+    : groupExt && lower.includes('file-html')
+      ? 'file-html'
+      : groupExt && lower.includes('file')
+        ? 'file'
+        : lower;
+  const parts = fileParts(scenario);
   if (parts) {
     task.state = 'TASK_STATE_WORKING';
     sendStatus(res, id, task, 'TASK_STATE_WORKING');
@@ -348,7 +357,6 @@ function handleStreaming(req, res, id, params) {
     return res.end();
   }
 
-  const scenario = groupExt && lower.includes('drop') ? 'drop' : lower;
   switch (scenario) {
     case 'ask':
       sendStatus(res, id, task, 'TASK_STATE_WORKING');
