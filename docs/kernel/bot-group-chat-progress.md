@@ -33,3 +33,15 @@
 - `finx-mock` 增加群信件识别：收到 `<group_messages>` 时用 `send_to_user` 回一句，供 e2e 使用。
 - 验收：`cargo test -p finx-cli --test e2e_groups`（4 通过：@ 立即回 + 自动话题、三人群只 @ 的那位回、mentions 档不收主消息流、normal 静默 4 秒后回）；`cargo test -p finx-core --test group`（10 通过）；`cargo test -p finx-core --lib group_guard`（3 通过）；`cargo test -p finx-server`、`cargo test -p finx-core --test bot` 通过。
 - 自己定的：`normal` 的安静/最长等待先写成 4 秒/20 秒常量，M4 读 `[groups]`；`mentions` 档不按话题参与度投递（外部 Bot 的话题参与度在 M6 做）；`members_changed` 暂时每批都带；自动话题取“这一批里第一条主消息流且 @ 它的消息”；群消息事件发给所有 `groups/subscribe` 的连接，由客户端按 group_id 过滤。
+
+## M4 — `cc4217f4`（保险丝 1）
+
+- 新 `[groups]` 配置：`enabled`、`quiet_secs`、`max_wait_secs`、`lazy_secs`、`lazy_count`、`recent_count`、`summary_after`、`bot_per_minute`、`bot_run_without_owner`、`daily_tokens`、`daily_peer_calls`；默认值照 brief。
+- 服务层：
+  - 正常/懒档按配置计时；懒档攒到 `lazy_count` 立即发；
+  - 每个 Bot 每分钟超过 `bot_per_minute` 条后，本分钟不再给它投递；
+  - 主人最后一句话之后 Bot 们说满 `bot_run_without_owner` 条，整群停，写 system 行；主人说话恢复；
+  - 席位会话 `TurnCompleted` 的 token 累加到 `fuse.tokens`，到 `daily_tokens` 整群停；`groups/update resume` 清停并给当天再一份额度（计数清零）；
+  - `fuse.day` 换日清零；`groups/open` 的 `group.fuse`/`group.stopped` 已带出。
+- 验收：`cargo test -p finx-cli --test e2e_groups`（7 通过，含：主人沉默 12 条停群并恢复、每日 token 停 + resume、每分钟上限、normal 静默、@ 立即/自动话题、mentions 档、三人群）。
+- 自己定的：每分钟计数按 Bot 说出的条数算，超过后跳过后面的投递而不撤回已说的；`resume` 把 `fuse.tokens`/`peer_calls` 清零（再给一份）；`bot_run_without_owner` 默认 12；system 行文字为“群暂停了：…”；`daily_peer_calls` 的计数入口留给 M6。

@@ -45,6 +45,8 @@ pub struct ConfigFile {
     pub update: Option<UpdateFile>,
     /// `[bots]`: another subject's bots (bot-contacts-design §5.8).
     pub bots: Option<BotsFile>,
+    /// `[groups]`: group chat (bot-group-chat-dev-brief §4.11).
+    pub groups: Option<GroupsFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
 }
@@ -70,6 +72,55 @@ pub struct BotsFile {
 pub struct BotsSettings {
     pub external: bool,
     pub allow_local: bool,
+}
+
+/// `[groups]`: group chat (bot-group-chat-dev-brief §4.11).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct GroupsFile {
+    pub enabled: Option<bool>,
+    pub quiet_secs: Option<u64>,
+    pub max_wait_secs: Option<u64>,
+    pub lazy_secs: Option<u64>,
+    pub lazy_count: Option<u32>,
+    pub recent_count: Option<u32>,
+    pub summary_after: Option<u64>,
+    pub bot_per_minute: Option<u32>,
+    pub bot_run_without_owner: Option<u32>,
+    pub daily_tokens: Option<u64>,
+    pub daily_peer_calls: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GroupsSettings {
+    pub enabled: bool,
+    pub quiet_secs: u64,
+    pub max_wait_secs: u64,
+    pub lazy_secs: u64,
+    pub lazy_count: u32,
+    pub recent_count: u32,
+    pub summary_after: u64,
+    pub bot_per_minute: u32,
+    pub bot_run_without_owner: u32,
+    pub daily_tokens: u64,
+    pub daily_peer_calls: u32,
+}
+
+impl Default for GroupsSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            quiet_secs: 4,
+            max_wait_secs: 20,
+            lazy_secs: 600,
+            lazy_count: 20,
+            recent_count: 20,
+            summary_after: 60,
+            bot_per_minute: 6,
+            bot_run_without_owner: 12,
+            daily_tokens: 2_000_000,
+            daily_peer_calls: 200,
+        }
+    }
 }
 
 /// `[history]`: what was typed in the interactive mode.
@@ -602,6 +653,8 @@ pub struct Config {
     pub models_network: bool,
     /// Another subject's bots (bot-contacts-design §5.8).
     pub bots: BotsSettings,
+    /// Group chat (bot-group-chat-dev-brief §4.11).
+    pub groups: GroupsSettings,
     /// The configured servers by name, names filled in; not yet validated.
     pub mcp_servers: Vec<McpServerConfig>,
 }
@@ -736,6 +789,22 @@ impl Config {
                 .map(|bots| BotsSettings {
                     external: bots.external.unwrap_or(false),
                     allow_local: bots.allow_local.unwrap_or(false),
+                })
+                .unwrap_or_default(),
+            groups: file
+                .groups
+                .map(|groups| GroupsSettings {
+                    enabled: groups.enabled.unwrap_or(true),
+                    quiet_secs: groups.quiet_secs.unwrap_or(4),
+                    max_wait_secs: groups.max_wait_secs.unwrap_or(20),
+                    lazy_secs: groups.lazy_secs.unwrap_or(600),
+                    lazy_count: groups.lazy_count.unwrap_or(20),
+                    recent_count: groups.recent_count.unwrap_or(20),
+                    summary_after: groups.summary_after.unwrap_or(60),
+                    bot_per_minute: groups.bot_per_minute.unwrap_or(6),
+                    bot_run_without_owner: groups.bot_run_without_owner.unwrap_or(12),
+                    daily_tokens: groups.daily_tokens.unwrap_or(2_000_000),
+                    daily_peer_calls: groups.daily_peer_calls.unwrap_or(200),
                 })
                 .unwrap_or_default(),
             mcp_servers: file

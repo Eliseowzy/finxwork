@@ -7,6 +7,7 @@ use bytes::Bytes;
 use finx_core::BotIdentity;
 use finx_core::FinxHome;
 use finx_core::StartOptions;
+use finx_core::config::GroupsSettings;
 use finx_core::Workspace;
 use finx_core::config_edit::replace_file;
 use finx_protocol::api::method;
@@ -176,6 +177,8 @@ pub(crate) struct Registry {
     bots: Arc<bots::Registry>,
     /// `bots.external`: whether another subject's bot may join.
     external: bool,
+    /// `[groups]`: quiet periods and fuses.
+    settings: GroupsSettings,
     /// `None` until read from disk, on first use.
     groups: Mutex<Option<BTreeMap<String, Group>>>,
     feed: ListFeed,
@@ -185,6 +188,10 @@ pub(crate) struct Registry {
     host: Mutex<Option<Weak<crate::server::Inner>>>,
     /// What each seat is answering: the auto topic and the batch's range.
     seat_turns: Mutex<BTreeMap<(String, String), SeatTurn>>,
+    /// Fuse 1's per-bot minute: `(minute, messages)`.
+    bot_minute: Mutex<BTreeMap<(String, String), (i64, u32)>>,
+    /// Fuse 1's messages since the owner's last message, by group.
+    consecutive: Mutex<BTreeMap<String, u32>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -195,17 +202,24 @@ struct SeatTurn {
 }
 
 impl Registry {
-    pub(crate) fn new(home: FinxHome, bots: Arc<bots::Registry>, external: bool) -> Self {
+    pub(crate) fn new(home: FinxHome, bots: Arc<bots::Registry>, external: bool, settings: GroupsSettings) -> Self {
         Self {
             home,
             bots,
             external,
+            settings,
             groups: Mutex::new(None),
             feed: ListFeed::default(),
             writing: Mutex::new(()),
             host: Mutex::new(None),
             seat_turns: Mutex::new(BTreeMap::new()),
+            bot_minute: Mutex::new(BTreeMap::new()),
+            consecutive: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    pub(crate) fn settings(&self) -> &GroupsSettings {
+        &self.settings
     }
 
     pub(crate) fn set_host(&self, host: Weak<crate::server::Inner>) {
@@ -276,7 +290,22 @@ impl Registry {
     }
 
     fn with_group<R>(&self, id: &str, f: impl FnOnce(&mut Group) -> Result<R, RpcError>) -> Result<R, RpcError> {
-        self.with(|groups| groups.get_mut(id).map(f)).ok_or_else(|| errors::group_not_found(id))?
+        self.with(|groups| {
+            let group = groups.get_mut(id).ok_or_else(|| errors::group_not_found(id))?;
+            let today = today();
+            if group.file.fuse.day != today {
+                group.file.fuse.day = today;
+                group.file.fuse.tokens = 0;
+                group.file.fuse.peer_calls = 0;
+                if matches!(
+                    group.file.fuse.stopped.as_ref().map(|s| s.reason),
+                    Some(GroupStopReason::DailyTokens | GroupStopReason::DailyPeerCalls)
+                ) {
+                    group.file.fuse.stopped = None;
+                }
+            }
+            f(group)
+        })
     }
 
     fn save(&self, id: &str) -> Result<(), RpcError> {
@@ -448,6 +477,9 @@ impl Registry {
                     Some(GroupStopReason::DailyTokens | GroupStopReason::DailyPeerCalls)
                 ) {
                     g.file.fuse.stopped = None;
+                    // The owner's "continue" gives the day another allowance (brief §4.8).
+                    g.file.fuse.tokens = 0;
+                    g.file.fuse.peer_calls = 0;
                 }
                 Ok(())
             })?;
@@ -633,6 +665,7 @@ impl Registry {
         })?;
         // fsync and the group file are outside the lock too: a slow disk must not stop the
         // other groups.
+        self.owner_spoke(&p.id)?;
         self.sync_messages(&p.id)?;
         self.save(&p.id)?;
         self.announce(&[&p.id], Vec::new());
@@ -732,6 +765,124 @@ impl Registry {
         let mut file = options.open(&path).map_err(io_error)?;
         use std::io::Write as _;
         writeln!(file, "{line}").map_err(io_error)
+    }
+
+    /// The owner spoke: fuse 1's "since the owner's last message" count starts again, and an
+    /// owner-silence stop is lifted (brief §4.8).
+    pub(crate) fn owner_spoke(&self, id: &str) -> Result<(), RpcError> {
+        self.consecutive.lock().insert(id.to_string(), 0);
+        self.with_group(id, |g| {
+            if matches!(g.file.fuse.stopped.as_ref().map(|s| s.reason), Some(GroupStopReason::OwnerSilent)) {
+                g.file.fuse.stopped = None;
+            }
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    /// Whether a bot may be given more group messages now: the group is not stopped, and this
+    /// bot has not said more than its minute's worth (brief §4.8, fuse 1).
+    pub(crate) fn delivery_allowed(&self, id: &str, bot: &str, settings: &GroupsSettings) -> bool {
+        let stopped = self.with(|groups| groups.get(id).and_then(|g| g.file.fuse.stopped.clone()));
+        if stopped.is_some() {
+            return false;
+        }
+        let minute = chrono::Utc::now().timestamp() / 60;
+        let mut minutes = self.bot_minute.lock();
+        let entry = minutes.entry((id.to_string(), bot.to_string())).or_insert((minute, 0));
+        if entry.0 != minute {
+            *entry = (minute, 0);
+        }
+        entry.1 < settings.bot_per_minute
+    }
+
+    /// A bot said a message: count it for its minute and for the owner-silence fuse.
+    pub(crate) fn bot_said(&self, id: &str, bot: &str, settings: &GroupsSettings) -> Result<(), RpcError> {
+        let minute = chrono::Utc::now().timestamp() / 60;
+        {
+            let mut minutes = self.bot_minute.lock();
+            let entry = minutes.entry((id.to_string(), bot.to_string())).or_insert((minute, 0));
+            if entry.0 != minute {
+                *entry = (minute, 0);
+            }
+            entry.1 = entry.1.saturating_add(1);
+        }
+        let count = {
+            let mut counts = self.consecutive.lock();
+            let count = counts.entry(id.to_string()).or_insert(0);
+            *count = count.saturating_add(1);
+            *count
+        };
+        if count >= settings.bot_run_without_owner {
+            self.stop_group(id, GroupStopReason::OwnerSilent, "主人在群里说句话就会继续")?;
+        }
+        Ok(())
+    }
+
+    /// Adds one turn's model usage to the group's day (brief §4.8, fuse 1).
+    pub(crate) fn add_tokens(&self, id: &str, tokens: u64, settings: &GroupsSettings) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            g.file.fuse.tokens = g.file.fuse.tokens.saturating_add(tokens);
+            Ok(())
+        })?;
+        self.save(id)?;
+        let tokens = self.with(|groups| groups.get(id).map(|g| g.file.fuse.tokens).unwrap_or(0));
+        if tokens >= settings.daily_tokens {
+            self.stop_group(id, GroupStopReason::DailyTokens, "今天的群额度用完了；主人可以在群设置里点继续")?;
+        }
+        Ok(())
+    }
+
+    /// Fuse 1 stopped the group. A system line says why and how to start again.
+    pub(crate) fn stop_group(&self, id: &str, reason: GroupStopReason, detail: impl Into<String>) -> Result<(), RpcError> {
+        let detail = detail.into();
+        let already = self.with_group(id, |g| {
+            let already = g.file.fuse.stopped.as_ref().is_some_and(|s| s.reason == reason);
+            if !already {
+                g.file.fuse.stopped = Some(GroupStop {
+                    reason,
+                    bot_id: None,
+                    detail: detail.clone(),
+                });
+            }
+            Ok(already)
+        })?;
+        self.save(id)?;
+        if !already {
+            let _ = self.system(id, format!("群暂停了：{detail}"));
+        }
+        Ok(())
+    }
+
+    /// A line the group writes about itself.
+    pub(crate) fn system(&self, id: &str, text: impl Into<String>) -> Result<GroupMessage, RpcError> {
+        let text = text.into();
+        let message = self.with_group(id, |g| {
+            g.ensure_messages(&self.home)?;
+            let seq = g.file.next_seq;
+            let message = MessageFile {
+                id: uuid::Uuid::now_v7().to_string(),
+                seq,
+                ts: now(),
+                from: FromFile::System,
+                text,
+                files: Vec::new(),
+                mentions: Vec::new(),
+                reply_to: None,
+                thread: None,
+            };
+            let line = serde_json::to_vec(&message).map_err(|e| RpcError::internal(e.to_string()))?;
+            append_message(&self.home, id, &line)?;
+            g.file.next_seq = seq + 1;
+            g.file.summary_list.last = Some(self.last(&message));
+            g.messages.as_mut().expect("read above").push(message.clone());
+            Ok(self.message(&message, g.messages.as_ref().expect("read above")))
+        })?;
+        self.sync_messages(id)?;
+        self.save(id)?;
+        self.announce(&[id], Vec::new());
+        self.publish(id, &message);
+        Ok(message)
     }
 
     pub(crate) fn read(&self, id: &str) -> Result<(), RpcError> {
@@ -1194,8 +1345,12 @@ impl Server {
         let Ok(members) = self.groups().local_members(group_id) else {
             return;
         };
+        let settings = self.0.group_settings.clone();
         for (bot, _name, mode) in members {
             if Some(bot.as_str()) == sender {
+                continue;
+            }
+            if !self.groups().delivery_allowed(group_id, &bot, &settings) {
                 continue;
             }
             let mentioned = message.mentions.iter().any(|id| id == &bot);
@@ -1209,21 +1364,25 @@ impl Server {
                 let _ = self.deliver_to_seat(group_id, &bot, batch).await;
             } else {
                 let key = (group_id.to_string(), bot.clone());
-                let first = {
+                let (first, enough) = {
                     let mut pending = self.0.group_pending.lock();
                     let entry = pending.entry(key.clone()).or_default();
                     let first = entry.is_empty();
                     entry.push(message.clone());
-                    first
+                    (first, entry.len() >= settings.lazy_count.max(1) as usize)
                 };
-                if first {
+                if enough {
+                    let batch = self.0.group_pending.lock().remove(&key).unwrap_or_default();
+                    let _ = self.deliver_to_seat(group_id, &bot, batch).await;
+                } else if first {
                     let server = self.handle();
                     let group = group_id.to_string();
                     let bot = bot.clone();
+                    let lazy = mode == GroupMemberMode::Lazy;
                     tokio::spawn(async move {
                         // The quiet period, and the longest wait from the first message.
-                        let quiet = std::time::Duration::from_secs(4);
-                        let max = std::time::Duration::from_secs(20);
+                        let quiet = std::time::Duration::from_secs(if lazy { settings.lazy_secs.max(1) } else { settings.quiet_secs.max(1) });
+                        let max = std::time::Duration::from_secs(if lazy { settings.lazy_secs.max(1) } else { settings.max_wait_secs.max(1) });
                         let start = std::time::Instant::now();
                         loop {
                             tokio::time::sleep(quiet).await;
@@ -1347,6 +1506,7 @@ impl Server {
         let Ok(message) = self.groups().append_bot(group_id, bot_id, text, files, thread, reply) else {
             return;
         };
+        let _ = self.groups().bot_said(group_id, bot_id, &self.0.group_settings);
         let server = self.handle();
         let group = group_id.to_string();
         let bot = bot_id.to_string();
@@ -1449,7 +1609,7 @@ mod tests {
         let bots = Arc::new(bots::Registry::new(home.clone()));
         bots.add_named_for_test("bot-a", "Alice");
         bots.add_named_for_test("bot-b", "Bob");
-        let groups = Registry::new(home.clone(), bots.clone(), external);
+        let groups = Registry::new(home.clone(), bots.clone(), external, GroupsSettings::default());
         (dir, home, bots, groups)
     }
 
@@ -1505,7 +1665,7 @@ mod tests {
         assert_eq!(open.group.last.as_ref().unwrap().text, "谢谢");
         assert_eq!(open.group.unread, 0);
 
-        let reloaded = Registry::new(home, bots, true);
+        let reloaded = Registry::new(home, bots, true, GroupsSettings::default());
         let again = reloaded.open(GroupOpenParams { id: row.id.clone(), before_seq: None, limit: None }).unwrap();
         assert_eq!(again.messages, open.messages);
         let next = send(&reloaded, &row.id, "第三句");
@@ -1712,7 +1872,7 @@ mod tests {
         saved["next_seq"] = serde_json::json!(0);
         std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
 
-        let reloaded = Registry::new(home.clone(), bots.clone(), true);
+        let reloaded = Registry::new(home.clone(), bots.clone(), true, GroupsSettings::default());
         let second = send(&reloaded, &row.id, "第二条");
         assert_eq!(second.seq, 1, "the next message must not reuse seq 0");
         reloaded

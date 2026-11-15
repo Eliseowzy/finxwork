@@ -173,6 +173,8 @@ pub(crate) struct Inner {
     pub(crate) group_pending: Mutex<HashMap<(String, String), Vec<finx_protocol::group::GroupMessage>>>,
     /// One `ensure_group_seats` at a time, so a group never gets two seats for one bot.
     pub(crate) group_seating: tokio::sync::Mutex<()>,
+    /// `[groups]`: quiet periods, fuses and their numbers.
+    pub(crate) group_settings: finx_core::config::GroupsSettings,
     /// Their routines (crate::routines).
     pub(crate) routines: Arc<crate::routines::Routines>,
 }
@@ -216,6 +218,7 @@ impl Server {
             options.home.clone(),
             bots.clone(),
             workspace.config.bots.external,
+            workspace.config.groups.clone(),
         ));
         let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());
         let server = Server(Arc::new(Inner {
@@ -230,6 +233,7 @@ impl Server {
             groups,
             group_pending: Mutex::new(HashMap::new()),
             group_seating: tokio::sync::Mutex::new(()),
+            group_settings: workspace.config.groups.clone(),
             routines,
             defaults,
             bot_settings: workspace.config.bots,

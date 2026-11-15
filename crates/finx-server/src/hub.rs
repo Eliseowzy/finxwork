@@ -419,6 +419,10 @@ impl Hub {
                         groups.on_seat_spoke(group_id, bot_id, &args, details.as_ref());
                     }
                 }
+                EventMsg::TurnCompleted { usage, .. } => {
+                    let settings = groups.settings().clone();
+                    let _ = groups.add_tokens(group_id, usage.total_tokens(), &settings);
+                }
                 EventMsg::ToolCompleted { result, .. } if result.tool_name == "stay_silent" && !result.is_error => {
                     seat.explicit = true;
                 }
