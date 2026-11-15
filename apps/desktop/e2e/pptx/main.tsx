@@ -45,7 +45,7 @@ Object.assign(window, { smoke: {
   open,
   setLanguage: (language: string) => i18n.changeLanguage(language),
   async text() {
-    const { initWasm, inspectPresentation } = await import("@betteroffice/pptx");
+    const { initWasm, inspectPresentation } = await import("@nimbleoffice/pptx");
     await initWasm();
     const file = await rpc.request("pptx/read", { session_id: "test", path: "editor.pptx" });
     return JSON.stringify(inspectPresentation(fromBase64(file.data), { includeMedia: false }));

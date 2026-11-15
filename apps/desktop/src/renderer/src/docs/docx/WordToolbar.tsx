@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useTranslation as useAppTranslation } from "react-i18next";
-import { EditorToolbar, ToolbarButton, ToolbarCommand, ToolbarGroup, ToolbarSeparator, useDocxCommandState, useTranslation } from "@betteroffice/docx-react";
-import { resolveHighlightColor } from "@betteroffice/docx/utils";
+import { EditorToolbar, ToolbarButton, ToolbarCommand, ToolbarGroup, ToolbarSeparator, useDocxCommandState, useTranslation } from "@nimbleoffice/docx-react";
+import { resolveHighlightColor } from "@nimbleoffice/docx/utils";
 
 /** The pen's colour (a Word highlight name or RGB hex) as CSS. */
 function penSwatch(color: string): string {

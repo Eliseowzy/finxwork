@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { en } from "@betteroffice/pptx-i18n/en";
+import { en } from "@nimbleoffice/pptx-i18n/en";
 import { presentationZhCN } from "./zh-CN.ts";
 
 function leaves(value: object, prefix = ""): Map<string, string> {

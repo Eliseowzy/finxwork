@@ -1,4 +1,4 @@
-import type { DocxEditorRef } from "@betteroffice/docx-react";
+import type { DocxEditorRef } from "@nimbleoffice/docx-react";
 
 // The open Word editors, for the in-document AI (word-design §5) to reach: the editor's ref
 // (selection, paragraphs, comments, scrolling to a change) and the kernel's document it is a

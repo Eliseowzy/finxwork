@@ -6,15 +6,15 @@ packages:
 onlyBuiltDependencies:
   - electron
   - esbuild
-# BetterOffice comes from our fork (github.com/Eliseowzy/betteroffice, branch finx/0.5), built and
-# published as release tarballs; see docs/desktop/betteroffice-fork.md. Overrides also catch
+# NimbleOffice comes from our fork (github.com/Eliseowzy/nimbleoffice, release v0.5.1), built and
+# published as release tarballs; see docs/desktop/nimbleoffice-fork.md. Overrides also catch
 # pptx-react's own dependency on pptx and pptx-i18n.
 overrides:
-  '@betteroffice/fonts-latin': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-fonts-latin-0.5.1-finx.g46c8a654.tgz
-  '@betteroffice/fonts': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-fonts-0.5.1-finx.g46c8a654.tgz
-  '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-pptx-0.5.1-finx.g46c8a654.tgz
-  '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-pptx-i18n-0.5.1-finx.g46c8a654.tgz
-  '@betteroffice/pptx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-pptx-react-0.5.1-finx.g46c8a654.tgz
-  '@betteroffice/docx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-docx-0.5.1-finx.g46c8a654.tgz
-  '@betteroffice/docx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-docx-i18n-0.5.1-finx.g46c8a654.tgz
-  '@betteroffice/docx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g46c8a654/betteroffice-docx-react-0.5.1-finx.g46c8a654.tgz
+  '@nimbleoffice/fonts-latin': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/fonts': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx-i18n': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx-react': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx-i18n': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx-react': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz

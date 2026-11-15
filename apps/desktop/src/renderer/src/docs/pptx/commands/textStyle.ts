@@ -1,6 +1,6 @@
 // Text and shape style reading for the format painter, ⌘⇧C/⌘⇧V and clear formatting.
 // Pure: input is engine snapshots, output is `PptxEditStep`s for one `applyEdits` batch.
-import type { PptxEditStep, ShapeSnapshot, StorySnapshot, TextStyle, TextStyleSnapshot } from "@betteroffice/pptx";
+import type { PptxEditStep, ShapeSnapshot, StorySnapshot, TextStyle, TextStyleSnapshot } from "@nimbleoffice/pptx";
 
 export type ShapeStyle = { fill?: string | null; stroke?: { color?: string; widthPt?: number } | null };
 /** What a painter or ⌘⇧C carries: run formatting, shape formatting, or both (a shape with text). */

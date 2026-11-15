@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { PptxAsyncEditorApi } from "@betteroffice/pptx-react";
-import type { SlideSnapshot } from "@betteroffice/pptx";
+import type { PptxAsyncEditorApi } from "@nimbleoffice/pptx-react";
+import type { SlideSnapshot } from "@nimbleoffice/pptx";
 import { outlineLines } from "./outlineModel";
 import { useTranslation } from "react-i18next";
 

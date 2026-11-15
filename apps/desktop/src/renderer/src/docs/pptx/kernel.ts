@@ -5,7 +5,7 @@
 // every local edit to be acknowledged, then asks the kernel to write (`deck/save`): nothing
 // is serialized here, and "saved" shows only once the kernel's write landed (I4).
 import type { RpcClient } from "@finx/client";
-import type { AsyncCollaborationReplica } from "@betteroffice/pptx";
+import type { AsyncCollaborationReplica } from "@nimbleoffice/pptx";
 import { fromBase64, toBase64, type PresentationFile } from "./document.ts";
 
 export type KernelState = { dirty: boolean; hash: string | null };

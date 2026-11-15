@@ -1,4 +1,4 @@
-import type { LocaleStrings } from "@betteroffice/pptx-i18n";
+import type { LocaleStrings } from "@nimbleoffice/pptx-i18n";
 
 // BetterOffice ships null entries that fall back to English. Keep a complete
 // host-owned locale, including accessibility and error screens. The coverage test

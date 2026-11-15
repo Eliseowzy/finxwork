@@ -1,4 +1,4 @@
-import { decodePresentationImage } from "@betteroffice/pptx";
+import { decodePresentationImage } from "@nimbleoffice/pptx";
 import type { RpcClient } from "@finx/client";
 import { toBase64 } from "./document";
 

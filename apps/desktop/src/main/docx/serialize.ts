@@ -1,4 +1,4 @@
-import { createYrsSession, saveYrsDocx } from "@betteroffice/docx/yrs";
+import { createYrsSession, saveYrsDocx } from "@nimbleoffice/docx/yrs";
 import fs from "node:fs/promises";
 import type { DocxSerializeParams } from "@finx/protocol";
 
