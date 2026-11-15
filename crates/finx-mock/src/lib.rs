@@ -625,6 +625,14 @@ fn directive(messages: &[Value]) -> (String, String, String, usize) {
             continue;
         }
         let text = content_text(message);
+        // A seat's group letter (bot-group-chat-dev-brief §4.5): answer it as a bot would.
+        if text.contains("<group_messages") {
+            let step = messages[i + 1..]
+                .iter()
+                .filter(|m| m.get("role").and_then(Value::as_str) == Some("assistant"))
+                .count();
+            return ("group".to_string(), String::new(), text, step);
+        }
         if let Some(start) = text.find("[[mock:")
             && let Some(len) = text[start..].find("]]")
         {
@@ -818,6 +826,10 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
             _ => Plan::Step(Step::text(format!("search done: {}", last_tool_result(messages)))),
         },
         "fail" => Plan::Status(400, "mock rejects this request"),
+        "group" => Plan::Step(Step::calls(vec![(
+            "send_to_user",
+            json!({ "text": "群里的回复", "end_turn": true }),
+        )])),
         "send" => match step {
             0 => {
                 // Every message since the bot last replied gets its own, as a bot answers a

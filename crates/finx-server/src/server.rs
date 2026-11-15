@@ -130,15 +130,15 @@ pub(crate) struct Inner {
     settings: ServerSettings,
     acp: AcpSettings,
     pub(crate) llm: Arc<ModelRegistry>,
-    store: Arc<JsonlStore>,
-    sessions: Mutex<HashMap<String, HubHandle>>,
+    pub(crate) store: Arc<JsonlStore>,
+    pub(crate) sessions: Mutex<HashMap<String, HubHandle>>,
     /// Serializes loading so a session is opened once even when resumed concurrently.
     loading: tokio::sync::Mutex<()>,
     next_conn: AtomicU64,
     shutdown: CancellationToken,
     closing: AtomicBool,
     /// Detect create/run/close bursts shorter than the memory-upkeep polling interval.
-    closed_sessions: AtomicU64,
+    pub(crate) closed_sessions: AtomicU64,
     /// Connections following the session list.
     pub(crate) feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
@@ -169,11 +169,20 @@ pub(crate) struct Inner {
     pub(crate) bots: Arc<crate::bots::Registry>,
     /// Every group and who follows their list (crate::groups).
     pub(crate) groups: Arc<crate::groups::Registry>,
+    /// Messages waiting for a seat's quiet period, by group and bot.
+    pub(crate) group_pending: Mutex<HashMap<(String, String), Vec<finx_protocol::group::GroupMessage>>>,
+    /// One `ensure_group_seats` at a time, so a group never gets two seats for one bot.
+    pub(crate) group_seating: tokio::sync::Mutex<()>,
     /// Their routines (crate::routines).
     pub(crate) routines: Arc<crate::routines::Routines>,
 }
 
 impl Server {
+    /// The same service, for a background task.
+    pub(crate) fn handle(&self) -> Server {
+        Server(self.0.clone())
+    }
+
     pub fn new(options: ServerOptions) -> Result<Server, RuntimeError> {
         let workspace = Workspace::open(&options.home, &options.cwd, &options.overrides)?;
         for warning in &workspace.warnings {
@@ -219,6 +228,8 @@ impl Server {
             feed: Arc::new(ListFeed::default()),
             bots,
             groups,
+            group_pending: Mutex::new(HashMap::new()),
+            group_seating: tokio::sync::Mutex::new(()),
             routines,
             defaults,
             bot_settings: workspace.config.bots,
@@ -258,6 +269,7 @@ impl Server {
         server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
     spawn_bot_sweep(&server.0);
+        server.0.groups.set_host(Arc::downgrade(&server.0));
         Ok(server)
     }
 
@@ -402,7 +414,7 @@ impl Server {
         Err(errors::server_full(max))
     }
 
-    fn idle_after(&self) -> Option<Duration> {
+    pub(crate) fn idle_after(&self) -> Option<Duration> {
         let secs = self.0.settings.idle_session_secs;
         (secs > 0).then(|| Duration::from_secs(secs))
     }

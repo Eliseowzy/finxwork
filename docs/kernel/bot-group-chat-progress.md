@@ -22,3 +22,14 @@
 - 文档：brief §4.3 改为工具白名单；design Q-416 写明这一期不挂连接器和浏览器，以后按保险丝 3 管。
 - 验收：`cargo test -p finx-core --test group`（10 通过）、`cargo test -p finx-core --lib group_guard`（3 通过）、`cargo test -p finx-core --test group`、`cargo check -p finx-core --tests`（除既有 `tests/bot.rs` unused_mut 警告外无新警告）。
 - 自己定的：`GroupDocPaths` 的测试映射只在 `#[cfg(test)]` 用；技能目录按“清单里 `model_invocable` 的 SKILL.md 的父目录”算；`tool_allowed` 用前缀匹配 `doc_`/`docx_`/`deck_`/`sheet_`/`spatial_`。
+
+## M3 — `d4d5aa0a`（只有本地 Bot 的群）
+
+- 服务层：`groups/send` 后为主人消息建立/复用每个“群 × 本地 Bot”的席位会话；按群成员档位投递。
+  - `mentions` 档只收 @ 它的消息；`normal` 档主消息流静默 4 秒后送，最多从第一条起等 20 秒；`lazy` 档先按 4 秒（配置化留到 M4）。
+  - 被 @ 的消息立即送；`@` 自动开话题；Bot 的 `send_to_user` 由 hub 转成群消息，再投给其他成员。
+  - `group/activity`、`group/message`、`silence.jsonl`（显式/隐式、起止 seq、reason）。
+- 席位会话：`ensure_group_seats` 串行创建，避免并发创建两个席位；席位 session id 写回 `group.json`；席位在群文件夹里运行，不加载 MCP/浏览器。
+- `finx-mock` 增加群信件识别：收到 `<group_messages>` 时用 `send_to_user` 回一句，供 e2e 使用。
+- 验收：`cargo test -p finx-cli --test e2e_groups`（4 通过：@ 立即回 + 自动话题、三人群只 @ 的那位回、mentions 档不收主消息流、normal 静默 4 秒后回）；`cargo test -p finx-core --test group`（10 通过）；`cargo test -p finx-core --lib group_guard`（3 通过）；`cargo test -p finx-server`、`cargo test -p finx-core --test bot` 通过。
+- 自己定的：`normal` 的安静/最长等待先写成 4 秒/20 秒常量，M4 读 `[groups]`；`mentions` 档不按话题参与度投递（外部 Bot 的话题参与度在 M6 做）；`members_changed` 暂时每批都带；自动话题取“这一批里第一条主消息流且 @ 它的消息”；群消息事件发给所有 `groups/subscribe` 的连接，由客户端按 group_id 过滤。

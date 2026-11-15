@@ -4,7 +4,10 @@
 //! the `groups/*` methods.
 
 use bytes::Bytes;
+use finx_core::BotIdentity;
 use finx_core::FinxHome;
+use finx_core::StartOptions;
+use finx_core::Workspace;
 use finx_core::config_edit::replace_file;
 use finx_protocol::api::method;
 use finx_protocol::bot::Avatar;
@@ -14,6 +17,7 @@ use finx_rpc::RpcError;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::io::Read;
@@ -23,9 +27,13 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Weak;
 
 use crate::bots;
 use crate::conn::ConnHandle;
+use crate::hub::HubCmd;
+use crate::hub::Listing;
+use crate::hub::SummaryBase;
 use crate::errors;
 use crate::list::ListFeed;
 use crate::list::now;
@@ -173,6 +181,17 @@ pub(crate) struct Registry {
     feed: ListFeed,
     /// One `group.json` write at a time.
     writing: Mutex<()>,
+    /// The service, once it exists: what a seat's words go to.
+    host: Mutex<Option<Weak<crate::server::Inner>>>,
+    /// What each seat is answering: the auto topic and the batch's range.
+    seat_turns: Mutex<BTreeMap<(String, String), SeatTurn>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct SeatTurn {
+    thread: Option<String>,
+    from_seq: u64,
+    to_seq: u64,
 }
 
 impl Registry {
@@ -184,7 +203,58 @@ impl Registry {
             groups: Mutex::new(None),
             feed: ListFeed::default(),
             writing: Mutex::new(()),
+            host: Mutex::new(None),
+            seat_turns: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    pub(crate) fn set_host(&self, host: Weak<crate::server::Inner>) {
+        *self.host.lock() = Some(host);
+    }
+
+    fn server(&self) -> Option<crate::server::Server> {
+        self.host.lock().as_ref()?.upgrade().map(crate::server::Server)
+    }
+
+    pub(crate) fn set_seat_turn(&self, group: &str, bot: &str, thread: Option<String>, from_seq: u64, to_seq: u64) {
+        self.seat_turns
+            .lock()
+            .insert((group.to_string(), bot.to_string()), SeatTurn { thread, from_seq, to_seq });
+    }
+
+    pub(crate) fn seat_turn_for(&self, group: &str, bot: &str) -> Option<String> {
+        self.seat_turn(group, bot).thread
+    }
+
+    fn seat_turn(&self, group: &str, bot: &str) -> SeatTurn {
+        self.seat_turns
+            .lock()
+            .get(&(group.to_string(), bot.to_string()))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// A seat said something: put it in the group, then let the service pass it on.
+    pub(crate) fn on_seat_spoke(&self, group: &str, bot: &str, args: &Value, details: Option<&Value>) {
+        if let Some(server) = self.server() {
+            server.group_seat_spoke(group, bot, args, details);
+        }
+    }
+
+    pub(crate) fn on_seat_silent(&self, group: &str, bot: &str, explicit: bool, reason: Option<&str>) {
+        let turn = self.seat_turn(group, bot);
+        let _ = self.silence(group, bot, turn.from_seq, turn.to_seq, explicit, reason);
+    }
+
+    pub(crate) fn on_seat_busy(&self, group: &str, bot: &str, busy: bool) {
+        self.feed.send(Bytes::from(finx_rpc::notification(
+            method::GROUP_ACTIVITY,
+            &GroupActivityParams {
+                group_id: group.to_string(),
+                bot_id: bot.to_string(),
+                busy,
+            },
+        )));
     }
 
     pub(crate) fn watch(&self, conn: &ConnHandle) {
@@ -570,6 +640,100 @@ impl Registry {
         Ok(GroupSendResult { message })
     }
 
+    /// The local bots of a group, with what a seat needs: id, name, mode.
+    pub(crate) fn local_members(&self, id: &str) -> Result<Vec<(String, String, GroupMemberMode)>, RpcError> {
+        let members = self
+            .with(|groups| groups.get(id).map(|g| g.file.members.clone()))
+            .ok_or_else(|| errors::group_not_found(id))?;
+        Ok(members
+            .into_iter()
+            .filter_map(|m| {
+                let info = self.bots.member_info(&m.bot_id)?;
+                (!info.external).then_some((m.bot_id, info.name, m.mode))
+            })
+            .collect())
+    }
+
+    pub(crate) fn member_session(&self, id: &str, bot_id: &str) -> Result<Option<String>, RpcError> {
+        self.with_group(id, |g| Ok(g.file.members.iter().find(|m| m.bot_id == bot_id).and_then(|m| m.session_id.clone())))
+    }
+
+    pub(crate) fn set_member_session(&self, id: &str, bot_id: &str, session: String) -> Result<(), RpcError> {
+        self.with_group(id, |g| {
+            if let Some(member) = g.file.members.iter_mut().find(|m| m.bot_id == bot_id) {
+                member.session_id = Some(session);
+            }
+            Ok(())
+        })?;
+        self.save(id)
+    }
+
+    /// A bot's word in a group: the service got it from its seat session's `send_to_user`.
+    pub(crate) fn append_bot(&self, id: &str, bot_id: &str, text: String, files: Vec<GroupFile>, thread: Option<String>, reply_to: Option<String>) -> Result<GroupMessage, RpcError> {
+        let message = self.with_group(id, |g| {
+            g.ensure_messages(&self.home)?;
+            let messages = g.messages.as_ref().expect("read above");
+            let reply_to = match reply_to {
+                Some(reply) if messages.iter().any(|x| x.id == reply) => Some(reply),
+                Some(_) => return Err(RpcError::invalid_params("that message is not in the group")),
+                None => None,
+            };
+            let thread = match thread {
+                Some(root) if messages.iter().any(|x| x.id == root && x.thread.is_none()) => Some(root),
+                Some(_) => return Err(RpcError::invalid_params("that message does not start a thread")),
+                None => None,
+            };
+            let mentions = self.mentions(&text, &g.file.members);
+            let seq = g.file.next_seq;
+            let message = MessageFile {
+                id: uuid::Uuid::now_v7().to_string(),
+                seq,
+                ts: now(),
+                from: FromFile::Bot { bot_id: bot_id.to_string() },
+                text,
+                files,
+                mentions,
+                reply_to,
+                thread,
+            };
+            let line = serde_json::to_vec(&message).map_err(|e| RpcError::internal(e.to_string()))?;
+            append_message(&self.home, id, &line)?;
+            g.file.next_seq = seq + 1;
+            g.file.summary_list.last = Some(self.last(&message));
+            g.file.summary_list.unread = g.file.summary_list.unread.saturating_add(1);
+            g.messages.as_mut().expect("read above").push(message.clone());
+            Ok(self.message(&message, g.messages.as_ref().expect("read above")))
+        })?;
+        self.sync_messages(id)?;
+        self.save(id)?;
+        self.announce(&[id], Vec::new());
+        self.publish(id, &message);
+        Ok(message)
+    }
+
+    /// A debug line: who said nothing, for which batch. Never shown in the group.
+    pub(crate) fn silence(&self, id: &str, bot_id: &str, from_seq: u64, to_seq: u64, explicit: bool, reason: Option<&str>) -> Result<(), RpcError> {
+        let line = serde_json::json!({
+            "bot_id": bot_id,
+            "from_seq": from_seq,
+            "to_seq": to_seq,
+            "explicit": explicit,
+            "reason": reason,
+            "ts": now(),
+        });
+        let path = self.home.group_dir(id).join("silence.jsonl");
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&path).map_err(io_error)?;
+        use std::io::Write as _;
+        writeln!(file, "{line}").map_err(io_error)
+    }
+
     pub(crate) fn read(&self, id: &str) -> Result<(), RpcError> {
         self.with_group(id, |g| {
             g.file.summary_list.unread = 0;
@@ -698,6 +862,30 @@ impl Registry {
             file,
             ts: m.ts.clone(),
         }
+    }
+}
+
+fn batch_message(message: GroupMessage) -> finx_core::GroupBatchMessage {
+    finx_core::GroupBatchMessage {
+        id: message.id.clone(),
+        seq: message.seq,
+        from: match message.from {
+            GroupSpeaker::Owner => finx_core::GroupBatchSpeaker::Owner,
+            GroupSpeaker::Bot { name, external, .. } => finx_core::GroupBatchSpeaker::Bot { name, external },
+            GroupSpeaker::System => finx_core::GroupBatchSpeaker::System,
+        },
+        text: message.text,
+        files: message
+            .files
+            .into_iter()
+            .map(|f| finx_core::GroupBatchFile {
+                path: f.path,
+                name: f.name,
+                size: f.size,
+            })
+            .collect(),
+        reply_to: message.reply_to,
+        thread: message.thread,
     }
 }
 
@@ -917,6 +1105,256 @@ impl Server {
         &self.0.groups
     }
 
+    /// Every local member has a seat session: started when it has none, kept loaded while the
+    /// service runs.
+    pub(crate) async fn ensure_group_seats(&self, id: &str) -> Result<(), RpcError> {
+        let _one = self.0.group_seating.lock().await;
+        for (bot, name, _mode) in self.groups().local_members(id)? {
+            if self.groups().member_session(id, &bot)?.is_some() {
+                continue;
+            }
+            let session = self.start_group_seat(id, &bot, name).await?;
+            self.groups().set_member_session(id, &bot, session)?;
+        }
+        Ok(())
+    }
+
+    async fn start_group_seat(&self, group_id: &str, bot_id: &str, bot_name: String) -> Result<String, RpcError> {
+        self.make_room().await?;
+        let group_name = self.groups().row(group_id)?.name;
+        let folder = self.0.home.group_files_dir(group_id);
+        std::fs::create_dir_all(&folder).map_err(|e| RpcError::internal(format!("cannot create {}: {e}", folder.display())))?;
+        let workspace = Workspace::open(&self.0.home, &folder, &self.0.overrides).map_err(errors::from_runtime)?;
+        let (model, thinking, permission) = self.bots().seat_settings(bot_id).unwrap_or((None, None, None));
+        let model = self.session_model(model, workspace.config.model.clone()).await?;
+        let store: Arc<dyn finx_core::SessionStore> = self.0.store.clone();
+        let mut deps = workspace.kernel_deps(self.0.llm.clone(), store, &[]).map_err(errors::from_runtime)?;
+        // A seat has no browser, no connectors and no MCP (brief §4.3).
+        deps.browser_pool = None;
+        deps.docs = Some(self.0.docs.clone());
+        deps.decks = Some(self.0.decks.clone());
+        deps.words = Some(self.0.words.clone());
+        deps.mcp_servers = Vec::new();
+        deps.routines = None;
+        let options = StartOptions {
+            model,
+            thinking: thinking.unwrap_or(workspace.config.thinking),
+            permission_mode: permission.unwrap_or(workspace.config.permission_mode),
+            cwd: workspace.cwd.clone(),
+            home: self.0.home.clone(),
+            project_root: None,
+            trusted: workspace.trusted,
+            config: Arc::new(workspace.config),
+            interactive_approvals: true,
+            bot: Some(BotIdentity {
+                id: bot_id.to_string(),
+                name: bot_name,
+            }),
+            peer: None,
+            group: Some(GroupRef {
+                id: group_id.to_string(),
+                name: group_name,
+            }),
+        };
+        let kernel = finx_core::Kernel::start(options, deps).await.map_err(|e| errors::from_kernel(e, "new"))?;
+        let now = now();
+        let base = SummaryBase {
+            created_at: now.clone(),
+            preview: None,
+            updated_at: now,
+            no_project: true,
+        };
+        Ok(self.register_seat(kernel, base, group_id.to_string(), bot_id.to_string()))
+    }
+
+    fn register_seat(&self, kernel: finx_core::Kernel, base: SummaryBase, group_id: String, bot_id: String) -> String {
+        let id = kernel.session_id().to_string();
+        let server = Arc::downgrade(&self.0);
+        let exit_id = id.clone();
+        let on_exit = Box::new(move |_last: finx_protocol::api::SessionSummary| {
+            if let Some(inner) = server.upgrade() {
+                inner.sessions.lock().remove(&exit_id);
+                inner.closed_sessions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        let listing = Listing::Group {
+            group_id,
+            bot_id,
+            groups: self.0.groups.clone(),
+            events: parking_lot::Mutex::default(),
+        };
+        let mut sessions = self.0.sessions.lock();
+        let handle = crate::hub::spawn(kernel, Vec::new(), self.idle_after(), None, listing, base, on_exit);
+        sessions.insert(id.clone(), handle);
+        id
+    }
+
+    /// Sends a message to the seats that should hear it now, or after their quiet period.
+    async fn pass_on(&self, group_id: &str, sender: Option<&str>, message: GroupMessage) {
+        let Ok(members) = self.groups().local_members(group_id) else {
+            return;
+        };
+        for (bot, _name, mode) in members {
+            if Some(bot.as_str()) == sender {
+                continue;
+            }
+            let mentioned = message.mentions.iter().any(|id| id == &bot);
+            let in_thread = message.thread.is_some();
+            if mode == GroupMemberMode::Mentions && !mentioned {
+                continue;
+            }
+            if mentioned || in_thread {
+                let mut batch = self.0.group_pending.lock().remove(&(group_id.to_string(), bot.clone())).unwrap_or_default();
+                batch.push(message.clone());
+                let _ = self.deliver_to_seat(group_id, &bot, batch).await;
+            } else {
+                let key = (group_id.to_string(), bot.clone());
+                let first = {
+                    let mut pending = self.0.group_pending.lock();
+                    let entry = pending.entry(key.clone()).or_default();
+                    let first = entry.is_empty();
+                    entry.push(message.clone());
+                    first
+                };
+                if first {
+                    let server = self.handle();
+                    let group = group_id.to_string();
+                    let bot = bot.clone();
+                    tokio::spawn(async move {
+                        // The quiet period, and the longest wait from the first message.
+                        let quiet = std::time::Duration::from_secs(4);
+                        let max = std::time::Duration::from_secs(20);
+                        let start = std::time::Instant::now();
+                        loop {
+                            tokio::time::sleep(quiet).await;
+                            let more = server
+                                .0
+                                .group_pending
+                                .lock()
+                                .get(&(group.clone(), bot.clone()))
+                                .is_some_and(|pending| !pending.is_empty());
+                            if !more || start.elapsed() >= max {
+                                break;
+                            }
+                        }
+                        let messages = server.0.group_pending.lock().remove(&(group.clone(), bot.clone())).unwrap_or_default();
+                        if !messages.is_empty() {
+                            let _ = server.deliver_to_seat(&group, &bot, messages).await;
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    async fn deliver_to_seat(&self, group_id: &str, bot_id: &str, messages: Vec<GroupMessage>) -> Result<(), RpcError> {
+        if messages.is_empty() {
+            return Ok(());
+        }
+        let Some(session) = self.groups().member_session(group_id, bot_id)? else {
+            return Ok(());
+        };
+        let Some(hub) = self.hub(&session) else {
+            return Ok(());
+        };
+        let group = self.groups().row(group_id)?;
+        let members: Vec<finx_core::GroupBatchMember> = group
+            .members
+            .iter()
+            .map(|m| finx_core::GroupBatchMember {
+                name: m.name.clone(),
+                owner: false,
+                external: m.external,
+                external_host: None,
+                you: m.bot_id == bot_id,
+            })
+            .collect();
+        let mut members = members;
+        members.insert(
+            0,
+            finx_core::GroupBatchMember {
+                name: "Owner".into(),
+                owner: true,
+                external: false,
+                external_host: None,
+                you: false,
+            },
+        );
+        let mentioned = messages.iter().any(|m| m.mentions.iter().any(|id| id == bot_id));
+        let thread = messages
+            .iter()
+            .find(|m| m.thread.is_none() && m.mentions.iter().any(|id| id == bot_id))
+            .map(|m| m.id.clone())
+            .or_else(|| messages.iter().find_map(|m| m.thread.clone()));
+        let from = messages.first().map(|m| m.seq).unwrap_or(0);
+        let to = messages.last().map(|m| m.seq).unwrap_or(0);
+        self.groups().set_seat_turn(group_id, bot_id, thread, from, to);
+        let batch = finx_core::GroupBatch {
+            group: GroupRef {
+                id: group.id.clone(),
+                name: group.name.clone(),
+            },
+            members,
+            members_changed: true,
+            note: group.note.clone(),
+            note_changed: false,
+            mentioned,
+            messages: messages.into_iter().map(batch_message).collect(),
+            while_thinking: hub.shared.busy.load(std::sync::atomic::Ordering::Relaxed),
+        };
+        hub.send(HubCmd::Group(batch)).await
+    }
+
+    /// A seat sent a word: add it to the group and pass it on.
+    pub(crate) fn group_seat_spoke(&self, group_id: &str, bot_id: &str, args: &Value, details: Option<&Value>) {
+        let text = args.get("text").and_then(Value::as_str).unwrap_or_default().to_string();
+        if args.get("type").and_then(Value::as_str) == Some("question") {
+            return;
+        }
+        let mut files = Vec::new();
+        if let Some(list) = args.get("files").and_then(Value::as_array) {
+            let sizes: HashMap<String, u64> = details
+                .and_then(|d| d.get("files"))
+                .and_then(Value::as_array)
+                .map(|files| {
+                    files
+                        .iter()
+                        .filter_map(|f| Some((f.get("path")?.as_str()?.to_string(), f.get("size")?.as_u64()?)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            for file in list {
+                let Some(raw) = file.get("path").and_then(Value::as_str) else {
+                    continue;
+                };
+                let name = Path::new(raw).file_name().and_then(|n| n.to_str()).unwrap_or(raw).to_string();
+                let path = format!("files/{name}");
+                files.push(GroupFile {
+                    size: sizes.get(raw).copied().unwrap_or(0),
+                    name,
+                    path,
+                    media_type: None,
+                });
+            }
+        }
+        let turn = self.groups().seat_turn_for(group_id, bot_id);
+        let thread = args
+            .get("thread_on")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or(turn);
+        let reply = args.get("reply_to").and_then(Value::as_str).map(str::to_string);
+        let Ok(message) = self.groups().append_bot(group_id, bot_id, text, files, thread, reply) else {
+            return;
+        };
+        let server = self.handle();
+        let group = group_id.to_string();
+        let bot = bot_id.to_string();
+        tokio::spawn(async move {
+            server.pass_on(&group, Some(&bot), message).await;
+        });
+    }
+
     pub(crate) fn groups_subscribe(&self, conn: &ConnHandle, respond: impl FnOnce(Result<GroupsResult, RpcError>) -> Vec<u8>) {
         let registry = self.groups();
         registry.watch(conn);
@@ -933,7 +1371,13 @@ impl Server {
     }
 
     pub(crate) fn groups_create(&self, p: GroupCreateParams) -> Result<GroupSummary, RpcError> {
-        self.groups().create(p)
+        let row = self.groups().create(p)?;
+        let server = self.handle();
+        let id = row.id.clone();
+        tokio::spawn(async move {
+            let _ = server.ensure_group_seats(&id).await;
+        });
+        Ok(row)
     }
 
     pub(crate) fn groups_update(&self, p: GroupUpdateParams) -> Result<(), RpcError> {
@@ -945,7 +1389,13 @@ impl Server {
     }
 
     pub(crate) fn groups_add_member(&self, p: GroupAddMemberParams) -> Result<GroupSummary, RpcError> {
-        self.groups().add_member(p)
+        let row = self.groups().add_member(p)?;
+        let server = self.handle();
+        let id = row.id.clone();
+        tokio::spawn(async move {
+            let _ = server.ensure_group_seats(&id).await;
+        });
+        Ok(row)
     }
 
     pub(crate) fn groups_remove_member(&self, p: GroupRemoveMemberParams) -> Result<(), RpcError> {
@@ -957,7 +1407,13 @@ impl Server {
     }
 
     pub(crate) fn groups_open(&self, p: GroupOpenParams) -> Result<GroupOpenResult, RpcError> {
-        self.groups().open(p)
+        let result = self.groups().open(p)?;
+        let server = self.handle();
+        let id = result.group.id.clone();
+        tokio::spawn(async move {
+            let _ = server.ensure_group_seats(&id).await;
+        });
+        Ok(result)
     }
 
     pub(crate) fn groups_thread(&self, p: GroupThreadParams) -> Result<GroupThreadResult, RpcError> {
@@ -965,7 +1421,16 @@ impl Server {
     }
 
     pub(crate) fn groups_send(&self, p: GroupSendParams) -> Result<GroupSendResult, RpcError> {
-        self.groups().send(p)
+        let id = p.id.clone();
+        let result = self.groups().send(p)?;
+        let message = result.message.clone();
+        let server = self.handle();
+        let group = id.clone();
+        tokio::spawn(async move {
+            let _ = server.ensure_group_seats(&group).await;
+            server.pass_on(&group, None, message).await;
+        });
+        Ok(result)
     }
 
     pub(crate) fn groups_read(&self, p: GroupIdParams) -> Result<(), RpcError> {

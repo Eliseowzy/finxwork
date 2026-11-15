@@ -121,6 +121,8 @@ pub(crate) enum HubCmd {
         op: Op,
         reply: oneshot::Sender<Result<(), RpcError>>,
     },
+    /// A batch of group messages for a seat session.
+    Group(finx_core::GroupBatch),
     /// The browsers' and desktop control's settings, after the configuration changed.
     System(Box<finx_core::SystemSettings>),
     /// A bot's conversation: the bot's new name (bot-design §2.4).
@@ -148,6 +150,31 @@ pub(crate) enum Listing {
         bots: Arc<crate::bots::Registry>,
         routines: Arc<crate::routines::Routines>,
     },
+    /// A bot's seat in a group: its words go to the group, not to a list.
+    Group {
+        group_id: String,
+        bot_id: String,
+        groups: Arc<crate::groups::Registry>,
+        events: parking_lot::Mutex<SeatEvents>,
+    },
+}
+
+#[derive(Default)]
+pub(crate) struct SeatEvents {
+    /// `send_to_user` arguments waiting for their result.
+    pending: std::collections::HashMap<String, serde_json::Value>,
+    spoke: bool,
+    explicit: bool,
+    reason: Option<String>,
+}
+
+impl SeatEvents {
+    fn reset(&mut self) {
+        self.pending.clear();
+        self.spoke = false;
+        self.explicit = false;
+        self.reason = None;
+    }
 }
 
 /// What the session's log says about it that its events do not: when it was created and how
@@ -371,6 +398,40 @@ impl Hub {
 
     fn dispatch(&mut self, event: Event) {
         self.mirror.apply(&event);
+        if let Listing::Group { group_id, bot_id, groups, events } = &self.listing {
+            let mut seat = events.lock();
+            match &event.msg {
+                EventMsg::TaskStarted { .. } => {
+                    seat.reset();
+                    groups.on_seat_busy(group_id, bot_id, true);
+                }
+                EventMsg::ToolStarted { call_id, name, args, .. } if name == "send_to_user" => {
+                    seat.pending.insert(call_id.clone(), args.clone());
+                }
+                EventMsg::ToolStarted { name, args, .. } if name == "stay_silent" => {
+                    seat.explicit = true;
+                    seat.reason = args.get("reason").and_then(|v| v.as_str()).map(str::to_string);
+                }
+                EventMsg::ToolCompleted { result, .. } if result.tool_name == "send_to_user" && !result.is_error => {
+                    seat.spoke = true;
+                    if let Some(args) = seat.pending.remove(&result.call_id) {
+                        let details = result.details.as_ref().and_then(|d| serde_json::from_str::<serde_json::Value>(d.as_str()).ok());
+                        groups.on_seat_spoke(group_id, bot_id, &args, details.as_ref());
+                    }
+                }
+                EventMsg::ToolCompleted { result, .. } if result.tool_name == "stay_silent" && !result.is_error => {
+                    seat.explicit = true;
+                }
+                EventMsg::TaskCompleted { .. } | EventMsg::TaskFailed { .. } | EventMsg::TaskInterrupted { .. } => {
+                    if !seat.spoke {
+                        groups.on_seat_silent(group_id, bot_id, seat.explicit, seat.reason.as_deref());
+                    }
+                    seat.reset();
+                    groups.on_seat_busy(group_id, bot_id, false);
+                }
+                _ => {}
+            }
+        }
         if let Listing::Bot { id, bots, routines } = &self.listing {
             bots.on_event(id, &event, &self.mirror);
             routines.on_event(id, &event);
@@ -547,6 +608,11 @@ impl Hub {
                 conn.queue.push_all(respond(result));
             }
             // The user asked for it from the extension, which attaches to no session.
+            HubCmd::Group(batch) => {
+                if let Some(kernel) = &self.kernel {
+                    kernel.deliver_group(batch);
+                }
+            }
             HubCmd::FromExtension { op } => {
                 if let Err(err) = self.apply(op, false) {
                     tracing::debug!(%err, "an operation from the extension");

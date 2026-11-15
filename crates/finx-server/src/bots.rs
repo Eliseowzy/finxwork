@@ -331,6 +331,13 @@ impl Registry {
         self.with(|bots| bots.get(id).map(|b| b.file.name.clone()))
     }
 
+    /// How a group seat starts: the bot's own model, thinking and permission.
+    pub(crate) fn seat_settings(&self, id: &str) -> Option<(Option<String>, Option<ThinkingLevel>, Option<PermissionMode>)> {
+        self.with(|bots| {
+            bots.get(id).map(|b| (b.file.model.clone(), b.file.thinking, b.file.permission_mode))
+        })
+    }
+
     /// What a group needs to know about a member: its name, avatar and whether it is another
     /// subject's bot (bot-group-chat-dev-brief §4.1).
     pub(crate) fn member_info(&self, id: &str) -> Option<MemberInfo> {
@@ -644,7 +651,7 @@ fn clean_name(name: &str) -> Result<String, RpcError> {
 }
 
 impl Server {
-    fn bots(&self) -> &Arc<Registry> {
+    pub(crate) fn bots(&self) -> &Arc<Registry> {
         &self.0.bots
     }
 
