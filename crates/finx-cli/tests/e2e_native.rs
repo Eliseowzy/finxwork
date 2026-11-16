@@ -500,7 +500,7 @@ async fn skills_list_reports_a_session_and_a_directory() {
     write_file(&env.home.path().join("skills/late/SKILL.md"), "---\nname: late\ndescription: Late.\n---\n");
     write_file(&report, "---\nname: gen-report\ndescription: Edited.\n---\nbody\n");
     let listed = client.request("skills/list", json!({"session_id": session})).await.unwrap();
-    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report", "skill:skill-creator"]);
+    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report", "skill:medical-imaging", "skill:skill-creator"]);
     assert_eq!(listed["commands"][3]["description"], "Edited.");
 
     for (params, kind) in [

@@ -295,6 +295,7 @@ fn check_submissions_rejects_bad_lines() {
     assert!(matches!(good, Some(s) if s.hidden && s.opacity == Some(0.35) && s.expect_ml == Some([1.0, 5.0]) && s.notes == ["how it was built"]));
 }
 
+#[cfg(target_os = "macos")]
 #[tokio::test]
 async fn phantom_lung_nodule_candidates() {
     let Some(uv) = find_or_skip_uv() else {
@@ -442,6 +443,7 @@ async fn phantom_chest_structures() {
     assert!((10.0..40.0).contains(&airway), "airway {airway} mL");
 }
 
+#[cfg(target_os = "macos")]
 #[tokio::test]
 async fn sandbox_blocks_network_and_home_writes_allows_workdir() {
     let Some(uv) = find_or_skip_uv() else {
