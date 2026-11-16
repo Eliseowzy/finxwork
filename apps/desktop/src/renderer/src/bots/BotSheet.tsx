@@ -110,9 +110,20 @@ export function BotSheet() {
     setBusy(false);
     if (ok) closeAll();
   };
+  const tabBar = canAdd && !preview ? (
+    <div className="bs-tabs" role="tablist">
+      <button type="button" role="tab" aria-selected={tab === "new"} className={tab === "new" ? "on" : ""} onClick={() => { setTab("new"); setProblem(null); }}>
+        {t("sheet.newTab")}
+      </button>
+      <button type="button" role="tab" aria-selected={tab === "add"} className={tab === "add" ? "on" : ""} onClick={() => { setTab("add"); setProblem(null); }}>
+        {t("sheet.addTab")}
+      </button>
+    </div>
+  ) : null;
   if (tab === "add" && canAdd) {
     return (
       <Dialog label={t("sheet.add.title")} width={440} className="bsheet" onClose={closeAll}>
+        {tabBar}
         <h3>{preview ? t("sheet.add.confirm") : t("sheet.add.title")}</h3>
         {!preview ? (
           <form
@@ -134,7 +145,7 @@ export function BotSheet() {
                 onChange={(e) => setUrl(e.target.value)}
               />
             </label>
-            <p className="sub">{t("sheet.add.hint")}</p>
+            <p className="bs-notice">{t("sheet.add.hint")}</p>
             {problem && <p className="bs-problem">{problem}</p>}
             <div className="sheet-foot">
               <button type="button" className="link left" onClick={closeAll}>
@@ -195,16 +206,7 @@ export function BotSheet() {
   }
   return (
     <Dialog label={t("sheet.newTitle")} width={440} className="bsheet" onClose={close}>
-      {canAdd && (
-        <div className="bs-tabs" role="tablist">
-          <button type="button" role="tab" aria-selected={tab === "new"} className={tab === "new" ? "on" : ""} onClick={() => setTab("new")}>
-            {t("sheet.newTab")}
-          </button>
-          <button type="button" role="tab" aria-selected={tab === "add"} className={tab === "add" ? "on" : ""} onClick={() => setTab("add")}>
-            {t("sheet.addTab")}
-          </button>
-        </div>
-      )}
+      {tabBar}
       <form
         onSubmit={(e) => {
           e.preventDefault();
