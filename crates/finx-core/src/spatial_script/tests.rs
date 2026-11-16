@@ -1,7 +1,8 @@
 use super::*;
 
 /// The skill whose environment the tests run in.
-const DEFAULT_SKILL: &str = "medical-imaging";
+/// A skill holding only what `finx_spatial` needs; the kernel's tests name no real skill.
+const PROBE_SKILL: &str = "spatial-probe";
 use finx_tools::{FileTracker, LocalEnvironment, OutputLimits, PathLocks, ProgressSink, SessionState};
 use std::sync::{Mutex, OnceLock};
 use tokio_util::sync::CancellationToken;
@@ -23,110 +24,6 @@ impl MemoryData {
             spacing: [1.0, 1.0, 1.0],
             hu: vec![-850; n],
             lungs: vec![true; n],
-            applied: Mutex::new(Vec::new()),
-        }
-    }
-
-    /// Synthetic chest CT matching `crates/finx-spatial/tests/common/phantom.rs`
-    /// (`N=256, PX=1.3, SLICES=200, GAP=1.25`, ground-glass nodule at `[-62.0, -50.0, 95.0]`).
-    fn phantom() -> Self {
-        const N: usize = 256;
-        const SLICES: usize = 200;
-        const PX: f64 = 1.3;
-        const GAP: f64 = 1.25;
-        const NODULE: ([f64; 3], f64, f64) = ([-62.0, -50.0, 95.0], 2.6, -520.0);
-        const LUNG_R: ([f64; 3], [f64; 3]) = ([-72.0, 6.0, 125.0], [56.0, 76.0, 95.0]);
-        const LUNG_L: ([f64; 3], [f64; 3]) = ([72.0, 6.0, 122.0], [50.0, 72.0, 90.0]);
-        const HEART: ([f64; 3], [f64; 3]) = ([22.0, -32.0, 80.0], [58.0, 46.0, 52.0]);
-        const CARINA: [f64; 3] = [0.0, -10.0, 175.0];
-
-        let ellipsoid = |p: [f64; 3], c: [f64; 3], r: [f64; 3]| -> f64 {
-            (0..3).map(|a| ((p[a] - c[a]) / r[a]).powi(2)).sum()
-        };
-        let seg_dist = |p: [f64; 3], a: [f64; 3], b: [f64; 3]| -> f64 {
-            let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-            let ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
-            let denom = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-            let t = ((ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / denom).clamp(0.0, 1.0);
-            ((ap[0] - t * ab[0]).powi(2) + (ap[1] - t * ab[1]).powi(2) + (ap[2] - t * ab[2]).powi(2)).sqrt()
-        };
-        let noise = |x: f64, y: f64, z: f64| -> f64 {
-            let v = (x * 12.9898 + y * 78.233 + z * 37.719).sin() * 43758.5453;
-            v - v.floor() - 0.5
-        };
-
-        let mut s: u64 = 7;
-        let mut rnd = || {
-            s = s * 16807 % 2147483647;
-            s as f64 / 2147483647.0
-        };
-        let mut vessels = Vec::new();
-        for side in [-1.0, 1.0] {
-            let hilum = [side * 34.0, 4.0, 125.0];
-            for _ in 0..10 {
-                let (c, r) = if side < 0.0 { LUNG_R } else { LUNG_L };
-                let t = [
-                    c[0] + side * rnd() * 0.55 * r[0],
-                    c[1] + (rnd() - 0.5) * 1.3 * r[1],
-                    c[2] + (rnd() - 0.5) * 1.5 * r[2],
-                ];
-                let mid = [
-                    (hilum[0] + t[0]) / 2.0 + (rnd() - 0.5) * 12.0,
-                    (hilum[1] + t[1]) / 2.0 + (rnd() - 0.5) * 12.0,
-                    (hilum[2] + t[2]) / 2.0,
-                ];
-                vessels.push((hilum, mid, 4.0));
-                vessels.push((mid, t, 2.0));
-            }
-        }
-
-        let half = (N as f64 - 1.0) / 2.0 * PX;
-        let total = SLICES * N * N;
-        let mut hu = Vec::with_capacity(total);
-        let mut lungs = Vec::with_capacity(total);
-        for k in 0..SLICES {
-            let z = k as f64 * GAP;
-            for j in 0..N {
-                let y = -half + j as f64 * PX;
-                for i in 0..N {
-                    let x = -half + i as f64 * PX;
-                    let p = [x, y, z];
-                    let body = (x / 158.0).powi(2) + ((y - 8.0) / 112.0).powi(2);
-                    let in_lung = (ellipsoid(p, LUNG_R.0, LUNG_R.1) < 1.0 || ellipsoid(p, LUNG_L.0, LUNG_L.1) < 1.0)
-                        && ellipsoid(p, HEART.0, HEART.1) > 1.0;
-                    let in_airway = seg_dist(p, [0.0, -10.0, 260.0], CARINA) < 8.0
-                        || [-1.0, 1.0].iter().any(|side| seg_dist(p, CARINA, [side * 12.0, -8.0, 160.0]) < 5.0);
-                    let in_nodule = ellipsoid(p, NODULE.0, [NODULE.1; 3]) < 1.0;
-
-                    let v = if body > 1.0 || in_airway {
-                        -1000.0 + noise(x, y, z) * 20.0
-                    } else if in_nodule {
-                        NODULE.2 + noise(x, y, z) * 40.0
-                    } else if in_lung {
-                        if vessels.iter().any(|(a, b, r)| seg_dist(p, *a, *b) < *r) {
-                            30.0
-                        } else {
-                            -860.0 + noise(x, y, z) * 60.0
-                        }
-                    } else if (x * x + (y - 92.0).powi(2)).sqrt() < 17.0 {
-                        420.0
-                    } else if body > 0.7 && body < 0.8 && (z / 9.0).sin().abs() > 0.82 && y > -95.0 {
-                        650.0
-                    } else if body > 0.86 {
-                        -90.0
-                    } else {
-                        40.0
-                    };
-                    hu.push(v.round() as i16);
-                    lungs.push(in_lung && !in_airway);
-                }
-            }
-        }
-        Self {
-            dims: [SLICES as u64, N as u64, N as u64],
-            spacing: [GAP, PX, PX],
-            hu,
-            lungs,
             applied: Mutex::new(Vec::new()),
         }
     }
@@ -210,7 +107,7 @@ fn approval_and_trust() {
     let skill_call = json!({
         "doc_id": "doc1",
         "purpose": "Find lung nodules",
-        "skill_script": "medical-imaging/scripts/lung_nodule_candidates.py"
+        "skill_script": "some-skill/scripts/measure.py"
     });
     assert!(runs_unasked(&skill_call));
 
@@ -297,154 +194,6 @@ fn check_submissions_rejects_bad_lines() {
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
-async fn phantom_lung_nodule_candidates() {
-    let Some(uv) = find_or_skip_uv() else {
-        panic!("uv not found on PATH or in apps/desktop/node_modules/.cache/uv");
-    };
-    let _guard = shared_e2e_lock().lock().await;
-    let home = FinxHome::new(shared_finx_home().path().to_path_buf());
-    let data = Arc::new(MemoryData::phantom());
-    let skill_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/skills/system");
-    let handle = Arc::new(ScriptHandle {
-        data: data.clone(),
-        home: home.clone(),
-        skill_roots: vec![skill_root],
-    });
-    let state = Arc::new(SessionState::default());
-    state.insert(handle.clone());
-
-    let tools = Tools {
-        uv,
-        python_path: Path::new(env!("CARGO_MANIFEST_DIR")).join("../finx-spatial/python"),
-    };
-    let env = Env::new(&handle.home, DEFAULT_SKILL);
-    let ctx = tool_ctx(shared_finx_home().path(), state.clone());
-    let _sync_note = env.sync(&tools, &handle.skill_roots[0].join(DEFAULT_SKILL), &ctx).await.expect("uv sync");
-
-    let out = run(
-        &handle,
-        Args {
-            doc_id: "phantom-ct".into(),
-            purpose: "Detect lung nodule candidates in the chest phantom".into(),
-            skill_script: Some("medical-imaging/scripts/lung_nodule_candidates.py".into()),
-            script: None,
-            skill: None,
-            args: Some(json!({"min_mm": 3, "max_mm": 30, "max_candidates": 20})),
-            timeout_s: Some(120),
-        },
-        &ctx,
-    )
-    .await
-    .expect("run lung_nodule_candidates.py");
-
-    assert!(!out.is_error, "script failed: {:?}", out.content);
-    let applied = data.applied.lock().unwrap();
-    assert_eq!(applied.len(), 1);
-    let candidates: Vec<&Candidate> = applied[0]
-        .1
-        .iter()
-        .filter_map(|s| match s {
-            Submission::Candidate(c) => Some(c),
-            _ => None,
-        })
-        .collect();
-    assert!(!candidates.is_empty(), "expected at least one candidate");
-
-    // Expected phantom nodule voxel: z=95 -> k=76, x=-62 -> i=80, y=-50 -> j=89.
-    let target = [76i64, 89, 80];
-    let top5_hit = candidates.iter().take(5).any(|c| {
-        let dk = c.center_voxel[0] as i64 - target[0];
-        let dj = c.center_voxel[1] as i64 - target[1];
-        let di = c.center_voxel[2] as i64 - target[2];
-        dk * dk + dj * dj + di * di <= 25
-    });
-    assert!(
-        top5_hit,
-        "phantom nodule near {target:?} was not in top 5 candidates: {:?}",
-        candidates.iter().take(5).map(|c| (c.center_voxel, c.diameter_mm, c.score)).collect::<Vec<_>>()
-    );
-
-    let archive = home.root().join("docs/phantom-ct/scripts/1");
-    for f in ["script.py", "args.json", "stdout.txt", "stderr.txt", "submit.jsonl", "result.json"] {
-        assert!(archive.join(f).is_file(), "missing archive file {f}");
-    }
-}
-
-#[cfg(target_os = "macos")]
-/// The skill's chest script over the phantom: every structure comes back as a mask, the two
-/// lungs on their own sides and of the phantom's sizes, with the volumes the script expects.
-#[tokio::test]
-async fn phantom_chest_structures() {
-    let Some(uv) = find_or_skip_uv() else {
-        panic!("uv not found on PATH or in apps/desktop/node_modules/.cache/uv");
-    };
-    let _guard = shared_e2e_lock().lock().await;
-    let home = FinxHome::new(shared_finx_home().path().to_path_buf());
-    let data = Arc::new(MemoryData::phantom());
-    let skill_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/skills/system");
-    let handle = Arc::new(ScriptHandle { data: data.clone(), home: home.clone(), skill_roots: vec![skill_root] });
-    let state = Arc::new(SessionState::default());
-    state.insert(handle.clone());
-    let tools = Tools { uv, python_path: Path::new(env!("CARGO_MANIFEST_DIR")).join("../finx-spatial/python") };
-    let env = Env::new(&handle.home, DEFAULT_SKILL);
-    let ctx = tool_ctx(shared_finx_home().path(), state.clone());
-    env.sync(&tools, &handle.skill_roots[0].join(DEFAULT_SKILL), &ctx).await.expect("uv sync");
-
-    let out = run(
-        &handle,
-        Args {
-            doc_id: "phantom-chest".into(),
-            purpose: "Build the chest structures of the phantom".into(),
-            skill_script: Some("medical-imaging/scripts/chest_structures.py".into()),
-            script: None,
-            skill: None,
-            args: None,
-            timeout_s: Some(300),
-        },
-        &ctx,
-    )
-    .await
-    .expect("run chest_structures.py");
-    assert!(!out.is_error, "script failed: {:?}", out.content);
-
-    let applied = data.applied.lock().unwrap();
-    let subs = &applied.last().unwrap().1;
-    assert!(subs.iter().any(|s| matches!(s, Submission::Profile(p) if p.unit.as_deref() == Some("HU") && p.windows.len() == 3)));
-    let structures: Vec<&Structure> = subs.iter().filter_map(|s| if let Submission::Structure(s) = s { Some(s) } else { None }).collect();
-    let ids: Vec<&str> = structures.iter().map(|s| s.id.as_str()).collect();
-    assert_eq!(ids, ["body", "airway", "lungs", "lungs_closed", "lung_right", "lung_left", "vessels", "bones"]);
-    let get = |id: &str| *structures.iter().find(|s| s.id == id).unwrap();
-    assert!(get("lungs").hidden && get("lungs_closed").hidden && !get("lung_left").hidden);
-    assert_eq!(get("lung_left").expect_ml, Some([600.0, 4500.0]));
-
-    // Voxels of a mask, and how many lie in the low-i half (the patient's right in this phantom).
-    let voxel_ml = data.spacing.iter().product::<f64>() / 1000.0;
-    let count = |id: &str| -> (f64, f64) {
-        let bytes = std::fs::read(&get(id).mask).unwrap();
-        let start = 10 + u16::from_le_bytes([bytes[8], bytes[9]]) as usize;
-        let ni = data.dims[2] as usize;
-        let (mut all, mut low) = (0u64, 0u64);
-        for (n, b) in bytes[start..].iter().enumerate() {
-            if *b != 0 {
-                all += 1;
-                low += u64::from(n % ni < ni / 2);
-            }
-        }
-        (all as f64 * voxel_ml, low as f64 / all.max(1) as f64)
-    };
-    let truth = data.lungs.iter().filter(|b| **b).count() as f64 * voxel_ml;
-    let (right, right_low) = count("lung_right");
-    let (left, left_low) = count("lung_left");
-    assert!(right_low > 0.99 && left_low < 0.01, "sides: right {right_low}, left {left_low}");
-    // The phantom's right lung is the larger; together they are its lungs less the vessels in them.
-    assert!(right > left && left > 1000.0, "right {right} mL, left {left} mL");
-    assert!(((right + left) / truth - 1.0).abs() < 0.05, "{} mL vs the phantom's {truth} mL", right + left);
-    let (airway, _) = count("airway");
-    assert!((10.0..40.0).contains(&airway), "airway {airway} mL");
-}
-
-#[cfg(target_os = "macos")]
-#[tokio::test]
 async fn sandbox_blocks_network_and_home_writes_allows_workdir() {
     let Some(uv) = find_or_skip_uv() else {
         panic!("uv not found on PATH or in apps/desktop/node_modules/.cache/uv");
@@ -452,7 +201,7 @@ async fn sandbox_blocks_network_and_home_writes_allows_workdir() {
     let _guard = shared_e2e_lock().lock().await;
     let home = FinxHome::new(shared_finx_home().path().to_path_buf());
     let data = Arc::new(MemoryData::tiny());
-    let skill_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/skills/system");
+    let skill_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/spatial_script/testdata");
     let handle = Arc::new(ScriptHandle {
         data: data.clone(),
         home,
@@ -465,9 +214,9 @@ async fn sandbox_blocks_network_and_home_writes_allows_workdir() {
         uv,
         python_path: Path::new(env!("CARGO_MANIFEST_DIR")).join("../finx-spatial/python"),
     };
-    let env = Env::new(&handle.home, DEFAULT_SKILL);
+    let env = Env::new(&handle.home, PROBE_SKILL);
     let ctx = tool_ctx(shared_finx_home().path(), state.clone());
-    env.sync(&tools, &handle.skill_roots[0].join(DEFAULT_SKILL), &ctx).await.expect("uv sync");
+    env.sync(&tools, &handle.skill_roots[0].join(PROBE_SKILL), &ctx).await.expect("uv sync");
 
     let script = r#"
 import json, os, urllib.request
