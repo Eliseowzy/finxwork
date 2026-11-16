@@ -90,7 +90,7 @@ const maxImageSide = 2048;
 let pasted = 0;
 
 /** The local application FinxWork can connect (finx-connections' QwenWork adapter looks for it here too). */
-const sourceApps: Record<string, string> = { qwenwork: "/Applications/QwenWorkCN.app", qoder: "/Applications/Qoder.app" };
+const sourceApps: Record<string, string> = { qwenwork: "/Applications/QwenWorkCN.app", qoder: "/Applications/Qoder.app", workbuddy: "/Applications/WorkBuddy.app" };
 function sourceApplication(adapter: unknown): string {
   if (typeof adapter !== "string" || !Object.hasOwn(sourceApps, adapter)) throw new Error("Unknown source application");
   return sourceApps[adapter];

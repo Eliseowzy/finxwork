@@ -90,6 +90,18 @@ const makeDmg = process.env.FINXWORK_NO_DMG !== "1";
 fs.rmSync(tmp, { recursive: true, force: true });
 fs.mkdirSync(tmp, { recursive: true });
 
+// Validate the asset compiler before the much longer kernel build.
+step("compiling the app icon");
+// The brand's icons (assets/brand, made by its export.sh).
+const brand = path.join(root, "assets/brand/macos");
+const icns = path.join(brand, "AppIcon-light.icns");
+const icons = path.join(tmp, "icon");
+fs.mkdirSync(icons);
+sh("xcrun", ["actool", path.join(brand, "AppIcon.icon"), "--compile", icons, "--platform", "macosx", "--minimum-deployment-target", "14.0",
+  "--app-icon", "AppIcon", "--output-partial-info-plist", path.join(tmp, "AppIcon.plist")]);
+const compiledIcon = path.join(icons, "Assets.car");
+if (!fs.existsSync(compiledIcon)) throw new Error("actool did not produce Assets.car; select Xcode 26 or later with xcode-select or DEVELOPER_DIR");
+
 // The kernel first: the app is only as good as the finx inside it.
 const cargo = process.env.CARGO || [path.join(os.homedir(), ".cargo/bin/cargo")].find((c) => fs.existsSync(c)) || "cargo";
 const nativeArch = process.arch === "arm64" ? "arm64" : "x64";
@@ -119,15 +131,6 @@ fs.writeFileSync(
   path.join(staged, "package.json"),
   JSON.stringify({ name: "finxwork", productName: "FinxWork", version, main: "main/index.js", type: "module" }, null, 2),
 );
-
-step("compiling the app icon");
-// The brand's icons (assets/brand, made by its export.sh).
-const brand = path.join(root, "assets/brand/macos");
-const icns = path.join(brand, "AppIcon-light.icns");
-const icons = path.join(tmp, "icon");
-fs.mkdirSync(icons);
-sh("xcrun", ["actool", path.join(brand, "AppIcon.icon"), "--compile", icons, "--platform", "macosx", "--minimum-deployment-target", "14.0",
-  "--app-icon", "AppIcon", "--output-partial-info-plist", path.join(tmp, "AppIcon.plist")], { stdio: "ignore" });
 
 step(`packaging FinxWork.app (${arch})`);
 const [built] = await packager({
@@ -164,7 +167,7 @@ fs.cpSync(path.join(root, "crates/finx-slide/licenses"), path.join(contents, "Re
 for (const f of fs.readdirSync(path.join(contents, "Resources"))) {
   if (f.endsWith(".lproj") && !["en.lproj", "zh_CN.lproj"].includes(f)) fs.rmSync(path.join(contents, "Resources", f), { recursive: true });
 }
-fs.copyFileSync(path.join(icons, "Assets.car"), path.join(contents, "Resources/Assets.car"));
+fs.copyFileSync(compiledIcon, path.join(contents, "Resources/Assets.car"));
 // The 自定义 page's catalog skills, exactly as src/shared/catalog.ts describes them.
 const problems = catalogProblems(catalogSkills);
 if (problems.length) throw new Error(`the catalog's skills differ from src/shared/catalog.ts:\n  ${problems.join("\n  ")}`);

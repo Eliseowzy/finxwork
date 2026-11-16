@@ -75,7 +75,7 @@ fn links_between_the_pages_are_not_broken() {
         let text = std::fs::read_to_string(&page).unwrap();
         for part in text.split("](").skip(1) {
             let target = part.split(')').next().unwrap();
-            if target.starts_with("http") || target.starts_with('#') {
+            if target.starts_with("http") || target.starts_with("mailto:") || target.starts_with('#') {
                 continue;
             }
             let target = target.split('#').next().unwrap();

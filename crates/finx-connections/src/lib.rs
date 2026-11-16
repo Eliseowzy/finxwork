@@ -6,6 +6,7 @@ pub mod chatgpt;
 pub mod platform;
 mod qoder;
 mod qwenwork;
+mod workbuddy;
 use adapter::ProductAdapter;
 use async_trait::async_trait;
 use finx_llm::connection::{Authorization, ConnectionAuthorizer, ConnectionRequest};
@@ -116,6 +117,7 @@ impl Manager {
             BTreeMap::from([
                 ("qwenwork".into(), platform::system(&home)),
                 ("qoder".into(), platform::system_for(&home, "qoder")),
+                ("workbuddy".into(), platform::system_for(&home, "workbuddy")),
             ])
         } else {
             BTreeMap::new()
@@ -682,7 +684,7 @@ fn read_config(home: &Path) -> Result<Vec<Record>> {
         || config.connections.iter().any(|r| {
             uuid::Uuid::parse_str(&r.connection_id).is_err()
                 || !ids.insert(r.connection_id.clone())
-                || !["qwenwork", "qoder"].contains(&r.adapter_id.as_str())
+                || !["qwenwork", "qoder", "workbuddy"].contains(&r.adapter_id.as_str())
                 || r.models.iter().any(|m| !valid_id(&m.id))
         })
     {

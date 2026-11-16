@@ -642,8 +642,12 @@ async fn the_main_session_goes_on_while_a_sub_agent_asks() {
     h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
     h.script("writer", Script::text("wrote x.txt"));
     h.prompt("write x").await;
-    let (asking, _) = h.until_asked().await;
-    h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let (asking, events) = h.until_asked().await;
+    // The root may finish before the background agent's question arrives.
+    // `until_asked` has already consumed that completion in this ordering.
+    if !events.iter().any(|e| matches!(e.msg, EventMsg::TaskCompleted { .. })) {
+        h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    }
 
     h.prompt("something else").await;
     let events = h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;

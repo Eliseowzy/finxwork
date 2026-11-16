@@ -167,14 +167,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = FinxHome::new(dir.path().join("home"));
         home.ensure().unwrap();
-        let server = Server::new(ServerOptions {
+        let server = Server::with_save_engine(ServerOptions {
             home,
             cwd: dir.path().to_path_buf(),
             overrides: Vec::new(),
             mcp_servers: Vec::new(),
             doc_worker: finx_docs::Launcher::Thread,
             word_save: Some(finx_docs::word::SaveEngine::Desktop),
-        })
+        }, finx_docs::word::SaveEngine::Desktop)
         .unwrap();
         let (client, ours) = tokio::io::duplex(1 << 20);
         let (server_reads, server_writes) = tokio::io::split(ours);

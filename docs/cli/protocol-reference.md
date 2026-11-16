@@ -8,6 +8,7 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 
 | Method | Parameters | Result | What it does |
 |---|---|---|---|
+| `ai/action` | `AiActionParams` | `AiActionResult` | `ai/action`. Answers when the proposal is ready; `ai/action_progress` goes out meanwhile, and `$/cancel_request` stops it. |
 | `auth/delete` | `AuthDeleteParams` | `Empty` | Parameters of `auth/delete`. |
 | `auth/set` | `AuthSetParams` | `AuthSetResult` | Parameters of `auth/set`. |
 | `chatgpt/cancel` | `ChatGptCancelParams` | `ChatGptStatus` |  |
@@ -18,6 +19,27 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `config/write` | `ConfigWriteParams` | `ConfigWriteResult` |  |
 | `credentials/delete` | `CredentialsDeleteParams` | `Empty` |  |
 | `credentials/set` | `CredentialsSetParams` | `Empty` | A secret for configuration values to refer to as `${credential:<name>}`. |
+| `deck/check` | `DeckCheckParams` | `DeckCheckResult` |  |
+| `deck/close` | `DeckIdParams` | `Empty` |  |
+| `deck/copy` | `DeckCopyParams` | `DeckCopyResult` | `deck/copy`: shapes, slides or text, for `paste` here or in another deck. |
+| `deck/diff` | `DeckDiffParams` | `DeckDiff` |  |
+| `deck/edit` | `DeckEditParams` | `DeckEditResult` | `deck/edit`, and the `deck_edit` tool without `session_id`: a batch that lands whole or not at all. |
+| `deck/find` | `DeckFindParams` | `DeckFindResult` | `deck/find`: text or numbers, case folded unless `case_sensitive`. |
+| `deck/focus` | `DeckFocusParams` | `Empty` | `deck/focus`: what the user is looking at, sent as it changes, for the short context block each message carries (§6.6) and for "this slide" in commands. |
+| `deck/layouts` | `DeckLayoutsParams` | `DeckLayoutsResult` |  |
+| `deck/links` | `DeckLinksParams` | `DeckLinksResult` |  |
+| `deck/open` | `DeckOpenParams` | `DeckOpenResult` | `deck/open`. Progress goes out as `pptx/readProgress`. |
+| `deck/proposal/accept` | `DeckProposalDecideParams` | `DeckProposalResult` | `deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The rest stays pending as `remaining_id`. |
+| `deck/proposal/list` | `DeckProposalListParams` | `DeckProposalListResult` |  |
+| `deck/proposal/reject` | `DeckProposalDecideParams` | `DeckProposalResult` | `deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The rest stays pending as `remaining_id`. |
+| `deck/proposal/revert` | `DeckProposalIdParams` | `DeckProposalResult` |  |
+| `deck/read` | `DeckReadParams` | `DeckReadResult` |  |
+| `deck/save` | `DeckSaveParams` | `DeckSaveResult` |  |
+| `deck/summary` | `DeckIdParams` | `DeckSummary` |  |
+| `deck/sync` | `DeckSyncParams` | `DeckSyncResult` | `deck/sync` from a replica: its local edits, and what it lacks. |
+| `deck/template_profile` | `DeckTemplateProfileParams` | `TemplateProfile` | `deck/template_profile`: of an open deck, or of a template file. |
+| `deck/undo` | `DeckUndoParams` | `DeckUndoResult` | `deck/undo`: takes back the agent's edit `edit` (the revision its `deck_edit` made), when it is the agent's latest one still in the deck (presentation-deck-edit §5). |
+| `deck/view` | `DeckViewParams` | `DeckViewResult` | `deck/view`: a slide rasterized on this machine (§6.5). |
 | `files/list` | `FilesListParams` | `FilesListResult` | Parameters of `files/list`. |
 | `files/read` | `FilesReadParams` | `FilesReadResult` | Parameters of `files/read`. |
 | `files/watch` | `FilesWatchParams` | `Empty` | Parameters of `files/watch`. |
@@ -111,12 +133,26 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `doc/redo` | `DocIdParams` | `DocApplyResult` |  |
 | `doc/resolve` | `DocResolveParams` | `DocResolveResult` | A selection or a region on a page, to be read by the kernel (§9.4.1). |
 | `doc/save` | `DocSaveParams` | `DocInfo` |  |
+| `doc/sort` | `DocSortParams` | `DocApplyResult` | `doc/sort`: the rows of `range` sorted by the values of one of its columns, as one edit; as Excel sorts, numbers come before text before TRUE/FALSE before errors, blanks last either way, ties keep their order, and a formula moves with its row (relative references shift). Formats stay where they are. |
+| `doc/structure` | `DocStructureParams` | `DocApplyResult` | `doc/structure`: inserts or deletes whole rows or columns as one edit. Every reference to the cells that move moves with them, in every sheet, as Excel moves it; one into deleted cells becomes `#REF!`; comments move with their cells. Refused where it cannot be done faithfully here (Excel tables, pivot tables, form controls…): the reason says so. |
 | `doc/trace` | `DocTraceParams` | `DocFoundResult` | `doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10). |
 | `doc/undo` | `DocIdParams` | `DocApplyResult` |  |
 | `doc/view` | `DocViewParams` | `Empty` | What a session's document column shows: the page, and what is selected. |
+| `docx/close` | `DocxIdParams` | `Empty` |  |
+| `docx/export_pdf` | `DocxExportPdfParams` | `DocxExportPdfResult` | Writes the document as it is now, unsaved edits included, as a PDF (word-design §6). |
+| `docx/open` | `DocxOpenParams` | `DocxOpenResult` |  |
+| `docx/review` | `DocxReviewParams` | `DocxRevisionResult` | Accepts or rejects tracked changes, the person's choice in the document (word-design §5.2). |
+| `docx/save` | `DocxSaveParams` | `DocxSaveResult` |  |
+| `docx/sync` | `DocxSyncParams` | `DocxSyncResult` | A replica's update (merged and sent to the other replicas), and/or its state vector (the result then carries what it lacks). |
+| `docx/undo` | `DocxUndoParams` | `DocxRevisionResult` | Takes back the agent's edit `edit` (the revision it made), when it is the agent's latest step still in the document. |
+| `models/catalog` | `ModelsCatalogParams` | `ModelsCatalogResult` | `models/catalog`: canonical models of the public catalog by name, to say what a model is like (docs/kernel/custom-endpoint-design.md §7.3). |
+| `models/configure` | `ModelsConfigureParams` | `ModelsConfigureResult` | `models/configure`: what a model is like, for one nothing describes (§7.3). A field left out stays as it is; `null` removes it. With `clear`, the model's entry goes and it is found by its name again. |
 | `pptx/metafile` | `PptxMetafileParams` | `PptxMetafileResult` |  |
 | `pptx/read` | `PptxReadParams` | `PptxReadResult` | Optional correlation ID keeps concurrent opens and reopened tabs isolated. |
 | `pptx/write` | `PptxWriteParams` | `FilesWriteResult` |  |
+| `providers/add` | `ProvidersAddParams` | `ProvidersAddResult` | `providers/add`: a service by its address. Probed first; saved only when usable. |
+| `providers/remove` | `ProviderIdParams` | `Empty` |  |
+| `providers/update` | `ProvidersUpdateParams` | `ProvidersAddResult` | `providers/update`: a new name, address, key or protocol. A new address, key or protocol is probed first and changes nothing when unusable. |
 
 ## Client notifications
 
@@ -128,10 +164,16 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 
 | Notification | Parameters | Tier |
 |---|---|---|
+| `ai/action_progress` | `AiActionProgress` | stable |
 | `bots/changed` | `BotsChangedParams` | experimental |
 | `browser/changed` | `BrowserStatus` | experimental |
 | `config/changed` | `ConfigChangedParams` | stable |
+| `deck/changed` | `DeckChangedParams` | stable |
+| `deck/proposal` | `DeckProposalEvent` | stable |
+| `deck/sync` | `DeckSyncNotice` | stable |
 | `doc/changed` | `DocChangedParams` | experimental |
+| `docx/changed` | `DocxChangedParams` | experimental |
+| `docx/sync` | `DocxSyncNotice` | experimental |
 | `files/changed` | `FilesChangedParams` | stable |
 | `mcp/changed` | `McpChangedParams` | stable |
 | `mcp/probe_progress` | `McpProbeProgressParams` | stable |
@@ -174,6 +216,9 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | -32034 | `doc_refused` |
 | -32035 | `doc_stale` |
 | -32036 | `doc_conflict` |
+| -32037 | `deck_unavailable` |
+| -32038 | `deck_conflict` |
+| -32039 | `proposal_not_found` |
 | -32040 | `bot_not_found` |
 | -32041 | `bot_default` |
 | -32042 | `bot_invalid` |
@@ -181,6 +226,7 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | -32044 | `routine_busy` |
 | -32045 | `routines_unavailable` |
 | -32046 | `no_model` |
+| -32047 | `endpoint_unusable` |
 | -32600 | `invalid_request` |
 | -32601 | `method_not_found` |
 | -32602 | `invalid_params` |
