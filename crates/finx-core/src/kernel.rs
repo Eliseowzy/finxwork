@@ -57,6 +57,8 @@ use crate::mcp::McpManager;
 use crate::mcp::tools::Shown;
 use crate::paths::FinxHome;
 use crate::prompt;
+use crate::peer::Peer;
+use crate::peer::PeerRef;
 use crate::prompt::PromptInputs;
 use crate::prompt::PromptProfile;
 use crate::routine::RoutineHost;
@@ -111,6 +113,9 @@ pub struct KernelDeps {
     /// The service's routines (routine-design §4.3), for a bot's session. Without it the bot's
     /// `manage_routine` says they are not available.
     pub routines: Option<Arc<dyn RoutineHost>>,
+    /// An external bot's session: the service that answers. The kernel knows no protocol
+    /// (bot-contacts-design §5.3).
+    pub peer: Option<Arc<dyn Peer>>,
 }
 
 pub struct StartOptions {
@@ -127,6 +132,9 @@ pub struct StartOptions {
     /// A bot's session (bot-design §2.2): its header names the bot, its prompt is a bot's and
     /// it gets `send_to_user`.
     pub bot: Option<BotIdentity>,
+    /// An external bot's session (bot-contacts-design §5.3): its header names the other side,
+    /// no model is resolved, and the task loop only forwards and records.
+    pub peer: Option<PeerRef>,
 }
 
 pub struct ResumeOptions {
@@ -142,6 +150,9 @@ pub struct ResumeOptions {
     pub interactive_approvals: bool,
     /// A bot's session: the bot's name now, when it may have changed (bot-design §2.4).
     pub bot_name: Option<String>,
+    /// An external bot's session: the service built again from the bot's `source`
+    /// (bot-contacts-design §5.3). Required when the log's header has `peer`.
+    pub peer: Option<Arc<dyn Peer>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -149,6 +160,10 @@ pub enum KernelError {
     /// Nobody named a model and no provider is connected.
     #[error("no model is set up")]
     NoModel,
+    /// An external bot's session was opened without the service that answers for it: the bot
+    /// is gone, or no longer an external one (bot-contacts-design §5.3).
+    #[error("the other side of this bot is not available")]
+    PeerMissing,
     #[error(transparent)]
     Model(#[from] ResolveError),
     #[error(transparent)]
@@ -202,6 +217,10 @@ struct Launch {
     deps: KernelDeps,
     state: SessionState,
     agents: Option<Arc<AgentTree>>,
+    /// An external bot's session: the service that answers.
+    peer: Option<Arc<dyn Peer>>,
+    /// An external bot's session: the other side, for the log.
+    peer_ref: Option<PeerRef>,
     sub_agent: bool,
     role: AgentRole,
     main: Option<Weak<Session>>,
@@ -268,6 +287,16 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
                 }
             }),
         }));
+        let mut script_handle = crate::spatial_script::ScriptHandle::new(
+            Arc::new(crate::spatial::SpatialScriptData::new(store.clone(), launch.root_id.clone())),
+            launch.home.clone(),
+        );
+        for p in crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd()).iter() {
+            if !script_handle.skill_roots.contains(p) {
+                script_handle.skill_roots.push(p.clone());
+            }
+        }
+        tool_state.insert(Arc::new(script_handle));
     }
     let own_folder = launch.home.private_folder(&crate::protected::canonical_lossy(launch.deps.env.cwd()));
     let session = Arc::new(Session {
@@ -305,6 +334,8 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         interactive_approvals: launch.interactive_approvals,
         locks: launch.locks,
         agents: launch.agents,
+        peer: launch.peer,
+        peer_ref: launch.peer_ref,
         sub_agent: launch.sub_agent,
         agent_role: role,
         main: launch.main,
@@ -480,6 +511,8 @@ pub(crate) fn start_child(mut child: ChildLaunch) -> Result<Kernel, KernelError>
         deps: child.deps,
         state,
         agents: None,
+        peer: None,
+        peer_ref: None,
         sub_agent: true,
         role: if run { AgentRole::None } else { AgentRole::SubAgent },
         main: Some(child.main),
@@ -616,6 +649,218 @@ fn build_prompt(
     })
 }
 
+/// Starts an external bot's session (bot-contacts-design §5.3): no model is resolved, no prompt
+/// is built, no tool is attached, and the task loop only forwards what the owner said and records
+/// what the other side says.
+async fn start_peer(
+    opts: StartOptions,
+    mut deps: KernelDeps,
+    peer_ref: PeerRef,
+) -> Result<Kernel, KernelError> {
+    let peer = deps.peer.take().ok_or(KernelError::PeerMissing)?;
+    // A placeholder: this session never asks a model, but the session state holds one.
+    let resolved = deps.llm.unavailable("a2a/a2a")?;
+    let cwd = opts.cwd.clone();
+    let id = uuid::Uuid::now_v7().to_string();
+    let root_id = id.clone();
+    let mut header = SessionHeader::new(id.clone(), cwd.clone());
+    header.bot = opts.bot.as_ref().map(|bot| BotRef {
+        id: bot.id.clone(),
+        name: bot.name.clone(),
+    });
+    header.peer = Some(peer_ref.clone());
+    let created = deps.store.create(&header)?;
+    let context_window = u64::from(resolved.model.context_window);
+    let mut state = SessionState::new(
+        History::default(),
+        Arc::from(""),
+        resolved.model,
+        opts.thinking,
+        opts.permission_mode,
+    );
+    state.bot = opts.bot.map(|bot| BotNames {
+        given: bot.name.clone(),
+        current: bot.name,
+    });
+    let system = SystemCell::new(&opts.config);
+    let (kernel, session) = launch(Launch {
+        id,
+        root_id,
+        location: created.location.clone(),
+        writer: created.writer,
+        home: opts.home,
+        trusted: opts.trusted,
+        interactive_approvals: opts.interactive_approvals,
+        config: opts.config,
+        deps,
+        state,
+        agents: None,
+        peer: Some(peer),
+        peer_ref: Some(peer_ref),
+        sub_agent: false,
+        role: AgentRole::None,
+        main: None,
+        approval_line: Arc::default(),
+        locks: Arc::new(PathLocks::new()),
+        mcp: None,
+        system,
+    });
+    session.record(EntryKind::Settings {
+        model: Some(A2A_MODEL.into()),
+        thinking: Some(opts.thinking),
+        permission_mode: Some(opts.permission_mode),
+    });
+    session.writer.settle();
+    session.emit(EventMsg::SessionStarted {
+        session_id: session.id.clone(),
+        protocol_version: PROTOCOL_VERSION,
+        model: A2A_MODEL.into(),
+        cwd,
+        resumed: false,
+        session_file: created.location,
+        thinking: opts.thinking,
+        permission_mode: opts.permission_mode,
+        context_window,
+        usage: UsageTotals::default(),
+        context: Some(session.budget().usage),
+    });
+    Ok(kernel)
+}
+
+/// Opens an external bot's session again (bot-contacts-design §5.3, §5.5): the service is built
+/// from the bot's `source` by the service layer, and a task the other side has not ended is
+/// picked up again.
+async fn resume_peer(
+    opts: ResumeOptions,
+    mut deps: KernelDeps,
+    peer_ref: PeerRef,
+    loaded: crate::store::LoadedSession,
+) -> Result<Kernel, KernelError> {
+    let peer = opts
+        .peer
+        .clone()
+        .or(deps.peer.take())
+        .ok_or(KernelError::PeerMissing)?;
+    // A placeholder, as when it starts.
+    let resolved = deps.llm.unavailable("a2a/a2a")?;
+    let history = History::from_entries(loaded.entries);
+    let usage = usage_of(history.in_order());
+    let mut max_task = 0u32;
+    let mut open_task: Option<String> = None;
+    let mut title = None;
+    let mut archived = false;
+    let mut saved_thinking = None;
+    let mut saved_permission = None;
+    for entry in history.in_order() {
+        match &entry.kind {
+            EntryKind::Title { title: t } => title = Some(t.clone()),
+            EntryKind::Archived { archived: a } => archived = *a,
+            EntryKind::Settings {
+                thinking,
+                permission_mode,
+                ..
+            } => {
+                saved_thinking = thinking.or(saved_thinking);
+                saved_permission = permission_mode.or(saved_permission);
+            }
+            EntryKind::Task {
+                task_id, status, ..
+            } => {
+                if let Some(n) = task_id
+                    .strip_prefix('t')
+                    .and_then(|n| n.parse::<u32>().ok())
+                {
+                    max_task = max_task.max(n);
+                }
+                open_task = (*status == TaskStatus::Started).then(|| task_id.clone());
+            }
+            _ => {}
+        }
+    }
+    let thinking = opts
+        .thinking
+        .or(saved_thinking)
+        .unwrap_or(opts.config.thinking);
+    let permission_mode = opts
+        .permission_mode
+        .or(saved_permission)
+        .unwrap_or(opts.config.permission_mode);
+    let mut state = SessionState::new(
+        history,
+        Arc::from(""),
+        resolved.model,
+        thinking,
+        permission_mode,
+    );
+    state.usage = usage.clone();
+    state.next_task_no = max_task;
+    state.title = title;
+    state.archived = archived;
+    state.bot = loaded.header.bot.as_ref().map(|bot| BotNames {
+        given: bot.name.clone(),
+        current: opts.bot_name.clone().unwrap_or_else(|| bot.name.clone()),
+    });
+    let context_window = u64::from(state.model.context_window);
+    let system = SystemCell::new(&opts.config);
+    let (kernel, session) = launch(Launch {
+        id: loaded.header.id.clone(),
+        root_id: loaded.header.id.clone(),
+        location: loaded.location.clone(),
+        writer: loaded.writer,
+        home: opts.home,
+        trusted: opts.trusted,
+        interactive_approvals: opts.interactive_approvals,
+        config: opts.config,
+        deps,
+        state,
+        agents: None,
+        peer: Some(peer),
+        peer_ref: Some(peer_ref),
+        sub_agent: false,
+        role: AgentRole::None,
+        main: None,
+        approval_line: Arc::default(),
+        locks: Arc::new(PathLocks::new()),
+        mcp: None,
+        system,
+    });
+    // The process may have stopped in the middle of this task: it is not running here, and the
+    // other side's task is picked up below.
+    if let Some(task_id) = open_task.clone() {
+        session.record(EntryKind::Task {
+            task_id,
+            status: TaskStatus::Interrupted,
+            error: None,
+            reason: None,
+            usage: None,
+        });
+    }
+    session.writer.settle();
+    session.emit(EventMsg::SessionStarted {
+        session_id: session.id.clone(),
+        protocol_version: PROTOCOL_VERSION,
+        model: A2A_MODEL.into(),
+        cwd: loaded.header.cwd,
+        resumed: true,
+        session_file: loaded.location,
+        thinking,
+        permission_mode,
+        context_window,
+        usage,
+        context: Some(session.budget().usage),
+    });
+    for warning in loaded.warnings {
+        session.warn(warning);
+    }
+    if open_task.is_some() {
+        crate::task::resume_peer(&session);
+    }
+    Ok(kernel)
+}
+
+/// What the log calls the model of an external bot's session: the other side, not a model.
+pub const A2A_MODEL: &str = "a2a";
+
 impl Kernel {
     /// What the kernel's tools keep for the session, while it runs.
     pub(crate) fn tool_state(&self) -> Option<Arc<finx_tools::SessionState>> {
@@ -623,6 +868,9 @@ impl Kernel {
     }
 
     pub async fn start(opts: StartOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
+        if let Some(peer_ref) = opts.peer.clone() {
+            return start_peer(opts, deps, peer_ref).await;
+        }
         let resolved = deps.llm.resolve(&opts.model)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), opts.bot.is_some());
@@ -695,6 +943,8 @@ impl Kernel {
             deps,
             state,
             agents: agents.clone(),
+            peer: None,
+            peer_ref: None,
             sub_agent: false,
             role: main_role(agents.is_some()),
             main: None,
@@ -742,6 +992,9 @@ impl Kernel {
 
     pub async fn resume(opts: ResumeOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
         let loaded = deps.store.open(&opts.session)?;
+        if let Some(peer_ref) = loaded.header.peer.clone() {
+            return resume_peer(opts, deps, peer_ref, loaded).await;
+        }
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         let bot_ref = loaded.header.bot.clone();
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), bot_ref.is_some());
@@ -918,6 +1171,8 @@ impl Kernel {
             deps,
             state,
             agents: agents.clone(),
+            peer: None,
+            peer_ref: None,
             sub_agent: false,
             role: main_role(agents.is_some()),
             main: None,

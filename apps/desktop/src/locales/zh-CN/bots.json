@@ -7,7 +7,7 @@
     "botsTip": "Bot 模式"
   },
   "nav": {
-    "newBot": "新建 Bot"
+    "newBot": "添加 Bot"
   },
   "list": {
     "title": "Bot",
@@ -100,6 +100,37 @@
       "teal": "青",
       "rose": "玫瑰粉",
       "stone": "烟灰"
+    },
+    "newTab": "新建",
+    "addTab": "添加别人的 Bot",
+    "add": {
+      "title": "添加别人的 Bot",
+      "sub": "粘贴对方给的链接。",
+      "link": "链接",
+      "placeholder": "粘贴对方给的链接",
+      "hint": "对方是另一家机构或另一个人的 Bot。你发给它的内容会发到对方那里。",
+      "read": "读取名片",
+      "reading": "正在读取名片…",
+      "confirm": "确认这个 Bot",
+      "host": "提供方和域名",
+      "skills": "能办什么",
+      "more": "还有 {{n}} 项",
+      "notice": "你发给它的文字和图片会离开这台 Mac，发到 {{host}}。它看不到你的其他对话和文件，也操作不了这台电脑。",
+      "noticeLocal": "你发给它的文字和图片会发给这台 Mac 上的另一个服务（{{host}}）。它看不到你的其他对话和文件，也操作不了这台电脑。",
+      "credential": "Key 或令牌",
+      "credentialHint": "保存在这台 Mac 的钥匙串里",
+      "needsCredential": "这个 Bot 需要凭证才能添加。",
+      "back": "换一个链接",
+      "add": "添加",
+      "errors": {
+        "unreachable": "读不到这个链接上的名片。",
+        "invalid": "这个链接上的不是一张能用的名片。",
+        "unsupported": "它用的接入方式这个版本还不支持。",
+        "moved": "名片指向了另一个地址（{{host}}），不能添加。",
+        "changed": "名片在确认前变了，请重新读取。",
+        "off": "这个版本还不能添加别人的 Bot。",
+        "other": "添加没有成功，请再试一次。"
+      }
     }
   },
   "menu": {
@@ -214,5 +245,31 @@
       "delete": "已删除定时任务「{{name}}」"
     },
     "fromRoutine": "来自定时任务「{{name}}」"
+  },
+  "external": {
+    "mark": "别人的 Bot",
+    "wordsOnly": "对方的 Bot 只收文字、图片和引用；附件没有发出去。",
+    "firstTitle": "发给「{{name}}」的内容会离开这台 Mac",
+    "firstBody": "你发给 {{host}} 的内容会发到对方那里。",
+    "firstLocal": "你发给 {{host}} 的内容会发给这台 Mac 上的另一个服务。",
+    "gotIt": "知道了",
+    "waiting": "{{name}} 还没回",
+    "stopWaiting": "不等了",
+    "description": "说明",
+    "provider": "提供方",
+    "host": "地址",
+    "local": "本机",
+    "skills": "能办什么",
+    "credential": "凭证",
+    "credentialHint": "保存在这台 Mac 的钥匙串里",
+    "credentialSave": "保存",
+    "credentialSaved": "凭证已保存",
+    "needsReview": "对方的名片变了：{{what}}。确认后才会继续发消息。",
+    "review": "我已确认",
+    "offeredName": "对方现在叫「{{name}}」",
+    "adoptName": "采用这个名字",
+    "moved": "对方的名片指向了另一个地址，继续用上次的。",
+    "unreachable": "很久没读到对方的名片了，继续用上次的。",
+    "noImages": "{{name}} 收不了图片"
   }
 }

@@ -16,6 +16,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::peer::PeerRef;
 use crate::skills::SkillRef;
 
 /// 2: compaction entries carry the retained user messages. Version 1 logs read unchanged.
@@ -43,6 +44,10 @@ pub struct SessionHeader {
     /// Set for a bot's session (bot-design §2.2). Such sessions stay out of session lists too.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot: Option<BotRef>,
+    /// Set for an external bot's session (bot-contacts-design §5.3): the words go to another
+    /// service, and the task loop only forwards and records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer: Option<PeerRef>,
 }
 
 /// The bot a session belongs to.
@@ -82,6 +87,7 @@ impl SessionHeader {
             finx_version: env!("CARGO_PKG_VERSION").to_string(),
             agent: None,
             bot: None,
+            peer: None,
         }
     }
 
@@ -210,6 +216,9 @@ pub enum EntryKind {
     /// whatever the system prompt says; a word right after the message mostly settles it
     /// (bot-design §3.14).
     ReplyNudge,
+    /// An external bot's session: the other side's conversation and current task
+    /// (bot-contacts-design §5.5). A log entry only, read to carry the identifiers on.
+    PeerThread(crate::peer::PeerThread),
     /// A kind written by a later version. It keeps its place in the branch, so the entries
     /// after it still link up; nothing else reads it.
     #[serde(other, skip_serializing)]

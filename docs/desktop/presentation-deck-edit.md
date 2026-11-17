@@ -23,7 +23,7 @@ deck_save / ⌘S ──▶ 写回文件（审批同 doc_save）
 
 ## 2. finx-slide `Deck`
 
-- 引擎（BetterOffice fork，b73babb）只通过提议接口改文档，没有直接应用的入口。`Deck::apply(request)` 在内部
+- 引擎（NimbleOffice fork，b73babb）只通过提议接口改文档，没有直接应用的入口。`Deck::apply(request)` 在内部
   propose 再立即 accept（force），前后各加 undo barrier，保证每次改动是独立的一步；失败时撤掉临时提议。
   返回 `Applied { applied, strip, update }`。
 - 撤销用引擎自带的 Yrs UndoManager：它只记录 origin 为 deck 自己 client id 的事务。worker 的改动只有 `apply`，

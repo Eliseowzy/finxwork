@@ -387,6 +387,48 @@ button.insp-row:active{background:var(--fill2)}
 /* What the message carried, above its bubble: images as thumbnails, files and folders as chips. */
 .um.again .bub,.um.again .um-att{outline:1.5px solid var(--accent);outline-offset:2px;border-radius:var(--r-xl)}
 .um-att{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-bottom:8px}
+/* The words a quoted message points at, lit for a moment (message-quote-design §4.6): the
+   custom-highlight API paints them without touching the DOM the virtual list measures. */
+::highlight(finx-quote){background-color:color-mix(in srgb,var(--accent) 22%,transparent)}
+/* The bar by words selected in the conversation (message-quote-design §4.2): Quote and Copy, on
+   glass, over the first selected line (under the last one when there is no room above). */
+.selbar{position:fixed;z-index:35;display:flex;align-items:center;gap:1px;padding:3px;border-radius:11px;background:var(--glass);box-shadow:var(--glass-sh),0 2px 6px rgba(0,0,0,.08);-webkit-backdrop-filter:blur(24px) saturate(1.7);backdrop-filter:blur(24px) saturate(1.7);user-select:none;-webkit-user-select:none;white-space:nowrap;transform-origin:50% 100%;animation:selbar-in .14s var(--ease-out)}
+.selbar[data-under="true"]{transform-origin:50% 0;animation-name:selbar-in-under}
+@keyframes selbar-in{from{opacity:0;transform:translateY(4px) scale(.96)}}
+@keyframes selbar-in-under{from{opacity:0;transform:translateY(-4px) scale(.96)}}
+.selbar-b{height:28px;padding:0 10px 0 8px;border:0;border-radius:8px;background:transparent;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12.5px;line-height:1;color:var(--l1);cursor:default;transition:background-color .12s}
+.selbar-b .ic.sm{width:14px;height:14px;color:var(--l2)}
+.selbar-b:hover{background:var(--fill2)}
+.selbar-b:active{background:var(--fill3)}
+.selbar-b:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.selbar-b.quote,.selbar-b.quote .ic.sm{color:var(--accent)}
+.selbar-b.quote{font-weight:500}
+.selbar-b.quote:hover{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.selbar-b.quote:active{background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.selbar-sep{width:.5px;height:14px;margin:0 2px;background:var(--menu-bd)}
+@media (prefers-reduced-motion:reduce){.selbar{animation:none}}
+@media (prefers-reduced-transparency:reduce){.selbar{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--menu-solid)}}
+/* A menu at the pointer drawn by the page (pageMenu.tsx): the conversation's right-click menus, on
+   the same glass as the selection's bar. */
+.pmenu{position:fixed;z-index:1200;min-width:168px;max-width:340px;max-height:calc(100vh - 12px);overflow-y:auto;padding:5px;border-radius:12px;background:var(--glass);box-shadow:var(--glass-sh),0 12px 32px -6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.08);-webkit-backdrop-filter:blur(28px) saturate(1.7);backdrop-filter:blur(28px) saturate(1.7);outline:none;font-size:13px;user-select:none;-webkit-user-select:none;transform-origin:0 0;animation:pmenu-in .13s var(--ease-out)}
+.pmenu.sub{animation-duration:.09s}
+@keyframes pmenu-in{from{opacity:0;transform:scale(.97)}}
+.pmenu .mi{display:flex;align-items:center;gap:8px;width:100%;height:28px;padding:0 10px;border:0;border-radius:7px;background:none;color:var(--l1);font:inherit;text-align:left;outline:none;white-space:nowrap;cursor:default}
+.pmenu .mi:focus,.pmenu .mi.open{background:var(--fill2)}
+.pmenu .mi:active:not(:disabled){background:var(--fill3)}
+.pmenu .mi:disabled{color:var(--l3)}
+.pmenu .mi>.ic.sm{width:14px;height:14px;color:var(--l2)}
+.pmenu .pm-img{width:16px;height:16px;flex:none}
+.pmenu .pm-l{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pmenu .mi .val{padding-left:14px;color:var(--l3);font-size:12px}
+.pmenu .mi>.pm-more{margin-right:-4px;color:var(--l3)}
+.pmenu .ck{width:14px;display:flex;flex:none;color:var(--accent-t)}
+.pmenu .msep{height:.5px;background:var(--menu-bd);margin:5px 10px}
+@media (prefers-reduced-motion:reduce){.pmenu{animation:none}}
+@media (prefers-reduced-transparency:reduce){.pmenu{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--menu-solid)}}
+ when the window jumps back to it (§4.6). */
+.vrow.qflash .um .bub,.vrow.qflash .am>.md{box-shadow:inset 0 0 0 1.5px var(--accent);border-radius:var(--r-lg,12px);animation:qflash 1.4s var(--ease-out)}
+@keyframes qflash{0%,45%{box-shadow:inset 0 0 0 1.5px var(--accent)}100%{box-shadow:inset 0 0 0 1.5px transparent}}
 .am{position:relative;font-size:var(--chat-size);line-height:1.625;color:var(--msg)}
 /* A message with time and Copy keeps room below it for them, shown on hover under the bubble's right edge or the
    text's left; the model's words between tool calls have none, so they sit as far from the work above as below. */
@@ -841,6 +883,8 @@ button.insp-row:active{background:var(--fill2)}
 @keyframes dcp-flash{0%,60%{opacity:1}100%{opacity:0}}
 .dcp-sel{position:absolute;inset:0;pointer-events:none;z-index:5;mix-blend-mode:multiply}
 .dcp-sel>div{position:absolute;background:rgba(50,148,255,.32)}
+/* The page's text can be selected (the app's body is not): pdf.js's own CSS leaves it as inherited. */
+.dcp-view .textLayer{user-select:text;-webkit-user-select:text}
 .dcp-view .textLayer ::selection{background:transparent}
 .dcp-mark>div{position:absolute;border-radius:2px;background:rgba(50,148,255,.22);box-shadow:0 0 0 1.5px rgba(50,148,255,.75)}
 .dcp-card{position:absolute;z-index:6;width:296px;max-width:calc(100% - 24px);padding:12px;border-radius:12px;background:var(--win);color:var(--l1);box-shadow:0 10px 32px rgba(0,0,0,.3),0 1px 3px rgba(0,0,0,.1),0 0 0 .5px var(--sep);animation:dcp-card .12s ease-out;cursor:default}
@@ -924,3 +968,26 @@ button.insp-row:active{background:var(--fill2)}
 .browser-diag{margin:8px 0 0;padding:8px 13px;border-radius:var(--r-md);background:var(--code);box-shadow:inset 0 0 0 .5px var(--sep);font-family:var(--mono);font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
 .browser-diag-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
 
+
+/* Another subject's bot (bot-contacts-design §4.2, §4.3, §5.6): the add flow, its mark in the
+   list and the domain under its name. */
+.bavatar{position:relative;display:inline-flex;flex:0 0 auto}
+.bext{position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:50%;display:grid;place-items:center;background:var(--bg2);color:var(--fg2);box-shadow:0 0 0 1.5px var(--bg1)}
+.bext .ic{width:9px;height:9px;stroke-width:2.4}
+.bhead-n{display:flex;flex-direction:column;align-items:flex-start;gap:1px;line-height:1.15;min-width:0}
+.bhead-h{font-size:10.5px;color:var(--fg3);font-weight:400;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bs-tabs{display:flex;gap:4px;padding:2px;margin:0 0 14px;background:var(--bg2);border-radius:9px}
+.bs-tabs button{flex:1;min-height:28px;border:0;border-radius:7px;background:transparent;color:var(--fg2);font:inherit;font-size:12.5px;cursor:pointer}
+.bs-tabs button.on{background:var(--bg1);color:var(--fg1);box-shadow:0 1px 2px rgb(0 0 0 / .08)}
+.bs-problem{color:var(--danger,#c0392b);font-size:12.5px;margin:8px 0 0;line-height:1.5}
+.bs-confirm{display:flex;flex-direction:column;gap:12px}
+.bs-icon{border-radius:14px;object-fit:cover}
+.bs-who{font-weight:600;font-size:14.5px}
+.bs-facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:12.5px}
+.bs-facts dt{color:var(--fg3)}
+.bs-facts dd{margin:0;color:var(--fg1);line-height:1.5}
+.bs-notice{margin:0;padding:9px 11px;border-radius:9px;background:var(--bg2);color:var(--fg2);font-size:12px;line-height:1.55}
+.bs-skills{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.bs-local{color:var(--fg3);font-family:var(--mono)}
+.waitline{display:flex;align-items:center;gap:10px;justify-content:center;padding:6px 12px;font-size:12px;color:var(--fg3)}
+.waitline .link{border:0;background:none;color:var(--fg2);text-decoration:underline;cursor:pointer;font:inherit;padding:0}

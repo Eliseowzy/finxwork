@@ -5,14 +5,14 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@nimbleoffice/fonts-latin': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz
-  '@nimbleoffice/fonts': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
-  '@nimbleoffice/pptx': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
-  '@nimbleoffice/pptx-i18n': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
-  '@nimbleoffice/pptx-react': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz
-  '@nimbleoffice/docx': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
-  '@nimbleoffice/docx-i18n': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
-  '@nimbleoffice/docx-react': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/fonts-latin': file:vendor/nimbleoffice/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/fonts': file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx': file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx-i18n': file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/pptx-react': file:vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx': file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx-i18n': file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
+  '@nimbleoffice/docx-react': file:vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz
 
 importers:
 
@@ -62,29 +62,32 @@ importers:
         specifier: 1.2.5
         version: 1.2.5
       '@nimbleoffice/docx':
-        specifier: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
-        version: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
+        specifier: file:../../vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
+        version: file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
       '@nimbleoffice/docx-i18n':
-        specifier: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
-        version: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
+        specifier: file:../../vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
+        version: file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
       '@nimbleoffice/docx-react':
-        specifier: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz
-        version: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: file:../../vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz
+        version: file:vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@nimbleoffice/fonts':
-        specifier: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
-        version: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+        specifier: file:../../vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+        version: file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
       '@nimbleoffice/pptx':
-        specifier: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
-        version: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
+        specifier: file:../../vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
+        version: file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
       '@nimbleoffice/pptx-i18n':
-        specifier: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
-        version: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
+        specifier: file:../../vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
+        version: file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
       '@nimbleoffice/pptx-react':
-        specifier: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz
-        version: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: file:../../vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz
+        version: file:vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@tanstack/react-virtual':
         specifier: 3.14.25
         version: 3.14.25(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      fzstd:
+        specifier: 0.1.1
+        version: 0.1.1
       i18next:
         specifier: 26.4.2
         version: 26.4.2(typescript@5.9.3)
@@ -136,6 +139,9 @@ importers:
       shiki:
         specifier: 4.5.0
         version: 4.5.0
+      three:
+        specifier: 0.186.1
+        version: 0.186.1
       unified:
         specifier: 11.0.5
         version: 11.0.5
@@ -164,6 +170,9 @@ importers:
       '@types/react-dom':
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.7)
+      '@types/three':
+        specifier: 0.186.0
+        version: 0.186.0
       '@vitejs/plugin-react':
         specifier: 6.1.2
         version: 6.1.2(vite@8.3.4(@types/node@24.10.1))
@@ -401,6 +410,9 @@ packages:
 
   '@codemirror/view@6.43.15':
     resolution: {integrity: sha512-HHsfpqFeHyXLs983pSRe38Xajs0vFWZQ2BuX0m7Ki8w3jZ5iD8cuR3lBz2/5/X53Dhf32SBHKh6rtSTB6tKeGw==}
+
+  '@dimforge/rapier3d-compat@0.12.0':
+    resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
 
   '@electron-internal/extract-zip@1.0.6':
     resolution: {integrity: sha512-/aQLgFDdCSnwChfUwqekSmE1q2dCTzhUy5saIHBb5vyYn5LzWaKPaIz1wM0lDMCZYBoIG4svJNvAJb6vkI8BuA==}
@@ -815,12 +827,12 @@ packages:
     resolution: {integrity: sha512-xglYA6q3XO5P3BNJYxVZ1IV7DLVjp1Py6nwag88YntrS+3vKHyYcMqXVS4ZztJmwz2uGvz1FWhI/4LgbR5uQDA==}
     engines: {node: '>= 10'}
 
-  '@nimbleoffice/docx-i18n@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-8dow3d97+hbXPFU0sT9PfNHmh5TuR6v8W3R7POZPu8PD31nMBu10UNB+tFOCU8Xi7AkYkjMK2agHh4T0+E6MLA==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/docx-i18n@file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-8dow3d97+hbXPFU0sT9PfNHmh5TuR6v8W3R7POZPu8PD31nMBu10UNB+tFOCU8Xi7AkYkjMK2agHh4T0+E6MLA==, tarball: file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
 
-  '@nimbleoffice/docx-react@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-hzOWotkQ9af85x2oMx8oo+i23HaotliH5KIEf9NEKrWgEKYTcSzMKQzYtzvkR82F0N4Ejn/ZA1tUcM5vwhHoPw==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/docx-react@file:vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-hzOWotkQ9af85x2oMx8oo+i23HaotliH5KIEf9NEKrWgEKYTcSzMKQzYtzvkR82F0N4Ejn/ZA1tUcM5vwhHoPw==, tarball: file:vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
@@ -831,16 +843,16 @@ packages:
       react-dom:
         optional: true
 
-  '@nimbleoffice/docx@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-2xBPXdCZxdamkzYOkQ0USI06mmo7aB1WrM1cpVGj/m2vj8cXUCBoaUIQ493YzjhBhY+ndGwj84QhWVAYH6WjXw==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/docx@file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-2xBPXdCZxdamkzYOkQ0USI06mmo7aB1WrM1cpVGj/m2vj8cXUCBoaUIQ493YzjhBhY+ndGwj84QhWVAYH6WjXw==, tarball: file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
 
-  '@nimbleoffice/fonts-latin@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-Afbq0+jpsNT4JrfS6z8akMTQSF014IsY4d8mzMBlLEYPEz/tI+/FPrSKwdtE+Uk902H2m4190Z8BTHV8poDYcQ==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/fonts-latin@file:vendor/nimbleoffice/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-Afbq0+jpsNT4JrfS6z8akMTQSF014IsY4d8mzMBlLEYPEz/tI+/FPrSKwdtE+Uk902H2m4190Z8BTHV8poDYcQ==, tarball: file:vendor/nimbleoffice/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
 
-  '@nimbleoffice/fonts@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-8Jx7DWJ7b4bizEyX/DXtXXOJX9GPHfLLMNDUbP0AwakaVVNkjjqHRERb6yRDo6Vb2OxbYMpWsXlakW9D+aLUqQ==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/fonts@file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-8Jx7DWJ7b4bizEyX/DXtXXOJX9GPHfLLMNDUbP0AwakaVVNkjjqHRERb6yRDo6Vb2OxbYMpWsXlakW9D+aLUqQ==, tarball: file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
     peerDependencies:
       '@nimbleoffice/fonts-cjk': 0.4.2
@@ -851,19 +863,19 @@ packages:
       '@nimbleoffice/fonts-intl':
         optional: true
 
-  '@nimbleoffice/pptx-i18n@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-ZgvPjmgNJqojPyXwXB8Xrsy2i0JvJ3gBG5sgWg554KS7nkhFmaxEdK/2dm/Oi7t6E1f55u+tFGJu1ofIXPs59A==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/pptx-i18n@file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-ZgvPjmgNJqojPyXwXB8Xrsy2i0JvJ3gBG5sgWg554KS7nkhFmaxEdK/2dm/Oi7t6E1f55u+tFGJu1ofIXPs59A==, tarball: file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
 
-  '@nimbleoffice/pptx-react@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-2/apl2Ho87xzb5+REkWoZc9oTEyVW8yAYFC2ADYDrjROmpgApCEdk+PnuFt7S32QAtXc8MCVEXGhEVlOtF7dwA==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/pptx-react@file:vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-2/apl2Ho87xzb5+REkWoZc9oTEyVW8yAYFC2ADYDrjROmpgApCEdk+PnuFt7S32QAtXc8MCVEXGhEVlOtF7dwA==, tarball: file:vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  '@nimbleoffice/pptx@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz':
-    resolution: {integrity: sha512-AApuP7jSnUB+tbf+R5faWSvTK396l+eyF7a5bsIXn6j9Hw0m7WOH2TfIqtfKh8ezhPy7BXYBBBCUbtPFmxw+Hg==, tarball: https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz}
+  '@nimbleoffice/pptx@file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz':
+    resolution: {integrity: sha512-AApuP7jSnUB+tbf+R5faWSvTK396l+eyF7a5bsIXn6j9Hw0m7WOH2TfIqtfKh8ezhPy7BXYBBBCUbtPFmxw+Hg==, tarball: file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz}
     version: 0.5.1-finx.g65549f0e
 
   '@oxc-project/types@0.155.0':
@@ -1258,6 +1270,9 @@ packages:
   '@tanstack/virtual-core@3.19.10':
     resolution: {integrity: sha512-/ltpH0qUCs5XQYE7fIhgA+aqgC5NzSfLTDQkC+N1wOOdvIYx1FH/kz2LGfSeanNbekqy3WBu6mNIbqXhxE/pew==}
 
+  '@tweenjs/tween.js@23.1.3':
+    resolution: {integrity: sha512-vJmvvwFxYuGnF2axRtPYocag6Clbb5YS7kLL+SO/TeVFzHqDIWrNKYtcsPMibjDx9O+bu+psAy9NKfWklassUA==}
+
   '@types/d3-array@3.2.2':
     resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
 
@@ -1386,6 +1401,12 @@ packages:
   '@types/react@19.2.7':
     resolution: {integrity: sha512-MWtvHrGZLFttgeEj28VXHxpmwYbor/ATPYbBfSFZEIRK0ecCFLl2Qo55z52Hss+UV9CRN7trSeq1zbgx7YDWWg==}
 
+  '@types/stats.js@0.17.4':
+    resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
+
+  '@types/three@0.186.0':
+    resolution: {integrity: sha512-mxYSBpDC+D0pLfSP6sW4WZTcT+nrtmZcimMqnVmy36Hte3XpeYSrvgg4TRdaM1GemGog1AWzI5qL2VoIfMXbJQ==}
+
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
@@ -1394,6 +1415,9 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+
+  '@types/webxr@0.5.24':
+    resolution: {integrity: sha512-h8fgEd/DpoS9CBrjEQXR+dIDraopAEfu4wYVNY2tEPwk60stPWhvZMf4Foo5FakuQ7HFZoa8WceaWFervK2Ovg==}
 
   '@ungap/structured-clone@1.4.0':
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
@@ -1767,6 +1791,9 @@ packages:
       picomatch:
         optional: true
 
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
+
   filename-reserved-regex@3.0.0:
     resolution: {integrity: sha512-hn4cQfU6GOT/7cFHXBqeBg2TbrMBgdD0kcjLhvSQYYwm3s4B6cjvBfb7nBALJLAXqmU5xajSa7X2NnUud/VCdw==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
@@ -1783,6 +1810,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  fzstd@0.1.1:
+    resolution: {integrity: sha512-dkuVSOKKwh3eas5VkJy1AW1vFpet8TA/fGmVA5krThl8YcOVE/8ZIoEA1+U1vEn5ckxxhLirSdY837azmbaNHA==}
 
   galactus@2.0.2:
     resolution: {integrity: sha512-HmKyTFGomdAchz4umx8MwBnrnfFmdpwiTyGA4ZOF7rya2Lmgbc9qate4yweInL+0gUBVImhaz12SBGpW3SY4Yg==}
@@ -2104,6 +2134,9 @@ packages:
   mermaid@12.3.0:
     resolution: {integrity: sha512-4113TdXeLAsMruJ79OpFL5O8+LTFXhQqZ260rF3tgUmiNAtRm4Uume04I+65PRN6yZ69J4f8rVYWW8zRk65UYw==}
     engines: {node: '>=22.12.0'}
+
+  meshoptimizer@1.1.1:
+    resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
 
   micromark-core-commonmark@2.0.4:
     resolution: {integrity: sha512-wxEeE8v8XVvOrxn1TZj74qYhAtTQsSqufHVS3uNVyT1MupXxhyaHk8/9xDNPh9BmL77QNDgWTkZ3RsYHB2ry7w==}
@@ -2470,6 +2503,9 @@ packages:
 
   tabbable@6.5.1:
     resolution: {integrity: sha512-dMCuwDUY6Noz3zVKLefBC4wq+aJV20yc7vWmM7uTNGwtQSFF5kX7OUIUsxuVajz/bdt5Xqdah3/0NLjth+cM5A==}
+
+  three@0.186.1:
+    resolution: {integrity: sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==}
 
   tinyexec@1.3.1:
     resolution: {integrity: sha512-GCvB3aoys96IuDFBMcTB46JOR6mdMtAToqwiW8JlWhsoh1mhHi/xn9ss/Dg7N555GiJyEt2qzoG/NHCwM6h1EA==}
@@ -3024,6 +3060,8 @@ snapshots:
       style-mod: 4.1.4
       w3c-keyname: 2.2.8
 
+  '@dimforge/rapier3d-compat@0.12.0': {}
+
   '@electron-internal/extract-zip@1.0.6': {}
 
   '@electron/asar@4.3.1':
@@ -3535,12 +3573,12 @@ snapshots:
       '@napi-rs/canvas-win32-x64-msvc': 0.1.100
     optional: true
 
-  '@nimbleoffice/docx-i18n@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz': {}
+  '@nimbleoffice/docx-i18n@file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz': {}
 
-  '@nimbleoffice/docx-react@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@nimbleoffice/docx-react@file:vendor/nimbleoffice/nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@nimbleoffice/docx': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
-      '@nimbleoffice/docx-i18n': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/docx': file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/docx-i18n': file:vendor/nimbleoffice/nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz
       '@radix-ui/react-select': 2.4.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       clsx: 2.1.1
       sonner: 2.0.8(@types/react@19.2.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -3553,35 +3591,35 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  '@nimbleoffice/docx@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz':
+  '@nimbleoffice/docx@file:vendor/nimbleoffice/nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz':
     dependencies:
-      '@nimbleoffice/fonts': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/fonts': file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
     transitivePeerDependencies:
       - '@nimbleoffice/fonts-cjk'
       - '@nimbleoffice/fonts-intl'
 
-  '@nimbleoffice/fonts-latin@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz': {}
+  '@nimbleoffice/fonts-latin@file:vendor/nimbleoffice/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz': {}
 
-  '@nimbleoffice/fonts@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz':
+  '@nimbleoffice/fonts@file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz':
     dependencies:
-      '@nimbleoffice/fonts-latin': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/fonts-latin': file:vendor/nimbleoffice/nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz
 
-  '@nimbleoffice/pptx-i18n@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz': {}
+  '@nimbleoffice/pptx-i18n@file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz': {}
 
-  '@nimbleoffice/pptx-react@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@nimbleoffice/pptx-react@file:vendor/nimbleoffice/nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@nimbleoffice/fonts': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
-      '@nimbleoffice/pptx': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
-      '@nimbleoffice/pptx-i18n': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/fonts': file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/pptx': file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/pptx-i18n': file:vendor/nimbleoffice/nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
     transitivePeerDependencies:
       - '@nimbleoffice/fonts-cjk'
       - '@nimbleoffice/fonts-intl'
 
-  '@nimbleoffice/pptx@https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz':
+  '@nimbleoffice/pptx@file:vendor/nimbleoffice/nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz':
     dependencies:
-      '@nimbleoffice/fonts': https://github.com/Eliseowzy/nimbleoffice/releases/download/v0.5.1/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
+      '@nimbleoffice/fonts': file:vendor/nimbleoffice/nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz
     transitivePeerDependencies:
       - '@nimbleoffice/fonts-cjk'
       - '@nimbleoffice/fonts-intl'
@@ -3902,6 +3940,8 @@ snapshots:
 
   '@tanstack/virtual-core@3.19.10': {}
 
+  '@tweenjs/tween.js@23.1.3': {}
+
   '@types/d3-array@3.2.2': {}
 
   '@types/d3-axis@3.0.6':
@@ -4055,11 +4095,24 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
+  '@types/stats.js@0.17.4': {}
+
+  '@types/three@0.186.0':
+    dependencies:
+      '@dimforge/rapier3d-compat': 0.12.0
+      '@tweenjs/tween.js': 23.1.3
+      '@types/stats.js': 0.17.4
+      '@types/webxr': 0.5.24
+      fflate: 0.8.3
+      meshoptimizer: 1.1.1
+
   '@types/trusted-types@2.0.7': {}
 
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
+
+  '@types/webxr@0.5.24': {}
 
   '@ungap/structured-clone@1.4.0': {}
 
@@ -4410,6 +4463,8 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
+  fflate@0.8.3: {}
+
   filename-reserved-regex@3.0.0: {}
 
   filenamify@6.0.0:
@@ -4424,6 +4479,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  fzstd@0.1.1: {}
 
   galactus@2.0.2:
     dependencies:
@@ -4884,6 +4941,8 @@ snapshots:
       roughjs: 4.6.6
       stylis: 4.4.0
       ts-dedent: 2.3.0
+
+  meshoptimizer@1.1.1: {}
 
   micromark-core-commonmark@2.0.4:
     dependencies:
@@ -5424,6 +5483,8 @@ snapshots:
       - supports-color
 
   tabbable@6.5.1: {}
+
+  three@0.186.1: {}
 
   tinyexec@1.3.1: {}
 

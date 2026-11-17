@@ -75,6 +75,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, host: Option<Arc<d
         decks: None,
         words: None,
         routines: host,
+        peer: None,
     }
 }
 
@@ -103,6 +104,7 @@ async fn bot_with(mode: PermissionMode, interactive: bool, scripts: Vec<Script>,
             id: "b1".into(),
             name: "研究员".into(),
         }),
+        peer: None,
     };
     let kernel = Kernel::start(options, deps(&api, &folder, &home, host)).await.unwrap();
     Harness { kernel, api, home, _dir: dir }

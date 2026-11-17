@@ -173,6 +173,7 @@ mod tests {
             overrides: Vec::new(),
             mcp_servers: Vec::new(),
             doc_worker: finx_docs::Launcher::Thread,
+            word_save: Some(finx_docs::word::SaveEngine::Desktop),
         }, finx_docs::word::SaveEngine::Desktop)
         .unwrap();
         let (client, ours) = tokio::io::duplex(1 << 20);
@@ -277,7 +278,8 @@ mod tests {
             let (server, params) = (server.clone(), save(false));
             async move { server.docx_save(params).await }
         });
-        let request: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        let asked = tokio::time::timeout(Duration::from_secs(10), lines.next_line()).await.expect("the host was not asked to write the document");
+        let request: Value = serde_json::from_str(&asked.unwrap().unwrap()).unwrap();
         assert_eq!(request["method"], "docx/serialize");
         let params = &request["params"];
         for key in ["state_path", "metadata_path"] {

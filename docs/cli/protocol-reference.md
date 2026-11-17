@@ -88,11 +88,13 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 
 | Method | Parameters | Result | What it does |
 |---|---|---|---|
+| `bots/add` | `BotAddParams` | `BotResult` | Parameters of `bots/add`: the link, the card the owner saw, and a credential when the card wants one. |
 | `bots/avatar` | `BotIdParams` | `BotAvatarResult` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/clear` | `BotIdParams` | `Empty` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/create` | `BotCreateParams` | `BotResult` |  |
 | `bots/delete` | `BotIdParams` | `Empty` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/open` | `BotOpenParams` | `SessionNewResult` | Parameters of `bots/open`, which answers as `session/new` does. |
+| `bots/preview` | `BotPreviewParams` | `RemotePreview` | Parameters of `bots/preview`: the link the owner pasted. |
 | `bots/read` | `BotIdParams` | `Empty` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/routine` | `BotRoutineParams` | `BotRoutineResult` | Parameters of `bots/routine`, `bots/routine_run_now`, `bots/routine_stop` and `bots/routine_delete`. |
 | `bots/routine_delete` | `BotRoutineParams` | `Empty` | Parameters of `bots/routine`, `bots/routine_run_now`, `bots/routine_stop` and `bots/routine_delete`. |
@@ -129,6 +131,7 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `doc/find` | `DocFindParams` | `DocFoundResult` | `doc/find`: cells whose shown text or formula contains `query`, case folded. |
 | `doc/locate` | `DocLocateParams` | `DocLocateResult` | A citation's target in an open document: `p12.b3` (a block) or `p12` (a page). |
 | `doc/open` | `DocOpenParams` | `DocOpenResult` |  |
+| `doc/ops` | `DocOpsParams` | `DocOpsResult` | `doc/ops`: a person's marks and measures in the 3D view, as one revision. |
 | `doc/recalc` | `DocRecalcParams` | `DocApplyResult` |  |
 | `doc/redo` | `DocIdParams` | `DocApplyResult` |  |
 | `doc/resolve` | `DocResolveParams` | `DocResolveResult` | A selection or a region on a page, to be read by the kernel (§9.4.1). |
@@ -183,6 +186,7 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `session/event` | `SessionEventParams` | stable |
 | `sessions/changed` | `SessionsChangedParams` | stable |
 | `skills/changed` | `SkillsChangedParams` | stable |
+| `spatial/view` | `SpatialViewParams` | experimental |
 
 ## Error codes
 
@@ -227,6 +231,13 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | -32045 | `routines_unavailable` |
 | -32046 | `no_model` |
 | -32047 | `endpoint_unusable` |
+| -32048 | `bot_card_unreachable` |
+| -32049 | `bot_card_invalid` |
+| -32050 | `bot_card_unsupported` |
+| -32051 | `bot_card_moved` |
+| -32052 | `bot_card_changed` |
+| -32053 | `bot_auth_required` |
+| -32054 | `bot_not_supported` |
 | -32600 | `invalid_request` |
 | -32601 | `method_not_found` |
 | -32602 | `invalid_params` |

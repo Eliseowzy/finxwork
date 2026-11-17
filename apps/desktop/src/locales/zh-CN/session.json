@@ -20,6 +20,7 @@
     "thinkingHidden": "服务商没有公开这段推理",
     "image": "图片",
     "copy": "拷贝",
+    "quote": "引用",
     "toBottom": "回到底部",
     "compacted": "上下文已压缩：{{before}} → {{after}} tokens",
     "interrupted": "你打断了这个任务。再发一条消息就会接着做。",
@@ -464,7 +465,10 @@
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "citeLocked": "「{{name}}」有密码保护，点开后输入密码",
-    "paragraphs_other": "{{count}} 段"
+    "paragraphs_other": "{{count}} 段",
+    "lineN": "第 {{line}} 行",
+    "lineRange": "第 {{from}}–{{to}} 行",
+    "addToChat": "添加到对话（⌘L）"
   },
   "content": {
     "open": "打开",
@@ -484,6 +488,8 @@
     "openInDefault": "在默认浏览器中打开",
     "copyLink": "拷贝链接",
     "copy": "拷贝",
+    "quote": "引用",
+    "selectionActions": "选中的文字",
     "copyCode": "拷贝代码",
     "copyCommand": "拷贝命令",
     "copyOutput": "拷贝输出",
@@ -500,10 +506,6 @@
     "notFound": "找不到这个文件",
     "hidden": "含隐藏字符",
     "hiddenTip": "这段代码里有看不见的字符，粘贴前请检查"
-  },
-  "preview": {
-    "toPanel": "在侧边栏打开",
-    "close": "关闭预览"
   },
   "files": {
     "title": "文件",
@@ -531,6 +533,7 @@
     "refusedEncoding": "这个文件不是 UTF-8 文本，存回去会改掉它的编码",
     "binary": "这个文件不是文本，不在这里显示",
     "tooLarge": "这个文件有 {{size}}，太大了，不在这里显示",
+    "viewFailed": "这个文件没能显示出来：{{message}}",
     "openDefault": "用默认应用打开",
     "closeTab": "关闭 {{name}}",
     "unsavedClose": "{{name}} 还有没保存的修改，先在下面选一下",
@@ -701,6 +704,13 @@
     },
     "offer": "交给这个对话：{{title}}",
     "offerRemove": "不交了"
+  },
+  "quote": {
+    "whole": {
+      "assistant": "整条回复",
+      "user": "你的消息"
+    },
+    "gone": "原消息已不在对话中"
   },
   "resend": {
     "from": "重发：{{text}}",
@@ -928,5 +938,55 @@
     "accepted": "已接受",
     "rejected": "已拒绝",
     "failed": "未成功：{{message}}"
+  },
+  "spatial": {
+    "loading": "正在读取模型…",
+    "failed": "无法显示这个模型：{{message}}",
+    "front": "正面",
+    "side": "侧面",
+    "top": "顶面",
+    "reset": "复位",
+    "clip": "剖切",
+    "clipHint": "沿一个轴切开模型，看里面",
+    "clipAxis": "剖切方向",
+    "clipAt": "剖切位置",
+    "parts": "部件",
+    "layersHide": "收起",
+    "show": "显示 {{name}}",
+    "opacity": "{{name}} 的透明度",
+    "deselect": "取消选中",
+    "addToChat": "添加到对话",
+    "quotePrefix": "三维",
+    "disclaimer": "标记中有 AI 给出的结果，仅供参考，不能代替专业人员的判断。",
+    "readFailed": "读不到这个文件",
+    "defaultWindow": "默认",
+    "enableSkillHint": "「{{name}}」skill 可以帮助解读这类数据，目前未启用。",
+    "enableSkill": "启用",
+    "series": "序列",
+    "slicesCount": "{{n}} 层",
+    "seriesShown": "当前显示",
+    "sliceAt": "第 {{n}} / {{of}} 层",
+    "window": "窗位预设",
+    "outside": "{{where}} · 扫描视野外",
+    "edge": {
+      "right": "右",
+      "left": "左",
+      "front": "前",
+      "back": "后",
+      "head": "头",
+      "feet": "足"
+    },
+    "sliceLoading": "正在读取层面…",
+    "sliceFailed": "无法读取层面：{{message}}",
+    "sliceSlider": "切换层面",
+    "findings": "发现",
+    "source": {
+      "reference": "参考 / 报告",
+      "ai": "AI 检出",
+      "user": "我的标记"
+    },
+    "locate": "定位",
+    "viewSlice": "看原片",
+    "ask": "问一问"
   }
 }

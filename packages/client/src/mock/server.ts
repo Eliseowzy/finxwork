@@ -1,5 +1,5 @@
 import type {
-  ActiveTask, AgentStatus, Avatar, AvatarInput, BotSummary, RoutineOutcome, RoutineRunInfo, RoutineSummary, ContextReport, Event, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
+  ActiveTask, AgentStatus, Avatar, AvatarInput, BotSource, BotSummary, RoutineOutcome, RoutineRunInfo, RoutineSummary, ContextReport, Event, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage, ModelsListResult,
 } from "@finx/protocol";
 import { botScript, demoBots, demoImage, relayScript, type DemoBot, type DemoRoutine } from "./bots.ts";
@@ -1055,7 +1055,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, custom_endpoints: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, routines: true };
+        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, custom_endpoints: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, bots_external: true, routines: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -1082,12 +1082,66 @@ export class MockServer {
         this.botsChanged([bot.summary]);
         return { bot: bot.summary } satisfies R<"bots/create">;
       }
+      case "bots/preview": {
+        const q = p as P<"bots/preview">;
+        if (!/^https?:\/\//.test(q.url)) throw new Failure(-32049, "bot_card_invalid", "the link is not an address");
+        if (q.url.includes("unreachable")) throw new Failure(-32048, "bot_card_unreachable", "cannot read the card");
+        if (q.url.includes("elsewhere")) throw new Failure(-32051, "bot_card_moved", "the card points at another host", { host: "other.example" });
+        const host = q.url.replace(/^https?:\/\//, "").split("/")[0] || "example-hospital.cn";
+        return {
+          name: "示例医院预约助手",
+          description: "查询科室排班，预约和改约门诊。",
+          provider: "示例医院",
+          host,
+          skills: [
+            { name: "查排班", description: "按科室和日期查医生出诊时间。" },
+            { name: "预约", description: "预约、改约、取消门诊号。" },
+          ],
+          accepts: ["text", "image"],
+          auth: "none",
+          card_sha256: "mock-card",
+        } satisfies R<"bots/preview">;
+      }
+      case "bots/add": {
+        const q = p as P<"bots/add">;
+        const host = q.url.replace(/^https?:\/\//, "").split("/")[0] || "example-hospital.cn";
+        const id = crypto.randomUUID();
+        const source: BotSource = {
+          kind: "remote",
+          protocol: "a2a",
+          host,
+          description: "查询科室排班，预约和改约门诊。",
+          provider: "示例医院",
+          skills: [
+            { name: "查排班", description: "按科室和日期查医生出诊时间。" },
+            { name: "预约", description: "预约、改约、取消门诊号。" },
+          ],
+          accepts: ["text", "image"],
+          auth: "none",
+          noticed: false,
+        };
+        const summary: BotSummary = { id, name: "示例医院预约助手", avatar: { kind: "mono", hue: "sage" }, created_at: iso(Date.now()), source };
+        this.bots.set(id, { routines: [], summary });
+        this.botsChanged([summary]);
+        return { bot: summary } satisfies R<"bots/add">;
+      }
       case "bots/update": {
         const q = p as P<"bots/update">;
         const bot = this.bot(q.bot_id);
         const name = q.name == null ? bot.summary.name : this.botName(q.name);
         const avatar = q.avatar == null ? bot.summary.avatar : this.avatarOf(bot, q.avatar, !!bot.summary.default);
-        bot.summary = { ...bot.summary, name, avatar, pinned: q.pinned ?? bot.summary.pinned, muted: q.muted ?? bot.summary.muted };
+        let source = bot.summary.source;
+        let adopted = name;
+        if (source) {
+          source = { ...source };
+          if (q.noticed != null) source.noticed = q.noticed;
+          if (q.accept_review) source.needs_review = undefined;
+          if (q.adopt_name && source.offered_name) {
+            adopted = source.offered_name;
+            source.offered_name = undefined;
+          }
+        }
+        bot.summary = { ...bot.summary, name: adopted, avatar, pinned: q.pinned ?? bot.summary.pinned, muted: q.muted ?? bot.summary.muted, source };
         this.botsChanged([bot.summary]);
         return { bot: bot.summary } satisfies R<"bots/update">;
       }

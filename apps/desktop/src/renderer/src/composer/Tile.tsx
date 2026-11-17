@@ -1,15 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { baseName, type DocQuote, type WebComment } from "@finx/client";
+import { baseName, type DocQuote, type MessageQuote, type WebComment } from "@finx/client";
 import { useDocOpener } from "../docs/state";
-import { isLegacyWord, isPresentation, isWord, opensAsDoc, opensInOwnApp } from "../files/kind";
+import { isLegacyWord, isPresentation, isWord, mayBeStudy, opensAsDoc, opensInOwnApp } from "../files/kind";
 import { Icon } from "../icons";
-import { useFilePreview } from "../preview/context";
 import { opensAsPage, showPage } from "../session/contentMenus";
+import { useScope } from "../session/scope";
+import { showFile } from "../files/state";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
-import { quoteName, webName } from "./attachments";
+import { quoteName, saidName, saidWords, webName } from "./attachments";
 
 // What a message carries, as square tiles, the same in the composer and in
 // the conversation: an image shows itself and opens large over the window;
@@ -34,11 +35,13 @@ function hostOf(url: string) {
  * One attachment. An image with no path (one from a sent message) has no name to show; it only opens large.
  * A part of a web page shows what was said about it, or its text, and the site.
  */
-export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onContextMenu, onRemove }: {
-  kind: "file" | "folder" | "image" | "web" | "doc" | "tabs";
+export function Tile({ kind, path, name, src, web, quote, said, shot, meta, gone, onContextMenu, onRemove, onOpen }: {
+  kind: "file" | "folder" | "image" | "web" | "doc" | "said" | "tabs";
   web?: WebComment;
   /** A quoted part of a document: shows where it is from, and opens there. */
   quote?: DocQuote;
+  /** A part of the conversation: shows who said it, and opens it there unless it is gone. */
+  said?: MessageQuote;
   path?: string;
   name?: string;
   /** An image's data URL. */
@@ -51,33 +54,40 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
   gone?: boolean;
   onContextMenu?: (e: React.MouseEvent) => void;
   onRemove?: () => void;
+  /** Opens a quote of the conversation where it was said. */
+  onOpen?: () => void;
 }) {
   const { t } = useTranslation("session");
   const [large, setLarge] = useState(false);
   const [details, setDetails] = useState(false);
   const tile = useRef<HTMLDivElement>(null);
-  const label = name ?? (web ? webName(web) : quote ? quoteName(quote) : t("chat.image"));
+  const label = name ?? (web ? webName(web) : quote ? quoteName(quote) : said ? saidName(said) : t("chat.image"));
   const docs = useDocOpener();
   const openFile = useOpenFile();
+  const scope = useScope();
+  const st = useStore();
+  /** A text file's quote opens at its lines in the file panel. */
+  const openLines = (file: string, [line, endLine]: [number, number]) => (scope ? showFile(st, scope.session, scope.cwd, file, { line, endLine }) : openFile(file));
   // A folder opens in the file manager, a file as openFile does; ⌥ shows it in the file manager.
   const open = (e: React.MouseEvent) => {
     if (src) return setLarge(true);
+    if (said) return gone ? undefined : onOpen?.();
     if (web || quote) return setDetails((d) => !d);
     if (!path || gone) return;
     if (e.altKey) return window.finx?.revealPath(path);
     if (kind === "folder") return window.finx?.openFolder(path);
     openFile(path);
   };
-  const pages = !quote ? "" : quote.paragraphs && quote.page === undefined ? t("doc.paragraphs", { count: quote.paragraphs.length }) : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
+  const pages = !quote ? "" : quote.lines ? (quote.lines[0] === quote.lines[1] ? t("doc.lineN", { line: quote.lines[0] }) : t("doc.lineRange", { from: quote.lines[0], to: quote.lines[1] })) : quote.paragraphs && quote.page === undefined ? t("doc.paragraphs", { count: quote.paragraphs.length }) : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
   const where = !quote ? "" : `${baseName(quote.path)} · ${pages}`;
-  const type = web ? hostOf(web.url) : quote ? pages : kind === "tabs" ? t("composer.tabKind") : kindOf(name ?? "", kind === "folder", t("composer.folder"));
-  const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
+  const type = web ? hostOf(web.url) : quote ? pages : said ? "" : kind === "tabs" ? t("composer.tabKind") : kindOf(name ?? "", kind === "folder", t("composer.folder"));
+  const title = said ? (gone ? t("quote.gone") : undefined) : web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
   const quoteKind = !quote ? "" : quote.comment ? t("doc.comment") : quote.region ? t("doc.region") : t("doc.quote");
-  const plain = !src && !web && !quote;
+  const plain = !src && !web && !quote && !said;
   const dot = label.lastIndexOf(".");
   return (
-    <div ref={tile} className={`tile ${src ? "img" : "doc"} ${web ? "web" : ""} ${quote ? "quote" : ""} ${plain ? "file" : ""} ${gone ? "gone" : ""}`} title={details ? undefined : title} onContextMenu={onContextMenu}>
-      <button className="tile-open" onClick={open} aria-expanded={web || quote ? details : undefined} aria-label={src ? t("composer.view", { name: label }) : web || quote ? `${type}: ${label}` : t("composer.reveal", { name: label })}>
+    <div ref={tile} className={`tile ${src ? "img" : "doc"} ${web ? "web" : ""} ${quote ? "quote" : ""} ${said ? `said ${said.role}` : ""} ${plain ? "file" : ""} ${gone ? "gone" : ""}`} title={details ? undefined : title} onContextMenu={onContextMenu}>
+      <button className="tile-open" onClick={open} aria-expanded={web || quote ? details : undefined} aria-label={src ? t("composer.view", { name: label }) : web || quote ? `${type}: ${label}` : said ? label : t("composer.reveal", { name: label })}>
         {src ? (
           <img src={src} alt="" />
         ) : plain ? (
@@ -111,11 +121,18 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
                 {web.comment ? t("composer.webComment") : t("composer.webElement")}
               </span>
             )}
+            {said && (
+              <span className="tile-web">
+                <Icon name="quote" />
+                {t("content.quote")}
+              </span>
+            )}
             <span className="tile-name">{label}</span>
             {type && <span className="tile-kind">{type}</span>}
           </>
         )}
       </button>
+      {said && !gone && <span className="tip tile-said-tip" aria-hidden="true">{saidWords(said)}</span>}
       {onRemove && (
         <button className="tile-x" aria-label={t("composer.remove", { name: label })} onClick={onRemove}>
           <Icon name="x" />
@@ -146,7 +163,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
           comment={quote.comment}
           rows={[[t("composer.webDetails.file"), baseName(quote.path)], ...(quote.text ? [[t("composer.webDetails.text"), quote.text] as Row] : [])]}
           more={[]}
-          action={quote.paragraphs && quote.page === undefined ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openFile(quote.path)) } : docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.anchor ?? (quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }), quote.anchor ? undefined : quote.block)) } : undefined}
+          action={quote.lines ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openLines(quote.path, quote.lines!)) } : quote.paragraphs && quote.page === undefined ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openFile(quote.path)) } : docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.anchor ?? (quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }), quote.anchor ? undefined : quote.block)) } : undefined}
         />
       )}
     </div>
@@ -309,18 +326,15 @@ export function Lightbox({ src, caption, onStep, onClose }: { src: string; capti
 }
 
 /**
- * Opens a file: over the window where the page offers that for it (preview/FilePreview), else beside the
- * conversation (a PDF as a document, Markdown previewed, an HTML file as its page); one that
+ * Opens a file beside the conversation (a PDF as a document, Markdown previewed, an HTML file as its page); one that
  * shows only as "binary" in its own app.
  */
 export function useOpenFile() {
   const docs = useDocOpener();
-  const preview = useFilePreview();
   const st = useStore();
   return (path: string) => {
-    if (preview?.takes(path)) return preview.open(path);
     if (docs && opensAsPage(path)) return showPage(st, docs.session, path);
-    if (docs && (opensAsDoc(path) || isPresentation(path) || isWord(path) || isLegacyWord(path))) return docs.open({ path });
+    if (docs && (opensAsDoc(path) || mayBeStudy(path) || isPresentation(path) || isWord(path) || isLegacyWord(path))) return docs.open({ path });
     if (!docs || opensInOwnApp(path)) return void window.finx?.openFile(path, { app: "system" });
     docs.open({ path });
   };

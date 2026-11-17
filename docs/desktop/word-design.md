@@ -8,9 +8,9 @@ Word 就是这样做的（§5）。
 
 ## 0. 结论先行
 
-- **引擎**：BetterOffice 的 DOCX 部分。界面用 npm 上的 `@betteroffice/docx`、`@betteroffice/docx-react`、`@betteroffice/docx-i18n`
+- **引擎**：NimbleOffice 的 DOCX 部分。界面用 npm 上的 `@nimbleoffice/docx`、`@nimbleoffice/docx-react`、`@nimbleoffice/docx-i18n`
   0.5.1（fork 自 0.5.1 以来没有动 docx，不用发 fork release）。内核用同一 fork 的 Rust crate（`docx-edit` 的
-  `EditSessionCore`、`betteroffice-docx` 的渲染），git rev 与 PPT 统一到 `330266fb`。
+  `EditSessionCore`、`nimbleoffice-docx` 的渲染），git rev 与 PPT 统一到 `330266fb`。
 - **谁持有**：和 PPT 一样，内核持有权威的文档会话（Yrs），编辑器是副本（`collaboration.initialUpdate` + 同步）。
   面板开不开，智能体都读写同一份最新状态；只有内核写盘。
 - **文档内 AI 是主角**：选中文字就能让 AI 润色、改写、续写、翻译；在批注里 @AI 提问；AI 的修改以 **Word 修订**
@@ -32,7 +32,7 @@ Word 就是这样做的（§5）。
 ## 2. 架构
 
 ```
-渲染进程  WordView ── <DocxEditor collaboration={initialUpdate, clientId}> （@betteroffice/docx-react，WASM 在 Worker）
+渲染进程  WordView ── <DocxEditor collaboration={initialUpdate, clientId}> （@nimbleoffice/docx-react，WASM 在 Worker）
              │  本地编辑 → update → docx/sync（逐个、有序）        ◀── docx/sync 通知（智能体/撤销产生的增量）
              │  ⌘S → docx/save；选区 AI → 发一轮对话（§5.2）
 finx serve  finx-server docs 方法 docx/*  ──▶ finx-docs WordStore（条目/日志/保存/冲突，同 DeckStore）
@@ -61,7 +61,7 @@ deck-worker 进程（同一个进程，新增 docx 条目类型）每份文件�
 | 修订 | `mode = Suggest` 时一切文字改动成为修订；`review(accept/reject, ids|all)` | 作者名、日期写入修订 |
 | 撤销 | `undo(edit)` | 只撤智能体的那一步（origin 隔离），人的改动不受影响；只能撤最近一次 |
 | 保存 | `Word::save()`（原生，§2），失败时由宿主序列化；`Word::check_saved(bytes)` 校验结果 | 未改动的部件逐字节等于源文件由 `saveYrsDocx` 的基线保存保证，e2e 覆盖 |
-| 看页 | `render_page(docx_bytes, n, scale) -> png` | `betteroffice-docx` 光栅化序列化后的字节；中文用系统字体（同 finx-slide fonts） |
+| 看页 | `render_page(docx_bytes, n, scale) -> png` | `nimbleoffice-docx` 光栅化序列化后的字节；中文用系统字体（同 finx-slide fonts） |
 
 操作（snake_case，一一映射到引擎；寻址用段落 ID，文字用 `find`：在该段里恰好出现一次）：
 

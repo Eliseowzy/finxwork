@@ -6,6 +6,7 @@ use base64::Engine as _;
 use bytes::Bytes;
 use finx_core::BotIdentity;
 use finx_core::FinxHome;
+use finx_core::PeerRef;
 use finx_core::SessionRef;
 use finx_core::SessionStore;
 use finx_core::StartOptions;
@@ -22,8 +23,20 @@ use finx_protocol::bot::AvatarInput;
 use finx_protocol::bot::BotAvatarResult;
 use finx_protocol::bot::BotCreateParams;
 use finx_protocol::bot::BotResult;
+use finx_protocol::bot::BotAccept;
+use finx_protocol::bot::BotAuth;
+use finx_protocol::bot::BotProtocol;
+use finx_protocol::bot::BotSkill;
+use finx_protocol::bot::BotSource;
+use finx_protocol::bot::BotSourceKind;
+use finx_protocol::bot::BotAddParams;
+use finx_protocol::bot::BotPreviewParams;
 use finx_protocol::bot::BotSummary;
+use finx_protocol::bot::CardProblem;
 use finx_protocol::bot::BotUpdateParams;
+use finx_protocol::bot::RemotePreview;
+use finx_a2a::card::Card;
+use finx_a2a::card::CardOptions;
 use finx_protocol::bot::BotsChangedParams;
 use finx_protocol::bot::BotsResult;
 use finx_protocol::bot::LastMessage;
@@ -86,6 +99,66 @@ struct BotFile {
     /// The list's row, kept for when the conversation is not loaded.
     #[serde(default)]
     summary: Kept,
+    /// Another subject's bot (bot-contacts-design §3): where it answers, and what its card said.
+    /// Absent for this computer's own bots, and for files written before version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<BotSourceFile>,
+}
+
+/// The `source` of an external bot as `bot.json` keeps it: the card's facts plus what is needed
+/// to reach it again, which the list does not show.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct BotSourceFile {
+    kind: BotSourceKind,
+    protocol: BotProtocol,
+    card_url: String,
+    endpoint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tenant: Option<String>,
+    /// The host the words go to, with its port.
+    host: String,
+    card_sha256: String,
+    /// RFC 3339: when the card was last read (§5.6).
+    card_read_at: String,
+    description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
+    #[serde(default)]
+    skills: Vec<BotSkill>,
+    #[serde(default)]
+    accepts: Vec<BotAccept>,
+    auth: BotAuth,
+    /// The header the card puts an API key in (§5.6); `None` for no credential or a bearer one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    api_key_header: Option<String>,
+    #[serde(default)]
+    noticed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    needs_review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offered_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    card_problem: Option<CardProblem>,
+}
+
+impl BotSourceFile {
+    /// What the list and the bot's settings show (§4.3, §4.4).
+    fn view(&self) -> BotSource {
+        BotSource {
+            kind: self.kind,
+            protocol: self.protocol,
+            host: self.host.clone(),
+            provider: self.provider.clone(),
+            description: self.description.clone(),
+            skills: self.skills.clone(),
+            accepts: self.accepts.clone(),
+            auth: self.auth,
+            noticed: self.noticed,
+            needs_review: self.needs_review.clone(),
+            offered_name: self.offered_name.clone(),
+            card_problem: self.card_problem,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -138,6 +211,7 @@ impl Bot {
             created_at: f.created_at.clone(),
             routines: self.routines.clone(),
             routines_error: routines_error.map(str::to_string),
+            source: f.source.as_ref().map(BotSourceFile::view),
         }
     }
 }
@@ -219,6 +293,29 @@ impl Registry {
             method::BOTS_CHANGED,
             &BotsChangedParams { bots, deleted },
         )));
+    }
+
+    /// Every external bot with a conversation, for the startup sweep (§5.5).
+    pub(crate) fn remote_sessions(&self) -> Vec<String> {
+        self.with(|bots| {
+            bots.values()
+                .filter(|bot| bot.file.source.is_some())
+                .filter_map(|bot| bot.file.session_id.clone())
+                .collect()
+        })
+    }
+
+    /// The bot's external source, cloned out for the session that talks to it.
+    pub(crate) fn source(&self, id: &str) -> Option<BotSourceFile> {
+        self.with(|bots| bots.get(id).and_then(|bot| bot.file.source.clone()))
+    }
+
+    /// Replaces an external bot's source after its card was read again (§5.6).
+    fn set_source(&self, id: &str, source: BotSourceFile) -> Result<(), RpcError> {
+        self.with_bot(id, |bot| {
+            bot.file.source = Some(source);
+        })?;
+        Ok(())
     }
 
     /// The bot's name now, for a conversation being loaded.
@@ -377,6 +474,83 @@ fn private_dir(dir: &Path) -> std::io::Result<()> {
 }
 
 /// Every `bots/<id>/bot.json` that reads; the others are skipped with a warning.
+/// The host a card's interface lives on, with its port when it names one (§4.2).
+fn host_of(endpoint: &str) -> Result<String, RpcError> {
+    let url = url::Url::parse(endpoint).map_err(|_| errors::bot_invalid("the card's interface is not an address"))?;
+    let host = url.host_str().ok_or_else(|| errors::bot_invalid("the card's interface has no host"))?;
+    Ok(match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    })
+}
+
+fn skills_of(card: &Card) -> Vec<BotSkill> {
+    card.skills
+        .iter()
+        .map(|skill| BotSkill {
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+        })
+        .collect()
+}
+
+fn accepts_of(card: &Card) -> Vec<BotAccept> {
+    use finx_a2a::card::Accept;
+    card.accepts
+        .iter()
+        .map(|accept| match accept {
+            Accept::Text => BotAccept::Text,
+            Accept::Image => BotAccept::Image,
+        })
+        .collect()
+}
+
+fn auth_kind(auth: &finx_a2a::Auth) -> BotAuth {
+    match auth {
+        finx_a2a::Auth::None => BotAuth::None,
+        finx_a2a::Auth::ApiKey { .. } => BotAuth::ApiKey,
+        finx_a2a::Auth::Bearer { .. } => BotAuth::Bearer,
+    }
+}
+
+/// The card's scheme with the credential the owner typed; empty when none is needed.
+fn auth_with(auth: &finx_a2a::Auth, credential: &str) -> Result<finx_a2a::Auth, RpcError> {
+    fn required(kind: &str) -> RpcError {
+        errors::bot_auth_required(format!("this bot needs a {kind} credential"))
+    }
+    Ok(match auth {
+        finx_a2a::Auth::None => finx_a2a::Auth::None,
+        finx_a2a::Auth::ApiKey { header, .. } => {
+            if credential.trim().is_empty() {
+                return Err(required("API key"));
+            }
+            finx_a2a::Auth::ApiKey {
+                header: header.clone(),
+                value: credential.to_string(),
+            }
+        }
+        finx_a2a::Auth::Bearer { .. } => {
+            if credential.trim().is_empty() {
+                return Err(required("bearer"));
+            }
+            finx_a2a::Auth::Bearer {
+                token: credential.to_string(),
+            }
+        }
+    })
+}
+
+/// A bot's avatar without an icon: a steady colour from its name, as a new bot gets one (§4.2).
+fn hue_for(name: &str) -> finx_protocol::bot::AvatarHue {
+    use finx_protocol::bot::AvatarHue as H;
+    const HUES: [H; 8] = [H::Slate, H::Sage, H::Clay, H::Ochre, H::Plum, H::Teal, H::Rose, H::Stone];
+    let mut hash: u32 = 2166136261;
+    for byte in name.bytes() {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
+    }
+    HUES[(hash % 8) as usize]
+}
+
 fn read_all(home: &FinxHome) -> BTreeMap<String, Bot> {
     let mut bots = BTreeMap::new();
     let Ok(entries) = std::fs::read_dir(home.bots_dir()) else {
@@ -388,7 +562,12 @@ fn read_all(home: &FinxHome) -> BTreeMap<String, Bot> {
             continue;
         }
         match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| serde_json::from_slice::<BotFile>(&b).map_err(|e| e.to_string())) {
-            Ok(file) if entry.file_name().to_str() == Some(file.id.as_str()) => {
+            Ok(mut file) if entry.file_name().to_str() == Some(file.id.as_str()) => {
+                // Version 1 is a local bot: it has no `source`. The field's default reads it,
+                // and the next save writes version 2 (D-700).
+                if file.version < 2 {
+                    file.version = 2;
+                }
                 bots.insert(file.id.clone(), Bot::new(file));
             }
             Ok(_) => tracing::warn!(path = %path.display(), "skipping a bot whose id is not its folder's name"),
@@ -473,6 +652,247 @@ impl Server {
         Ok(BotResult { bot: registry.row(&id)? })
     }
 
+    /// `bots/preview`: reads the card at a link, for the confirmation page (§4.2, §5.2).
+    pub async fn bots_preview(&self, params: BotPreviewParams) -> Result<RemotePreview, RpcError> {
+        self.external()?;
+        let options = self.card_options();
+        let card = Card::read(&params.url, &options).await.map_err(errors::from_card)?;
+        let icon = finx_a2a::card::icon(&card, &options).await.map(|png| {
+            use base64::Engine as _;
+            format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))
+        });
+        Ok(RemotePreview {
+            name: card.name.clone(),
+            description: card.description.clone(),
+            icon,
+            provider: card.provider.clone(),
+            host: host_of(&card.endpoint.url)?,
+            skills: skills_of(&card),
+            accepts: accepts_of(&card),
+            auth: auth_kind(&card.auth),
+            card_sha256: Card::hash(&card),
+        })
+    }
+
+    /// `bots/add`: adds another subject's bot, after the owner saw its card (§4.2, §5.2).
+    pub async fn bots_add(&self, params: BotAddParams) -> Result<BotResult, RpcError> {
+        self.external()?;
+        let options = self.card_options();
+        let card = Card::read(&params.url, &options).await.map_err(errors::from_card)?;
+        if Card::hash(&card) != params.card_sha256 {
+            return Err(errors::bot_card_changed());
+        }
+        let id = uuid::Uuid::now_v7().to_string();
+        let credential = params.credential.unwrap_or_default();
+        auth_with(&card.auth, &credential)?;
+        // The icon and the avatar can fail: nothing is kept until they are done, so a failed
+        // add leaves no credential behind (bot-contacts-design §5.6).
+        let icon = finx_a2a::card::icon(&card, &options).await;
+        let avatar = match icon {
+            Some(png) => {
+                use base64::Engine as _;
+                let input = AvatarInput::Image {
+                    png: base64::engine::general_purpose::STANDARD.encode(png),
+                };
+                self.avatar_of(&id, &input, false, None)?
+            }
+            None => Avatar::Mono {
+                hue: hue_for(&card.name),
+            },
+        };
+        let host = host_of(&card.endpoint.url)?;
+        let now = list::now();
+        let file = BotFile {
+            version: 2,
+            id: id.clone(),
+            name: card.name.clone(),
+            avatar,
+            default: false,
+            pinned: false,
+            muted: false,
+            created_at: now.clone(),
+            session_id: None,
+            model: None,
+            thinking: None,
+            permission_mode: None,
+            summary: Kept::default(),
+            source: Some(BotSourceFile {
+                kind: BotSourceKind::Remote,
+                protocol: BotProtocol::A2a,
+                card_url: params.url,
+                endpoint: card.endpoint.url.clone(),
+                tenant: card.endpoint.tenant.clone(),
+                host,
+                card_sha256: params.card_sha256,
+                card_read_at: now,
+                description: card.description.clone(),
+                provider: card.provider.clone(),
+                skills: skills_of(&card),
+                accepts: accepts_of(&card),
+                auth: auth_kind(&card.auth),
+                api_key_header: match &card.auth {
+                    finx_a2a::Auth::ApiKey { header, .. } => Some(header.clone()),
+                    _ => None,
+                },
+                noticed: false,
+                needs_review: None,
+                offered_name: None,
+                card_problem: None,
+            }),
+        };
+        let registry = self.bots();
+        registry.with(|bots| bots.insert(id.clone(), Bot::new(file)));
+        if let Err(err) = self.made(&id) {
+            registry.with(|bots| bots.remove(&id));
+            return Err(err);
+        }
+        // Last, once the bot is on disk: a credential that cannot be kept takes the bot with it,
+        // so the list never shows one that cannot answer.
+        if auth_kind(&card.auth) != BotAuth::None {
+            let (name, value) = (format!("bot.{id}"), credential.clone());
+            let kept = tokio::task::spawn_blocking(move || finx_llm::credentials::set(&name, &value)).await;
+            let failed = match kept {
+                Ok(Ok(())) => false,
+                Ok(Err(why)) => {
+                    tracing::warn!(bot = %id, "cannot keep the bot's credential: {why}");
+                    true
+                }
+                Err(err) => {
+                    tracing::warn!(bot = %id, "cannot keep the bot's credential: {err}");
+                    true
+                }
+            };
+            if failed {
+                registry.with(|bots| bots.remove(&id));
+                let _ = std::fs::remove_dir_all(self.0.home.bot_dir(&id));
+                return Err(errors::bot_auth_required("this bot's credential could not be saved"));
+            }
+        }
+        registry.announce(&[&id], Vec::new());
+        Ok(BotResult { bot: registry.row(&id)? })
+    }
+
+    /// The card reader's options, from `[bots]` (§5.8).
+    fn card_options(&self) -> CardOptions {
+        CardOptions {
+            allow_local: self.0.bot_settings.allow_local,
+        }
+    }
+
+    /// Adding another subject's bot is off unless `bots.external` says otherwise (§5.8, D-717).
+    fn external(&self) -> Result<(), RpcError> {
+        if self.0.bot_settings.external {
+            Ok(())
+        } else {
+            Err(errors::bot_not_supported())
+        }
+    }
+
+    /// Reads an external bot's card again when it is a day old, and follows what changed
+    /// (§5.6). It never blocks the conversation: failures leave the last card in use.
+    async fn refresh_card(&self, id: &str) -> Result<(), RpcError> {
+        let Some(mut source) = self.bots().source(id) else {
+            return Ok(());
+        };
+        let now = chrono::Utc::now();
+        let read_at = chrono::DateTime::parse_from_rfc3339(&source.card_read_at)
+            .map(|time| time.with_timezone(&chrono::Utc))
+            .unwrap_or(now);
+        if now - read_at < chrono::Duration::hours(24) {
+            return Ok(());
+        }
+        let options = self.card_options();
+        let Ok(card) = Card::read(&source.card_url, &options).await else {
+            // Seven days without a card: the bot's settings say so; the last one stays in use.
+            if now - read_at > chrono::Duration::days(7) && source.card_problem != Some(CardProblem::Unreachable) {
+                source.card_problem = Some(CardProblem::Unreachable);
+                self.save_source(id, source).await?;
+            }
+            return Ok(());
+        };
+        let host = host_of(&card.endpoint.url)?;
+        if host != source.host {
+            // Its interface moved to another host: not accepted; the old one stays in use.
+            source.card_problem = Some(CardProblem::Moved);
+            source.card_read_at = now.to_rfc3339();
+            self.save_source(id, source).await?;
+            return Ok(());
+        }
+        let was = source.auth;
+        let hash = Card::hash(&card);
+        source.card_read_at = now.to_rfc3339();
+        source.card_sha256 = hash;
+        source.endpoint = card.endpoint.url.clone();
+        source.tenant = card.endpoint.tenant.clone();
+        source.description = card.description.clone();
+        source.provider = card.provider.clone();
+        source.skills = skills_of(&card);
+        source.accepts = accepts_of(&card);
+        source.auth = auth_kind(&card.auth);
+        source.api_key_header = match &card.auth {
+            finx_a2a::Auth::ApiKey { header, .. } => Some(header.clone()),
+            _ => None,
+        };
+        source.card_problem = None;
+        if was != source.auth {
+            // The credential scheme changed: the owner confirms before the bot is used again
+            // (§5.6).
+            source.needs_review = Some("the credential scheme changed".to_string());
+        }
+        let current = self.bots().with_bot(id, |bot| bot.file.name.clone())?;
+        if card.name != current {
+            // A card is not a way to rename a bot silently (§5.6).
+            source.offered_name = Some(card.name.clone());
+        }
+        self.save_source(id, source).await
+    }
+
+    /// Writes a changed source and tells the list (§5.6).
+    async fn save_source(&self, id: &str, source: BotSourceFile) -> Result<(), RpcError> {
+        let registry = self.bots().clone();
+        registry.set_source(id, source)?;
+        let (registry, owned) = (registry.clone(), id.to_string());
+        tokio::task::spawn_blocking(move || registry.save(&owned))
+            .await
+            .map_err(|e| RpcError::internal(e.to_string()))??;
+        self.bots().announce(&[id], Vec::new());
+        Ok(())
+    }
+
+    /// The service behind an external bot, with its credential from the keychain (§5.3, §5.6).
+    /// `None` for this computer's own bots. Blocking I/O: the keychain.
+    pub(crate) fn peer_connection(&self, id: &str) -> Result<Option<(Arc<dyn finx_core::Peer>, PeerRef)>, RpcError> {
+        let Some(source) = self.bots().source(id) else {
+            return Ok(None);
+        };
+        let credential = || {
+            finx_llm::credentials::get(&format!("bot.{id}")).ok_or_else(|| {
+                errors::bot_auth_required("this bot's credential is missing: set it in the bot's settings")
+            })
+        };
+        let auth = match source.auth {
+            BotAuth::None => finx_a2a::Auth::None,
+            BotAuth::ApiKey => finx_a2a::Auth::ApiKey {
+                header: source.api_key_header.clone().unwrap_or_else(|| "X-API-Key".to_string()),
+                value: credential()?,
+            },
+            BotAuth::Bearer => finx_a2a::Auth::Bearer { token: credential()? },
+        };
+        let peer = finx_a2a::A2aPeer::new(finx_a2a::Source {
+            endpoint: source.endpoint,
+            host: source.host.clone(),
+            tenant: source.tenant,
+            auth,
+            allow_local: self.0.bot_settings.allow_local,
+        });
+        Ok(Some((
+            Arc::new(peer),
+            PeerRef {
+                host: source.host,
+            },
+        )))
+    }
+
     /// The avatar to keep for `input`; an image is written to the bot's folder. Blocking I/O.
     fn avatar_of(&self, id: &str, input: &AvatarInput, default: bool, before: Option<&Avatar>) -> Result<Avatar, RpcError> {
         Ok(match input {
@@ -506,6 +926,25 @@ impl Server {
     /// `bots/update`: a new name reaches a loaded conversation's model at its next turn.
     /// Blocking I/O.
     pub fn bots_update(&self, params: BotUpdateParams) -> Result<BotResult, RpcError> {
+        if params.noticed.is_some() || params.accept_review.is_some() || params.adopt_name.is_some() {
+            self.bots().with_bot(&params.bot_id, |bot| {
+                let Some(source) = bot.file.source.as_mut() else {
+                    return Err(errors::bot_not_supported());
+                };
+                if let Some(noticed) = params.noticed {
+                    source.noticed = noticed;
+                }
+                if params.accept_review == Some(true) {
+                    source.needs_review = None;
+                }
+                if params.adopt_name == Some(true)
+                    && let Some(name) = source.offered_name.take()
+                {
+                    bot.file.name = name;
+                }
+                Ok(())
+            })??;
+        }
         let registry = self.bots();
         let name = params.name.as_deref().map(clean_name).transpose()?;
         let (default, before) = registry.with_bot(&params.bot_id, |b| (b.file.default, b.file.avatar.clone()))?;
@@ -587,6 +1026,9 @@ impl Server {
 
     /// Loads or starts the bot's conversation; returns its session.
     async fn open_bot(&self, id: &str, attach: Option<AttachRequest>) -> Result<String, RpcError> {
+        // A card is read again on opening, at most once a day (§5.6); reading it cannot block
+        // the conversation.
+        let _ = self.refresh_card(id).await;
         let registry = self.bots().clone();
         let _opening = registry.opening.lock().await;
         let (session, name, start) = {
@@ -618,9 +1060,17 @@ impl Server {
         let folder = self.0.home.bot_files_dir(id);
         std::fs::create_dir_all(&folder).map_err(|e| RpcError::internal(format!("cannot create {}: {e}", folder.display())))?;
         let workspace = Workspace::open(&self.0.home, &folder, &self.0.overrides).map_err(errors::from_runtime)?;
-        let model = self.session_model(model, workspace.config.model.clone()).await?;
+        // Another subject's bot answers from its own service: no model is resolved here (§5.3).
+        let remote = self.peer_connection(id)?;
+        let model = match &remote {
+            Some(_) => finx_core::A2A_MODEL.to_string(),
+            None => self.session_model(model, workspace.config.model.clone()).await?,
+        };
         let store: Arc<dyn SessionStore> = self.store().clone();
         let mut deps = workspace.kernel_deps(self.0.llm.clone(), store, &[]).map_err(errors::from_runtime)?;
+        if let Some((peer, _)) = &remote {
+            deps.peer = Some(peer.clone());
+        }
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
         deps.decks = Some(self.0.decks.clone());
@@ -638,6 +1088,7 @@ impl Server {
             config: Arc::new(workspace.config),
             interactive_approvals: true,
             bot: Some(BotIdentity { id: id.to_string(), name }),
+            peer: remote.as_ref().map(|(_, peer)| peer.clone()),
         };
         let kernel = finx_core::Kernel::start(options, deps).await.map_err(|e| errors::from_kernel(e, "new"))?;
         if let Some(text) = self.0.routines.listing_of(id) {
@@ -731,7 +1182,7 @@ impl Server {
 
 fn new_file(name: String, avatar: Avatar, default: bool) -> BotFile {
     BotFile {
-        version: 1,
+        version: 2,
         id: uuid::Uuid::now_v7().to_string(),
         name,
         avatar,
@@ -744,5 +1195,86 @@ fn new_file(name: String, avatar: Avatar, default: bool) -> BotFile {
         thinking: None,
         permission_mode: None,
         summary: Kept::default(),
+        source: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn home() -> (tempfile::TempDir, FinxHome) {
+        let dir = tempfile::tempdir().unwrap();
+        let home = FinxHome::new(dir.path().canonicalize().unwrap().join("home"));
+        home.ensure().unwrap();
+        (dir, home)
+    }
+
+    fn bot_file(id: &str, version: u32) -> serde_json::Value {
+        serde_json::json!({
+            "version": version,
+            "id": id,
+            "name": "FinxBot",
+            "avatar": { "kind": "char", "shape": "tall", "hue": "slate" },
+            "default": true,
+            "pinned": false,
+            "muted": false,
+            "created_at": "2026-11-14T00:00:00Z",
+            "summary": { "unread": 0 }
+        })
+    }
+
+    #[test]
+    fn a_version_one_bot_reads_and_upgrades_to_version_two() {
+        let (_dir, home) = home();
+        let id = "0193aaaa-bbbb-7ccc-8ddd-eeeeffff0000";
+        let dir = home.bot_dir(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bot.json"), serde_json::to_vec(&bot_file(id, 1)).unwrap()).unwrap();
+
+        let bots = read_all(&home);
+        let bot = bots.get(id).expect("the version 1 bot reads");
+        assert_eq!(bot.file.version, 2, "it is upgraded in memory");
+        assert!(bot.file.source.is_none(), "a version 1 bot is a local bot");
+        assert!(bot.summary(None).source.is_none());
+        assert!(bot.summary(None).default, "nothing else about it changes");
+    }
+
+    #[test]
+    fn an_external_bots_source_is_kept_and_shown() {
+        let (_dir, home) = home();
+        let id = "0193aaaa-bbbb-7ccc-8ddd-eeeeffff0001";
+        let dir = home.bot_dir(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut file = bot_file(id, 2);
+        file["default"] = serde_json::json!(false);
+        file["name"] = serde_json::json!("某医院预约助手");
+        file["source"] = serde_json::json!({
+            "kind": "remote", "protocol": "a2a",
+            "card_url": "https://example-hospital.cn/.well-known/agent-card.json",
+            "endpoint": "https://example-hospital.cn/a2a",
+            "host": "example-hospital.cn",
+            "card_sha256": "abc",
+            "card_read_at": "2026-11-14T12:00:00Z",
+            "description": "查询科室排班",
+            "provider": "某某医院",
+            "skills": [{ "name": "查排班", "description": "按日期查" }],
+            "accepts": ["text"],
+            "auth": "api_key",
+            "noticed": false
+        });
+        std::fs::write(dir.join("bot.json"), serde_json::to_vec(&file).unwrap()).unwrap();
+
+        let bots = read_all(&home);
+        let bot = bots.get(id).expect("the external bot reads");
+        let source = bot.file.source.as_ref().expect("its source");
+        assert_eq!(source.host, "example-hospital.cn");
+        assert_eq!(source.auth, BotAuth::ApiKey);
+        let view = bot.summary(None).source.expect("the list shows it");
+        assert_eq!(view.host, "example-hospital.cn");
+        assert_eq!(view.provider.as_deref(), Some("某某医院"));
+        assert_eq!(view.accepts, vec![BotAccept::Text]);
+        assert!(!view.noticed);
+        assert!(view.needs_review.is_none());
     }
 }

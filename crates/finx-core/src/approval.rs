@@ -129,6 +129,10 @@ pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {
         "docx_edit" if args.get("mode").and_then(|v| v.as_str()).unwrap_or("suggest") == "suggest" => Gate::Allow,
         "docx_edit" | "docx_review" => evaluate_edit_in_kernel(docx_edit_summary(&args, arg("docx")), view),
         "docx_save" => evaluate_doc_save(arg("docx"), arg("path"), view),
+        // A skill's own script is trusted with the skill (spatial-design §5.3).
+        crate::spatial_script::NAME if crate::spatial_script::runs_unasked(&args) => Gate::Allow,
+        crate::spatial_script::NAME if view.permission_mode == PermissionMode::BypassPermissions => Gate::Allow,
+        crate::spatial_script::NAME => ask(crate::spatial_script::approval_summary(&args), None),
         _ => match (kind, view.permission_mode) {
             (ToolKind::ReadOnly, _) | (ToolKind::Mutating, PermissionMode::BypassPermissions) => Gate::Allow,
             (ToolKind::Mutating, _) if call.name == crate::routine::MANAGE_ROUTINE => ask(crate::routine::approval_summary(&args), None),

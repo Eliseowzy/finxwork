@@ -7,7 +7,7 @@
     "botsTip": "Bot mode"
   },
   "nav": {
-    "newBot": "New Bot"
+    "newBot": "Add Bot"
   },
   "list": {
     "title": "Bots",
@@ -100,6 +100,37 @@
       "teal": "Teal",
       "rose": "Rose",
       "stone": "Grey"
+    },
+    "newTab": "New",
+    "addTab": "Add someone else's bot",
+    "add": {
+      "title": "Add someone else's bot",
+      "sub": "Paste the link they gave you.",
+      "link": "Link",
+      "placeholder": "Paste the link they gave you",
+      "hint": "It is a bot of another organization or another person. What you send it goes to them.",
+      "read": "Read the card",
+      "reading": "Reading the card…",
+      "confirm": "Confirm this bot",
+      "host": "Provided by and domain",
+      "skills": "What it can do",
+      "more": "{{n}} more",
+      "notice": "The text and pictures you send leave this Mac and go to {{host}}. It cannot see your other conversations or files, and it cannot operate this computer.",
+      "noticeLocal": "The text and pictures you send go to another service on this Mac ({{host}}). It cannot see your other conversations or files, and it cannot operate this computer.",
+      "credential": "Key or token",
+      "credentialHint": "Kept in this Mac's keychain",
+      "needsCredential": "This bot needs a credential before it can be added.",
+      "back": "Use another link",
+      "add": "Add",
+      "errors": {
+        "unreachable": "No card could be read at this link.",
+        "invalid": "This link does not lead to a usable card.",
+        "unsupported": "Its way of connecting is not supported in this version.",
+        "moved": "The card points at another address ({{host}}); it cannot be added.",
+        "changed": "The card changed before you confirmed it; read it again.",
+        "off": "This version cannot add someone else's bot yet.",
+        "other": "Adding it did not work; please try again."
+      }
     }
   },
   "menu": {
@@ -214,5 +245,31 @@
       "delete": "Deleted the scheduled task \"{{name}}\""
     },
     "fromRoutine": "From the scheduled task \"{{name}}\""
+  },
+  "external": {
+    "mark": "Someone else's bot",
+    "wordsOnly": "Their bot takes words, pictures and quotes only; the attachments were not sent.",
+    "firstTitle": "What you send “{{name}}” leaves this Mac",
+    "firstBody": "What you send {{host}} goes to them.",
+    "firstLocal": "What you send {{host}} goes to another service on this Mac.",
+    "gotIt": "Got it",
+    "waiting": "{{name}} hasn't replied yet",
+    "stopWaiting": "Stop waiting",
+    "description": "About",
+    "provider": "Provided by",
+    "host": "Address",
+    "local": "This Mac",
+    "skills": "What it can do",
+    "credential": "Credential",
+    "credentialHint": "Kept in this Mac's keychain",
+    "credentialSave": "Save",
+    "credentialSaved": "Credential saved",
+    "needsReview": "Their card changed: {{what}}. Messages go out again once you confirm.",
+    "review": "I have checked",
+    "offeredName": "They now call it “{{name}}”",
+    "adoptName": "Use this name",
+    "moved": "Their card points at another address; the last one is still in use.",
+    "unreachable": "Their card has not been readable for a while; the last one is still in use.",
+    "noImages": "{{name}} cannot take pictures"
   }
 }

@@ -98,6 +98,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, hooks: Vec<Arc<dyn
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     }
 }
 
@@ -127,6 +128,7 @@ impl Harness {
             trusted: false,
             interactive_approvals: true,
             bot,
+            peer: None,
         };
         let kernel = Kernel::start(options, deps(&api, &work, &home, hooks)).await.unwrap();
         Harness { kernel, api, lanes, work, home, _dir: dir }
@@ -790,6 +792,7 @@ async fn reopened_after_going_back_only_the_agents_of_the_conversation_are_there
         trusted: false,
         interactive_approvals: true,
         bot_name: None,
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &work, &home, Vec::new())).await.unwrap();
     let names: Vec<String> = kernel.take_restored_agents().into_iter().map(|a| a.name).collect();
@@ -958,6 +961,7 @@ async fn a_resumed_session_has_the_new_branch_and_all_that_belongs_to_the_sessio
         trusted: false,
         interactive_approvals: true,
         bot_name: None,
+        peer: None,
     };
     let kernel = Kernel::resume(options, deps(&api, &work, &home, Vec::new())).await.unwrap();
     let mut h = Harness { kernel, api, lanes, work, home, _dir };

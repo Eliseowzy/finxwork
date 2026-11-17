@@ -24,11 +24,11 @@ const SourceContext = createContext("");
 /** One component tree throughout streaming and completion. AST-aware slices keep
  * settled blocks memoized; document-scoped references take the whole-document path.
  * How often text arrives while it is written is useSession's to pace. */
-export function Markdown({ text, streaming = false, mode = "chat" }: { text: string; streaming?: boolean; mode?: "chat" | "document" | "compact" }) {
+export function Markdown({ text, streaming = false, mode = "chat", quote }: { text: string; streaming?: boolean; mode?: "chat" | "document" | "compact"; /** The conversation part this draws, when its words may be quoted (message-quote-design §4.2). */ quote?: "assistant" }) {
   const prefix = useId();
   const split = useRef(createMarkdownSlices());
   const blocks = useMemo(() => split.current(text, streaming), [text, streaming]);
-  return <div className="md sel-text" data-mode={mode}>
+  return <div className="md sel-text" data-mode={mode} data-quote={quote}>
     {blocks.map((block) => <Block key={block.id} text={block.text} pending={block.pending} prefix={prefix} offset={block.id} mode={mode} />)}
   </div>;
 }
@@ -100,7 +100,7 @@ function Cite({ docId, target, children }: { docId: string; target: string; chil
       const text = r.anchor.kind === "text" || r.anchor.kind === "cells" ? (r.anchor.text ?? "") : "";
       const where = r.anchor.kind === "cells"
         ? `${baseName(r.path)} · ${r.anchor.sheet}!${r.anchor.range}`
-        : t("doc.where", { name: baseName(r.path), page: r.anchor.page });
+        : t("doc.where", { name: baseName(r.path), page: "page" in r.anchor ? r.anchor.page : 0 });
       setFound({ title: text ? `${where}\n${text.length > 120 ? text.slice(0, 120) + "…" : text}` : where });
     });
   };

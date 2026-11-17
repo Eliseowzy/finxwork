@@ -18,7 +18,7 @@ const text = (s: RibbonState): Gate | null => slide(s) ?? (s.selection?.target.k
 const range = (s: RibbonState): Gate | null => text(s) ?? (textRanges(s).length ? null : "needs-text-range");
 const several = (n: number) => (s: RibbonState): Gate | null => shapes(s) ?? (selectedShapes(s).length >= n ? null : n >= 3 ? "needs-three" : "needs-two");
 
-/** A built-in BetterOffice command, gated by its own state. */
+/** A built-in NimbleOffice command, gated by its own state. */
 function builtin<K extends PptxCommandId>(id: string, command: K, args: (a: any) => any, extra: Partial<AnySpec> = {}): AnySpec {
   return {
     id, needs: ["builtin"],

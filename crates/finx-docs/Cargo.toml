@@ -12,6 +12,7 @@ base64.workspace = true
 finx-protocol.workspace = true
 finx-sheet.workspace = true
 finx-slide.workspace = true
+finx-spatial.workspace = true
 finx-word.workspace = true
 parking_lot.workspace = true
 png.workspace = true
@@ -25,7 +26,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-betteroffice-pptx.workspace = true
+nimbleoffice-pptx.workspace = true
 docx-edit.workspace = true
 md-5.workspace = true
 tempfile.workspace = true

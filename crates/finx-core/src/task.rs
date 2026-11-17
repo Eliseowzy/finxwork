@@ -2,7 +2,9 @@
 
 use futures::FutureExt;
 use futures::StreamExt;
+use finx_llm::AssistantContent;
 use finx_llm::AssistantMessage;
+use finx_llm::JsonText;
 use finx_llm::Context;
 use finx_llm::ErrorKind;
 use finx_llm::LlmError;
@@ -17,6 +19,7 @@ use finx_llm::ToolCall;
 use finx_llm::UsageTotals;
 use finx_llm::UserContent;
 use finx_llm::UserMessage;
+use finx_tools::ToolOutput;
 use finx_llm::now_ms;
 use finx_protocol::CompactionReason;
 use finx_protocol::CompletionReason;
@@ -40,6 +43,11 @@ use crate::commands::Command;
 use crate::compaction;
 use crate::compaction::CompactError;
 use crate::hooks::TurnDecision;
+use crate::peer::PeerError;
+use crate::peer::PeerEvent;
+use crate::peer::PeerImage;
+use crate::peer::PeerMessage;
+use crate::peer::PeerThread;
 use crate::session::ActiveTask;
 use crate::session::Input;
 use crate::session::Resend;
@@ -48,6 +56,10 @@ use crate::session::SessionState;
 use crate::store::EntryKind;
 use crate::store::TaskStatus;
 use crate::tool_exec;
+use serde_json::Value;
+use serde_json::json;
+use std::path::PathBuf;
+use std::time::Duration;
 
 /// After this many compactions in one task, the user hears that detail may be getting lost.
 const MANY_COMPACTIONS: u32 = 3;
@@ -101,9 +113,14 @@ enum Work {
     Compact,
     /// Only the context report (`/context`).
     Context,
+    /// An external bot's session picks up a task the other side has not ended
+    /// (bot-contacts-design §5.5).
+    ResumePeer,
 }
 
 pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: PromptMode, commands: bool) {
+    // A word after `/` is a word for the other side, not a command (bot-contacts-design §5.4).
+    let commands = commands && session.peer.is_none();
     let mut skills = Vec::new();
     if commands {
         let known = session.state.lock().skills.clone();
@@ -148,6 +165,11 @@ pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: P
 /// step: a running task stops first, and then the conversation goes back and the new input
 /// starts the next task. Until then the session is as it was.
 pub(crate) fn on_resend(session: &Arc<Session>, message_id: String, input: Vec<UserContent>, commands: bool) {
+    if session.peer.is_some() {
+        // The other side cannot go back to a point in the conversation (bot-contacts-design §5.3).
+        session.warn("an external bot's conversation does not go back");
+        return;
+    }
     {
         let state = session.state.lock();
         let refused = if state.bot.is_some() {
@@ -241,6 +263,10 @@ pub(crate) fn on_mail(session: &Arc<Session>, mail: Mail) {
 }
 
 pub(crate) fn on_continue(session: &Arc<Session>) {
+    if session.peer.is_some() {
+        session.warn("nothing to continue: an external bot answers from the other side");
+        return;
+    }
     if session.is_busy() {
         session.warn("a task is already running");
         return;
@@ -259,6 +285,10 @@ pub(crate) fn on_continue(session: &Arc<Session>) {
 }
 
 pub(crate) fn on_compact(session: &Arc<Session>) {
+    if session.peer.is_some() {
+        session.warn("an external bot's conversation is not compacted: it lives on the other side");
+        return;
+    }
     if session.is_busy() {
         session.warn("a task is running; compact after it ends");
         return;
@@ -354,6 +384,10 @@ async fn task_main(session: Arc<Session>, task: TaskCtx, work: Work, trigger: Ta
     }
     let run = async {
         match work {
+            // An external bot's session has no model to run: the other side answers
+            // (bot-contacts-design §5.3).
+            Work::Prompt(input) if session.peer.is_some() => run_peer_task(&session, &task, input).await,
+            Work::ResumePeer => run_peer_task(&session, &task, None).await,
             Work::Prompt(input) => run_task(&session, &task, input).await,
             Work::Compact => run_compaction(&session, &task).await,
             Work::Context => {
@@ -805,6 +839,391 @@ async fn run_compaction(session: &Arc<Session>, task: &TaskCtx) -> TaskOutcome {
         Err(CompactError::Interrupted) => TaskOutcome::Interrupted,
         Err(CompactError::Failed(error)) => TaskOutcome::Failed(error),
     }
+}
+
+/// How long the other side may go without a word before the task looks again (§5.5).
+const PEER_IDLE: Duration = Duration::from_secs(60);
+/// How many reconnects in a row may fail before the task fails (§5.5).
+const PEER_RECONNECTS: u32 = 3;
+/// The largest file the other side may give: beyond this it is not kept (§5.3).
+const PEER_FILE_MAX: u64 = 50 * 1024 * 1024;
+/// What one task's files may add up to.
+const PEER_ROUND_MAX: u64 = 200 * 1024 * 1024;
+/// After these many characters the name the other side gave is cut (§5.3).
+const PEER_NAME_MAX: usize = 120;
+
+/// Opens a task the other side had not ended, after the application came back (§5.5).
+pub(crate) fn resume_peer(session: &Arc<Session>) {
+    start(session, Work::ResumePeer, TaskTrigger::User);
+}
+
+/// An external bot's task (bot-contacts-design §5.3): what the owner said goes to the other side,
+/// and what it says is recorded exactly as a local bot's `send_to_user` call would be.
+async fn run_peer_task(
+    session: &Arc<Session>,
+    task: &TaskCtx,
+    input: Option<Input>,
+) -> TaskOutcome {
+    let Some(peer) = session.peer.clone() else {
+        return TaskOutcome::Failed(ErrorInfo::new(
+            "internal",
+            "no other side for this conversation",
+        ));
+    };
+    let host = session.peer_host();
+    let mut thread = last_thread(session);
+    let message = input.map(|input| {
+        let message = peer_message(input.id.clone(), &input.message);
+        session.record_user(input);
+        // Only a task the other side is waiting on takes the next message with it (§5.4).
+        if !thread.waiting {
+            thread.task_id = None;
+        }
+        message
+    });
+    let mut pending = Some(match &message {
+        Some(message) => {
+            peer.send(message.clone(), thread.clone(), task.cancel.clone())
+                .await
+        }
+        None => peer.resume(thread.clone(), task.cancel.clone()).await,
+    });
+    let mut reconnects = 0u32;
+    let mut answered = false;
+    let mut last_message = None;
+    let mut files: Vec<IncomingFile> = Vec::new();
+    let mut file_bytes = 0u64;
+    loop {
+        let Some(stream) = pending.take() else { break };
+        let mut stream = match stream {
+            Ok(stream) => stream,
+            Err(error) => {
+                flush_files(session, &mut files, &mut file_bytes).await;
+                return peer_failed(error);
+            }
+        };
+        loop {
+            let next = tokio::select! {
+                biased;
+                _ = task.cancel.cancelled() => {
+                    // Ask the other side to stop; it is best effort (§5.5).
+                    if thread.task_id.is_some() {
+                        peer.cancel(thread.clone()).await;
+                    }
+                    return TaskOutcome::Interrupted;
+                }
+                next = tokio::time::timeout(PEER_IDLE, futures::StreamExt::next(&mut stream)) => next,
+            };
+            let event = match next {
+                // Nothing for a while: look again before giving up (§5.5).
+                Err(_) | Ok(None) => break,
+                Ok(Some(event)) => event,
+            };
+            reconnects = 0;
+            match event {
+                PeerEvent::Thread(new) => {
+                    if new != thread {
+                        thread = new;
+                        session.record(EntryKind::PeerThread(thread.clone()));
+                    }
+                }
+                PeerEvent::Working => {}
+                PeerEvent::Said { text } => {
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+                    answered = true;
+                    last_message = Some(text.clone());
+                    deliver_text(session, &host, &text);
+                }
+                PeerEvent::File {
+                    name,
+                    media_type,
+                    bytes,
+                } => {
+                    if bytes.len() as u64 > PEER_FILE_MAX
+                        || file_bytes + bytes.len() as u64 > PEER_ROUND_MAX
+                    {
+                        session.warn("a file from the other side was too large and was not kept");
+                        continue;
+                    }
+                    if let Some(file) = write_incoming(session, name, media_type, &bytes).await {
+                        file_bytes += file.size;
+                        files.push(file);
+                    }
+                }
+                PeerEvent::Asked { text } => {
+                    flush_files(session, &mut files, &mut file_bytes).await;
+                    last_message = Some(text.clone());
+                    if !thread.waiting {
+                        thread.waiting = true;
+                        session.record(EntryKind::PeerThread(thread.clone()));
+                    }
+                    deliver_question(session, &host, &text);
+                    return TaskOutcome::Completed {
+                        last_message,
+                        reason: CompletionReason::Done,
+                    };
+                }
+                PeerEvent::Done => {
+                    flush_files(session, &mut files, &mut file_bytes).await;
+                    // The task is over: the next message starts a new one in the same
+                    // conversation, so its identifier must not go along (§5.4, §5.5).
+                    clear_task(session, &mut thread);
+                    if !answered {
+                        return no_reply();
+                    }
+                    return TaskOutcome::Completed {
+                        last_message,
+                        reason: CompletionReason::Done,
+                    };
+                }
+                PeerEvent::Failed(error) => {
+                    // A broken connection is picked up again, as silence is (§5.5); a task the
+                    // other side reports as failed is final.
+                    if error.kind == "bot_peer_lost" && error.retryable {
+                        break;
+                    }
+                    flush_files(session, &mut files, &mut file_bytes).await;
+                    if thread.waiting {
+                        thread.waiting = false;
+                        session.record(EntryKind::PeerThread(thread.clone()));
+                    }
+                    return peer_failed(error);
+                }
+            }
+        }
+        // The stream ended or went quiet: the task may still run on the other side.
+        if thread.task_id.is_none() {
+            return peer_failed(
+                PeerError::new("bot_peer_failed", "the other side stopped answering").retryable(),
+            );
+        }
+        if reconnects >= PEER_RECONNECTS {
+            return peer_failed(
+                PeerError::new("bot_peer_failed", "the other side cannot be reached").retryable(),
+            );
+        }
+        reconnects += 1;
+        pending = Some(peer.resume(thread.clone(), task.cancel.clone()).await);
+    }
+    peer_failed(PeerError::new("bot_peer_failed", "the other side stopped answering").retryable())
+}
+
+fn peer_failed(error: PeerError) -> TaskOutcome {
+    let mut info = ErrorInfo::new(&error.kind, error.message);
+    info.retryable = error.retryable;
+    TaskOutcome::Failed(info)
+}
+
+fn no_reply() -> TaskOutcome {
+    let mut info = ErrorInfo::new(NO_REPLY, "the other side ended without saying anything");
+    info.retryable = true;
+    TaskOutcome::Failed(info)
+}
+
+/// A finished task leaves the conversation identifier behind, not the task's (§5.5).
+fn clear_task(session: &Session, thread: &mut PeerThread) {
+    if thread.task_id.take().is_some() || std::mem::take(&mut thread.waiting) {
+        session.record(EntryKind::PeerThread(thread.clone()));
+    }
+}
+
+/// The other side's conversation and task, from the log (§5.5): it belongs to the conversation,
+/// not to the bot.
+fn last_thread(session: &Session) -> PeerThread {
+    let state = session.state.lock();
+    state
+        .history
+        .branch_back()
+        .find_map(|entry| match &entry.kind {
+            EntryKind::PeerThread(thread) => Some(thread.clone()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+/// What goes to the other side: the owner's words and pictures, nothing else (§5.4).
+fn peer_message(id: String, message: &UserMessage) -> PeerMessage {
+    let mut text = String::new();
+    let mut images = Vec::new();
+    for content in &message.content {
+        match content {
+            UserContent::Text { text: words } => {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(words);
+            }
+            UserContent::Image { mime_type, data } => images.push(PeerImage {
+                media_type: mime_type.clone(),
+                data: data.clone(),
+            }),
+        }
+    }
+    PeerMessage { id, text, images }
+}
+
+/// A file the other side gave, kept in the bot's folder (§5.3).
+struct IncomingFile {
+    path: PathBuf,
+    size: u64,
+}
+
+/// Writes one file into the bot's `files` folder, with the name cleaned (§5.3). `None` when it
+/// could not be written; the task goes on.
+async fn write_incoming(
+    session: &Session,
+    name: String,
+    media_type: Option<String>,
+    bytes: &[u8],
+) -> Option<IncomingFile> {
+    let dir = session.env.cwd().join("files");
+    if let Err(error) = tokio::fs::create_dir_all(&dir).await {
+        session.warn(format!("cannot keep a file from the other side: {error}"));
+        return None;
+    }
+    let mut name = safe_name(&name, media_type.as_deref());
+    let mut path = dir.join(&name);
+    let mut n = 2;
+    while tokio::fs::metadata(&path).await.is_ok() {
+        name = numbered(&name, n);
+        path = dir.join(&name);
+        n += 1;
+    }
+    match tokio::fs::write(&path, bytes).await {
+        Ok(()) => Some(IncomingFile {
+            path,
+            size: bytes.len() as u64,
+        }),
+        Err(error) => {
+            session.warn(format!("cannot keep a file from the other side: {error}"));
+            None
+        }
+    }
+}
+
+/// The file's last path segment, without control characters, no leading dot, and short enough
+/// (§5.3): the other side cannot choose where on this computer anything lands.
+fn safe_name(name: &str, media_type: Option<&str>) -> String {
+    let last = name.rsplit(['/', '\\']).next().unwrap_or_default();
+    let mut cleaned: String = last.chars().filter(|c| !c.is_control()).collect();
+    cleaned = cleaned.trim().to_string();
+    if cleaned.starts_with('.') {
+        cleaned.replace_range(0..1, "_");
+    }
+    if cleaned.is_empty() {
+        return format!("file{}", extension_for(media_type));
+    }
+    cleaned.chars().take(PEER_NAME_MAX).collect()
+}
+
+fn extension_for(media_type: Option<&str>) -> &'static str {
+    match media_type.unwrap_or_default() {
+        "application/pdf" => ".pdf",
+        "image/png" => ".png",
+        "image/jpeg" => ".jpg",
+        "application/json" | "application/problem+json" => ".json",
+        "text/plain" => ".txt",
+        "text/markdown" => ".md",
+        _ => "",
+    }
+}
+
+/// `name-2.ext`, for a second file of the same name (§5.3).
+fn numbered(name: &str, n: u32) -> String {
+    match name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => format!("{stem}-{n}.{extension}"),
+        _ => format!("{name}-{n}"),
+    }
+}
+
+/// Hands the files of one task to their owner as one message, as a local bot's `send_to_user`
+/// with files does (§5.3).
+async fn flush_files(session: &Arc<Session>, files: &mut Vec<IncomingFile>, file_bytes: &mut u64) {
+    if files.is_empty() {
+        return;
+    }
+    *file_bytes = 0;
+    let mut details = Vec::new();
+    for file in files.drain(..) {
+        let path = file.path.to_string_lossy().to_string();
+        match crate::bot::sent_file(session.env.as_ref(), &path).await {
+            Ok(detail) => details.push(detail),
+            Err(why) => session.warn(format!(
+                "cannot hand over a file from the other side: {why}"
+            )),
+        }
+    }
+    if details.is_empty() {
+        return;
+    }
+    let paths: Vec<Value> = details
+        .iter()
+        .filter_map(|detail| detail.get("path").cloned())
+        .map(|path| json!({ "path": path }))
+        .collect();
+    let args = json!({ "type": "attachment", "files": paths });
+    let output = ToolOutput::text("Sent.").with_details(json!({ "files": details }));
+    deliver_call(session, &session.peer_host(), args, output);
+}
+
+/// One `send_to_user` call as a local bot's model would have made it: the message, then the call
+/// as it starts and ends. Downstream code reads these three and needs to know nothing of the
+/// other side (bot-contacts-design §5.3, D-704).
+fn deliver_call(session: &Session, host: &str, args: Value, output: ToolOutput) -> bool {
+    let call_id = session.allocate_id();
+    let message_id = session.allocate_id();
+    let call = finx_llm::ToolCall {
+        id: call_id,
+        name: crate::bot::SEND_TO_USER.to_string(),
+        arguments: JsonText::from_value(&args),
+        arguments_error: None,
+        provider_data: None,
+    };
+    let assistant = Arc::new(AssistantMessage {
+        content: vec![AssistantContent::ToolCall(call.clone())],
+        provider: "a2a".to_string(),
+        api: "a2a".to_string(),
+        model: host.to_string(),
+        response_id: None,
+        usage: Default::default(),
+        stop_reason: StopReason::ToolUse,
+        error: None,
+        ts: finx_llm::now_ms(),
+        duration_ms: None,
+    });
+    let message = Message::Assistant(assistant);
+    session.record_with_id(message_id.clone(), EntryKind::message(message.clone()));
+    session.emit(EventMsg::MessageCompleted {
+        message_id,
+        message,
+        mail: None,
+        skills: Vec::new(),
+    });
+    let tool = crate::bot::send_tool();
+    session.emit(tool_exec::started(session, &call, Some(tool.as_ref())));
+    let result = tool_exec::completed(session, &call, output, None);
+    session.record(EntryKind::message(Message::ToolResult(result)));
+    true
+}
+
+fn deliver_text(session: &Session, host: &str, text: &str) {
+    deliver_call(
+        session,
+        host,
+        json!({ "type": "text", "text": text }),
+        ToolOutput::text("Sent."),
+    );
+}
+
+fn deliver_question(session: &Session, host: &str, text: &str) {
+    deliver_call(
+        session,
+        host,
+        json!({ "type": "question", "text": text }),
+        ToolOutput::text("Sent."),
+    );
 }
 
 fn end_turn(session: &Session, task: &TaskCtx, turn: u32, message: &AssistantMessage) {

@@ -8,7 +8,7 @@ type ReorderOptions = {
   onError(error: unknown): void;
 };
 
-/** Host-owned insertion feedback and drop handling for BetterOffice's slide strip. */
+/** Host-owned insertion feedback and drop handling for NimbleOffice's slide strip. */
 export function installSlideReorder(root: HTMLElement, options: ReorderOptions): () => void {
   const indicator = document.createElement("div");
   indicator.className = "pptx-drop-indicator";

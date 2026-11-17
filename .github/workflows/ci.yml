@@ -28,6 +28,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Access the private engine repository
+        env:
+          NIMBLEOFFICE_TOKEN: ${{ secrets.NIMBLEOFFICE_TOKEN }}
+        run: git config --global url."https://x-access-token:${NIMBLEOFFICE_TOKEN}@github.com/Eliseowzy/nimbleoffice".insteadOf "https://github.com/Eliseowzy/nimbleoffice"
       - name: Activate pinned Rust toolchain
         run: rustc --version
       - uses: Swatinem/rust-cache@v2

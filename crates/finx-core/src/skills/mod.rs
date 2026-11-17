@@ -566,6 +566,7 @@ fn load(path: PathBuf, header: Result<frontmatter::Header, String>, scope: Skill
         scope,
         model_invocable: true,
         argument_hint: None,
+        suggest_for: Vec::new(),
         state: SkillState::Active,
         detail: None,
         notes: Vec::new(),
@@ -607,6 +608,7 @@ fn load(path: PathBuf, header: Result<frontmatter::Header, String>, scope: Skill
     };
     entry.model_invocable = !header.disable_model_invocation;
     entry.argument_hint = header.argument_hint.as_deref().map(one_line).filter(|hint| !hint.is_empty());
+    entry.suggest_for = header.suggest_for;
     if header.allowed_tools {
         entry.notes.push("allowed-tools is not supported and was ignored".into());
     }

@@ -10,14 +10,16 @@ use std::sync::atomic::Ordering;
 use crate::config::BrowserSettings;
 use crate::config::Config;
 use crate::config::DesktopSettings;
+use crate::config::SpatialSettings;
 use crate::config::WebSearchSettings;
 
-/// `[browser]`, `[desktop]` and `[web_search]`, as one value.
+/// `[browser]`, `[desktop]`, `[web_search]` and `[spatial]`, as one value.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemSettings {
     pub browser: BrowserSettings,
     pub desktop: DesktopSettings,
     pub web_search: WebSearchSettings,
+    pub spatial: SpatialSettings,
 }
 
 impl SystemSettings {
@@ -26,6 +28,7 @@ impl SystemSettings {
             browser: config.browser.clone(),
             desktop: config.desktop.clone(),
             web_search: config.web_search.clone(),
+            spatial: config.spatial.clone(),
         }
     }
 }

@@ -149,7 +149,7 @@ async fn exec_follows_a_skill_from_the_catalog() {
     assert!(!text.contains("Shadowed copy.") && !text.contains("<skill name=\"deploy\""));
     let names: Vec<&str> = logged["skills"].as_array().unwrap().iter().filter_map(|s| s["name"].as_str()).collect();
     // The built-in skill is the user's to invoke, never in the catalog.
-    assert_eq!(names, vec!["lint", "gen-report", "skill-creator"]);
+    assert_eq!(names, vec!["lint", "gen-report", "medical-imaging", "skill-creator"]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -208,13 +208,14 @@ async fn the_skills_command_lists_layers_shadows_and_problems() {
             row("deploy", "project", "disabled"),
             row("broken", "user", "invalid"),
             row("gen-report", "user", "active"),
+            row("medical-imaging", "system", "active"),
             row("skill-creator", "system", "active"),
         ]
     );
     assert_eq!(report["skills"][1]["default_enabled"], false, "the project's .claude is off by default");
     assert_eq!(report["skills"][0]["default_enabled"], true);
     assert_eq!(report["not_read"], json!([env.user_home().join(".claude/skills")]));
-    assert_eq!(report["catalog"]["listed"], 2);
+    assert_eq!(report["catalog"]["listed"], 3);
     assert!(report["catalog"]["tokens"].as_u64().unwrap() > 0);
     assert_eq!(report["catalog"]["budget"], 4000, "2% of the mock model's 200,000-token window");
     assert_eq!(report["warnings"].as_array().unwrap().len(), 1);
@@ -226,7 +227,7 @@ async fn the_skills_command_lists_layers_shadows_and_problems() {
     assert!(text.contains(".agents/skills/lint/SKILL.md"), "{text}");
     assert!(text.contains("gen-report/SKILL.md"), "{text}");
     assert!(text.contains("2 more shadowed, disabled or broken"), "{text}");
-    assert!(text.contains("catalog: 2 skills"), "{text}");
+    assert!(text.contains("catalog: 3 skills"), "{text}");
     assert!(text.contains("not read: ~/.claude/skills (skills.other_apps is off)"), "{text}");
     let output = env.finx_in(&work, &["skills", "--all"]).output().await.unwrap();
     let text = String::from_utf8_lossy(&output.stdout);
@@ -246,7 +247,7 @@ async fn the_skills_command_lists_layers_shadows_and_problems() {
     assert!(config.contains("opt_in = [") && config.contains(".claude/skills/deploy"), "{config}");
     let output = env.finx_in(&work, &["skills"]).output().await.unwrap();
     let text = String::from_utf8_lossy(&output.stdout);
-    assert!(text.contains("project  deploy") && text.contains("catalog: 3 skills"), "{text}");
+    assert!(text.contains("project  deploy") && text.contains("catalog: 4 skills"), "{text}");
     let output = env.finx_in(&work, &["skills", "disable", ".claude/skills/deploy"]).output().await.unwrap();
     assert_eq!(output.status.code(), Some(0));
     let config = std::fs::read_to_string(env.home.path().join("config.toml")).unwrap();
@@ -259,7 +260,7 @@ async fn the_skills_command_lists_layers_shadows_and_problems() {
 
     let output = env.finx_in(&work, &["status", "--json"]).output().await.unwrap();
     let status: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(status["skills"]["active"], 3);
+    assert_eq!(status["skills"]["active"], 4);
     let output = env.finx_in(&work, &["doctor", "--json"]).output().await.unwrap();
     let doctor: Value = serde_json::from_slice(&output.stdout).unwrap();
     let check = doctor["checks"].as_array().unwrap().iter().find(|c| c["name"] == "skills").unwrap().clone();

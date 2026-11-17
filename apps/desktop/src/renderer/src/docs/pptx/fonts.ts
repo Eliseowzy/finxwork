@@ -43,7 +43,7 @@ let bundledLoader: BundledLoader = async (file) => {
 /** Tests swap the bundled font source for a fake. */
 export function setBundledFontLoader(next: BundledLoader) { bundledLoader = next; faceCache.clear(); }
 
-/** The BetterOffice engine refuses faces above this size (`invalid-payload`; raised from 32 MiB in our patch). */
+/** The NimbleOffice engine refuses faces above this size (`invalid-payload`; raised from 32 MiB in our patch). */
 export const MAX_FACE_BYTES = 64 * 1024 * 1024;
 
 interface LocalFont { family: string; fullName: string; style: string; postscriptName: string; blob(): Promise<Blob> }

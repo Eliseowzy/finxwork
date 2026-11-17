@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { handedTabBlock, handedTabsBlock, listView, mergeBots, mergeSessions, RpcError, RpcClient, sortBots, type ListSession, type ListView } from "@finx/client";
 import { draftThinking } from "./format";
-import type { BotSummary, Methods, ModelsListResult, Op, PermissionMode, ThinkingLevel, UserContent } from "@finx/protocol";
+import type { BotSummary, Methods, ModelsListResult, Op, PermissionMode, ServerCapabilities, ThinkingLevel, UserContent } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
 import { i18n, language } from "../../shared/i18n";
 import { modelsIn } from "../../shared/model-names";
@@ -111,6 +111,8 @@ export type Store = UI & {
   status: KernelStatusView | null;
   /** finx's name and version as it introduced itself. */
   server: string;
+  /** What finx says it can do, for features that are turned off in its configuration. */
+  capabilities: ServerCapabilities | null;
   /**
    * The lists as they are now, for an action at the moment it runs. What draws from them reads them
    * with `useLists`, so it renders again when they change and only then.
@@ -216,6 +218,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const [kernel, setKernel] = useState<KernelState>("connecting");
   const [status, setStatus] = useState<KernelStatusView | null>(null);
   const [server, setServer] = useState("");
+  const [capabilities, setCapabilities] = useState<ServerCapabilities | null>(null);
   const [lists] = useState(() => new ListStore());
   const [listedModels, setModels] = useState<ModelsListResult>(noModels);
   const models = useMemo(() => modelsIn(listedModels, language()), [listedModels]);
@@ -280,7 +283,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
     if (!serviceReady || client.current) return;
     let stop = false;
     connect()
-      .then(({ rpc: c, server }) => {
+      .then(({ rpc: c, server, capabilities }) => {
         if (stop) return;
         client.current = c;
         c.onClose(() => {
@@ -292,6 +295,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
           setTimeout(() => setAttempt((n) => n + 1), 400);
         });
         setServer(server);
+        setCapabilities(capabilities);
         setRpc(c);
       })
       .catch(() => {
@@ -423,8 +427,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   );
 
   const store = useMemo<Store>(
-    () => ({ ...ui, rpc, kernel: kernelState, status, server, lists: lists.get, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start }),
-    [ui, rpc, kernelState, status, server, lists, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start],
+    () => ({ ...ui, rpc, kernel: kernelState, status, server, capabilities, lists: lists.get, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start }),
+    [ui, rpc, kernelState, status, server, capabilities, lists, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, giveOffered, start],
   );
   return (
     <ListsCtx.Provider value={lists}>

@@ -281,3 +281,11 @@ button.wb-h{cursor:pointer}
 .rtn-res{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--l2)}
 .rtn-res.warn{color:var(--orange)}
 .rtn .frow>.fv .link{margin-left:8px}
+
+/* Another subject's bot in its settings: description, where it lives, what it can do. */
+.bs-desc{margin:0;padding:11px 14px;font-size:13px;line-height:1.55;color:var(--l2)}
+.bs-tag{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--sep);color:var(--l2)}
+.frow.bs-skill{align-items:flex-start;padding:10px 14px}
+.bs-skill-n{font-weight:600;color:var(--l1)}
+.bs-skill .fdesc{font-size:12px;line-height:1.5;margin-top:3px}
+.bpn .bs-ext>.fgroup+.fgroup,.bpn .bs-ext>.fgroup+.fhead{margin-top:14px}

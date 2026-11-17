@@ -552,7 +552,11 @@ pub fn credential_refs(text: &str) -> BTreeSet<String> {
 /// A name `credentials/set` takes: `mcp.`, `mcp-oauth.` or `web-search.`, then 1-96 letters,
 /// digits, `.`, `_` or `-`.
 pub fn valid_credential_name(name: &str) -> bool {
-    let rest = name.strip_prefix("mcp.").or_else(|| name.strip_prefix("mcp-oauth.")).or_else(|| name.strip_prefix(crate::web_search::CREDENTIAL_PREFIX));
+    let rest = name
+        .strip_prefix("mcp.")
+        .or_else(|| name.strip_prefix("mcp-oauth."))
+        .or_else(|| name.strip_prefix("bot."))
+        .or_else(|| name.strip_prefix(crate::web_search::CREDENTIAL_PREFIX));
     rest.is_some_and(|rest| {
         !rest.is_empty() && rest.len() <= 96 && rest.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     })

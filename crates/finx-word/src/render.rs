@@ -1,8 +1,8 @@
 //! Pages of saved `.docx` bytes, drawn with the machine's own fonts (finx-slide's
 //! `SystemFonts`, the faces PowerPoint decks use too).
 
-use betteroffice_docx::fonts::FontSource;
-use betteroffice_docx::{Document, OpenOptions, PngTarget, RenderOptions};
+use nimbleoffice_docx::fonts::FontSource;
+use nimbleoffice_docx::{Document, OpenOptions, PngTarget, RenderOptions};
 use finx_slide::SystemFonts;
 
 use crate::{Result, WordError};
@@ -65,7 +65,7 @@ fn draw(document: &Document, ordinal: u32, scale: f32) -> Result<Option<Vec<u8>>
         &RenderOptions { scale },
     ) {
         Ok(page) => Ok(Some(page.bytes)),
-        Err(betteroffice_docx::Error::Render(message)) if message.contains("out of range") => {
+        Err(nimbleoffice_docx::Error::Render(message)) if message.contains("out of range") => {
             Ok(None)
         }
         Err(e) => Err(e.into()),
@@ -109,14 +109,14 @@ pub fn export_pdf(docx: &[u8], request: &PdfRequest) -> Result<PdfExported> {
         }
     }
     let export = document
-        .render_pdf(&betteroffice_docx::PdfExportOptions {
+        .render_pdf(&nimbleoffice_docx::PdfExportOptions {
             pages,
             markup: request.markup,
             title: request.title.clone(),
             ..Default::default()
         })
         .map_err(|e| match e {
-            betteroffice_docx::Error::Render(message) => WordError::Engine(message),
+            nimbleoffice_docx::Error::Render(message) => WordError::Engine(message),
             other => other.into(),
         })?;
     Ok(PdfExported {

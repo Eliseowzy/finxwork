@@ -344,6 +344,7 @@ async fn start_kernel(rt: &setup::Runtime, model: String, run: &RunArgs) -> anyh
         trusted: rt.trusted,
         interactive_approvals: true,
         bot: None,
+        peer: None,
     };
     Ok(Kernel::start(options, deps).await?)
 }
@@ -361,6 +362,7 @@ async fn resume_kernel(rt: &setup::Runtime, path: &Path, run: &RunArgs) -> anyho
         trusted: rt.trusted,
         interactive_approvals: true,
         bot_name: None,
+        peer: None,
     };
     Ok(Kernel::resume(options, deps).await?)
 }

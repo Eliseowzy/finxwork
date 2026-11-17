@@ -31,7 +31,7 @@
 
 桌面保存先排空输入，再比较实际序列化字节与已保存版本。即使 UI 的变更通知稍晚到达，也不会漏掉输入后立即保存的内容；迟到的通知不会导致重复写盘。
 
-引擎的 JS 包和 WASM 都从我们的 fork 一起构建，版本号带 fork 提交号，修复直接提交在 fork 源码里，不再给发行包打补丁。构建、发布和本地迭代见 [betteroffice-fork.md](betteroffice-fork.md)。
+引擎的 JS 包和 WASM 都从我们的 fork 一起构建，版本号带 fork 提交号，修复直接提交在 fork 源码里，不再给发行包打补丁。构建、发布和本地迭代见 [nimbleoffice-fork.md](nimbleoffice-fork.md)。
 
 ## 交叉验证与边界
 
@@ -53,7 +53,7 @@ PowerPoint 已正常打开回归测试保存的完整 PPTX，无修复提示；�
 | 文字布局端到端 | `pnpm --dir apps/desktop e2e:pptx-text` | 14 项全部通过（场景见上表） |
 | 生产构建 | `FINXWORK_DESKTOP_OUT=<out> pnpm --dir apps/desktop build` | 成功，产物约 28 MB |
 | 类型检查 | `pnpm --dir apps/desktop typecheck` | 通过，无诊断输出 |
-| 引擎底层测试 | `cargo test -p betteroffice-pptx-edit -p betteroffice-pptx-parse --offline` | 697 通过，0 失败 |
+| 引擎底层测试 | `cargo test -p nimbleoffice-pptx-edit -p nimbleoffice-pptx-parse --offline` | 697 通过，0 失败 |
 | 工作区校验 | `git diff --check` | 无空白错误 |
 
 此前记录的两项失败，本次确认属于运行环境限制，不是产品缺陷：

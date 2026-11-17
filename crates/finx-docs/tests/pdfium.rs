@@ -112,7 +112,7 @@ async fn a_written_pdf_reads_finds_resolves_and_renders() {
     assert!(hits[0].context.contains("services segment"), "{}", hits[0].context);
 
     // A selection over the first body line, as the page would send it.
-    let (anchor, _, boxes) = store.resolve(&doc, 1, &[Rect { x0: 45.0, y0: 655.0, x1: 400.0, y1: 672.0 }], None).await.unwrap();
+    let (anchor, _, boxes, _) = store.resolve(&doc, 1, &[Rect { x0: 45.0, y0: 655.0, x1: 400.0, y1: 672.0 }], None).await.unwrap();
     match &anchor {
         Anchor::Text { text, block, quads, .. } => {
             assert_eq!(text, "Revenue grew 12.5% to 3.2 billion,");
@@ -124,9 +124,15 @@ async fn a_written_pdf_reads_finds_resolves_and_renders() {
     assert_eq!(boxes.len(), "Revenuegrew12.5%to3.2billion,".len());
 
     // A region drawn over the heading: a region anchor, with the text inside.
-    let (anchor, text, _) = store.resolve(&doc, 1, &[], Some(Rect { x0: 40.0, y0: 700.0, x1: 400.0, y1: 760.0 })).await.unwrap();
+    let (anchor, text, _, block) = store.resolve(&doc, 1, &[], Some(Rect { x0: 40.0, y0: 700.0, x1: 400.0, y1: 760.0 })).await.unwrap();
     assert!(matches!(anchor, Anchor::Region { page: 1, .. }));
     assert_eq!(text, "Annual Report");
+    // It names its block, as a selection does, and the block leads back to that text.
+    let block = block.expect("a region over text has a block");
+    match store.locate(&doc, &block).await.unwrap() {
+        Anchor::Text { text, .. } => assert!(text.starts_with("Annual Report"), "{text}"),
+        other => panic!("{other:?}"),
+    }
 
     // A citation's targets.
     match store.locate(&doc, "p1.b1").await.unwrap() {
@@ -276,7 +282,7 @@ async fn a_page_turned_on_its_side_reads_in_lines_and_renders_its_regions() {
     }
 
     // A selection over the first body line, in user space.
-    let (anchor, text, _) = store.resolve(&doc, 1, &[Rect { x0: 205.0, y0: 80.0, x1: 224.0, y1: 600.0 }], None).await.unwrap();
+    let (anchor, text, _, _) = store.resolve(&doc, 1, &[Rect { x0: 205.0, y0: 80.0, x1: 224.0, y1: 600.0 }], None).await.unwrap();
     assert_eq!(text, "Revenue grew 12.5% to 3.2 billion,");
     assert!(matches!(anchor, Anchor::Text { .. }));
 

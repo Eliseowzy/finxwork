@@ -1,0 +1,63 @@
+{
+  "version": "0.5.1-finx.g65549f0e",
+  "commit": "65549f0e05e5edf91bd0edc85de94d55345d93c7",
+  "dirty": false,
+  "packages": [
+    {
+      "name": "@nimbleoffice/docx",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-docx-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 13894118,
+      "sha256": "bc6525275b626ca73d0d7aff79f697083e967b8410250990933794b22c0f54db"
+    },
+    {
+      "name": "@nimbleoffice/docx-i18n",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-docx-i18n-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 344727,
+      "sha256": "f4ca6bd70d8705b9827a980712ec619db5170a5b9311fe81545d64822728e040"
+    },
+    {
+      "name": "@nimbleoffice/docx-react",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-docx-react-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 397222,
+      "sha256": "218124921246921fb7dbde06a83bcfa4ee5a3f17b31374d9187c4df3b5270841"
+    },
+    {
+      "name": "@nimbleoffice/fonts",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-fonts-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 217857,
+      "sha256": "40f9babf16caec97b481aa6d341f1eb64ac5f24eb81f39aff86e531011fefe55"
+    },
+    {
+      "name": "@nimbleoffice/fonts-latin",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-fonts-latin-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 4611006,
+      "sha256": "3b0596af3693ca5297146a3ff35c20664ddb7404422efc958ca77ada34bcc9d1"
+    },
+    {
+      "name": "@nimbleoffice/pptx",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-pptx-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 5522435,
+      "sha256": "17e39ce4fe189e65b24d757f5c9541c7424d87e4be5fdd0d001f548b645e2097"
+    },
+    {
+      "name": "@nimbleoffice/pptx-i18n",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-pptx-i18n-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 116540,
+      "sha256": "db30560cab831ccea64b05b39e31310e411f78dc3c4f44b2dff77239b9737b65"
+    },
+    {
+      "name": "@nimbleoffice/pptx-react",
+      "version": "0.5.1-finx.g65549f0e",
+      "file": "nimbleoffice-pptx-react-0.5.1-finx.g65549f0e.tgz",
+      "bytes": 164892,
+      "sha256": "f683b98f64e3289ae22b6863a7ba8d362fc77cc15a24544a7d0103a7d6006b17"
+    }
+  ]
+}

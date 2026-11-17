@@ -1,5 +1,5 @@
 import { RpcClient, type Transport } from "@finx/client";
-import { PROTOCOL_VERSION } from "@finx/protocol";
+import { PROTOCOL_VERSION, type ServerCapabilities } from "@finx/protocol";
 
 // The page's connection to finx (desktop-design §3.2). In the app it is the
 // MessagePort the main process hands out, carrying NDJSON text as finx wrote
@@ -27,7 +27,7 @@ function portTransport(): Promise<Transport> {
 }
 
 /** A connection to finx, initialized. */
-export async function connect(): Promise<{ rpc: RpcClient; server: string }> {
+export async function connect(): Promise<{ rpc: RpcClient; server: string; capabilities: ServerCapabilities }> {
   // A page in a browser takes a heavy owner's lists with ?stress=bots=1200,sessions=1500 (stress tests).
   const mock = window.finx ? null : await import("@finx/client/mock");
   const transport = mock ? mock.mockTransport(new mock.MockServer({ stress: mock.parseStress(new URLSearchParams(location.search).get("stress")) })) : await portTransport();
@@ -36,5 +36,5 @@ export async function connect(): Promise<{ rpc: RpcClient; server: string }> {
     protocol_version: PROTOCOL_VERSION,
     client_info: { name: "finxwork", version: window.finx?.version },
   });
-  return { rpc, server: `${init.server_info.name} ${init.server_info.version ?? ""}`.trim() };
+  return { rpc, server: `${init.server_info.name} ${init.server_info.version ?? ""}`.trim(), capabilities: init.capabilities };
 }

@@ -5,7 +5,7 @@ import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput,
 import { languages } from "@codemirror/language-data";
 import { highlightSelectionMatches, openSearchPanel, searchKeymap } from "@codemirror/search";
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, type Extension } from "@codemirror/state";
-import { crosshairCursor, Decoration, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, keymap, lineNumbers, rectangularSelection, type DecorationSet } from "@codemirror/view";
+import { crosshairCursor, Decoration, showTooltip, type Tooltip, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, keymap, lineNumbers, rectangularSelection, type DecorationSet } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { i18n } from "../../../shared/i18n";
 import type { Tab } from "./state";
@@ -50,6 +50,9 @@ const look = EditorView.theme({
   ".cm-target": { backgroundColor: "var(--target)" },
   ".cm-panels": { backgroundColor: "var(--win2)", color: "var(--l1)", borderColor: "var(--sep)" },
   ".cm-panels-bottom": { borderTop: ".5px solid var(--sep)" },
+  ".cm-tooltip:has(> .cm-quote)": { border: "none", backgroundColor: "transparent" },
+  ".cm-quote": { font: "500 12px var(--font, system-ui)", padding: "3px 9px", borderRadius: "var(--r-xs)", border: ".5px solid var(--sep)", backgroundColor: "var(--win2)", color: "var(--l1)", boxShadow: "var(--btn-sh)", cursor: "pointer", whiteSpace: "nowrap" },
+  ".cm-quote:hover": { backgroundColor: "var(--fill2)" },
   ".cm-searchMatch": { backgroundColor: "var(--target)" },
   ".cm-searchMatch-selected": { backgroundColor: "var(--sel)" },
   ".cm-textfield": { backgroundColor: "var(--field)", border: ".5px solid var(--field-bd)", borderRadius: "var(--r-xs)", color: "var(--l1)" },
@@ -104,12 +107,60 @@ const marked = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+/** What adds the selection to the conversation: the file and the lines it spans, as they read now. */
+export type Quote = (from: number, to: number, text: string) => void;
+
+/** Adds the selection, whole lines named, to the conversation; nothing when nothing is selected. */
+function quoteSelection(view: EditorView, quote: Quote): boolean {
+  const r = view.state.selection.main;
+  if (r.empty) return false;
+  const doc = view.state.doc;
+  const from = doc.lineAt(r.from).number;
+  // A selection ending at a line's start does not take that line in.
+  const end = doc.lineAt(r.to);
+  const to = end.from === r.to && end.number > from ? end.number - 1 : end.number;
+  quote(from, to, view.state.sliceDoc(r.from, r.to));
+  view.dispatch({ selection: EditorSelection.cursor(r.head) });
+  return true;
+}
+
+/** A button by the selection that adds it to the conversation. */
+function quoteButton(quote: () => Quote | null) {
+  return StateField.define<readonly Tooltip[]>({
+    create: () => [],
+    update(tips, tr) {
+      if (!tr.docChanged && !tr.selection) return tips;
+      const r = tr.state.selection.main;
+      if (r.empty || !quote()) return [];
+      return [{
+        pos: r.head,
+        above: r.head <= r.anchor,
+        strictSide: false,
+        arrow: false,
+        create: (view) => {
+          const dom = document.createElement("button");
+          dom.className = "cm-quote";
+          dom.textContent = i18n.t("session:doc.addToChat");
+          // Not taking the focus (and the selection) from the editor.
+          dom.onmousedown = (e) => e.preventDefault();
+          dom.onclick = () => {
+            const q = quote();
+            if (q) quoteSelection(view, q);
+          };
+          return { dom };
+        },
+      }];
+    },
+    provide: (f) => showTooltip.computeN([f], (s) => s.field(f)),
+  });
+}
+
 const language = new Compartment();
 const writable = new Compartment();
 const wrapping = new Compartment();
 
 
-function stateOf(tab: Tab, save: () => void, editable: boolean): EditorState {
+function stateOf(tab: Tab, save: () => void, editable: boolean, quote: () => Quote | null): EditorState {
   const text = tab.doc?.text ?? tab.read?.text ?? "";
   const extensions: Extension[] = [
     lineNumbers(),
@@ -128,7 +179,7 @@ function stateOf(tab: Tab, save: () => void, editable: boolean): EditorState {
     crosshairCursor(),
     highlightActiveLine(),
     highlightSelectionMatches(),
-    keymap.of([{ key: "Mod-s", preventDefault: true, run: () => (save(), true) }, ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
+    keymap.of([{ key: "Mod-s", preventDefault: true, run: () => (save(), true) }, { key: "Mod-l", preventDefault: true, run: (v) => { const q = quote(); return !!q && quoteSelection(v, q); } }, ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
     // A file of \r\n lines keeps them when it is saved.
     text.includes("\r\n") ? EditorState.lineSeparator.of("\r\n") : [],
     language.of([]),
@@ -136,6 +187,7 @@ function stateOf(tab: Tab, save: () => void, editable: boolean): EditorState {
     // Long lines wrap in prose (Markdown, plain text), not in code.
     wrapping.of(wraps(tab.name) ? EditorView.lineWrapping : []),
     marked,
+    quoteButton(quote),
     look,
     phrases(),
     EditorView.updateListener.of((u) => {
@@ -171,7 +223,10 @@ function goTo(view: EditorView, line: number, endLine?: number) {
 /** The target each tab was last moved to. */
 const went = new WeakMap<Tab, number>();
 
-export default function Editor({ tab, editable, onSave }: { tab: Tab; editable: boolean; onSave: (tab: Tab) => void }) {
+export default function Editor({ tab, editable, onSave, onQuote }: { tab: Tab; editable: boolean; onSave: (tab: Tab) => void; onQuote?: Quote }) {
+  // The tabs' states outlive this view: they ask for the latest.
+  const quote = useRef(onQuote);
+  quote.current = onQuote;
   const box = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const shown = useRef<Tab | null>(null);
@@ -206,7 +261,7 @@ export default function Editor({ tab, editable, onSave }: { tab: Tab; editable: 
       before.editor = v.state;
       before.scroll = v.scrollDOM.scrollTop;
     }
-    v.setState((tab.editor as EditorState | null) ?? stateOf(tab, () => onSave(tab), editable));
+    v.setState((tab.editor as EditorState | null) ?? stateOf(tab, () => onSave(tab), editable, () => quote.current ?? null));
     shown.current = tab;
     replaced.current = tab.doc?.replaced ?? 0;
     v.scrollDOM.scrollTop = tab.scroll;

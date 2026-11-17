@@ -18,6 +18,13 @@ export const useScope = () => useContext(ScopeContext);
  */
 export const LocalImages = createContext(false);
 
+/**
+ * Inside another subject's bot (bot-contacts-design §8, DD-185): a file it points at is only a
+ * tag when it is in that bot's own folder. Anything else on this computer is its words, not ours
+ * to show.
+ */
+export const OwnFilesOnly = createContext(false);
+
 /** Inside the block a reply is still writing: nothing in it acts yet (§3.5). */
 export const DraftContext = createContext(false);
 

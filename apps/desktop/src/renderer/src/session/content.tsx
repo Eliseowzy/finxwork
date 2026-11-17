@@ -3,12 +3,11 @@ import { useTranslation } from "react-i18next";
 import { fileOfCode, fileOfLink, hiddenChars, loopback, shellLanguage, shortURL, webOf, webOfCode, type FileRef as Ref } from "@finx/client";
 import { inSession, showFile, showFolder } from "../files/state";
 import { Icon } from "../icons";
-import { useFilePreview } from "../preview/context";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
 import { Code } from "./Code";
 import { codeMenu, copyText, editorList, fileMenu, linkMenu, openLink, openRef, opensAsPage, otherView, showPage, terminalWith } from "./contentMenus";
-import { DraftContext, useFileInfo, useScope, type Scope } from "./scope";
+import { DraftContext, OwnFilesOnly, useFileInfo, useScope, type Scope } from "./scope";
 
 // What a conversation's content does (content-actions-design): the files and web pages a reply
 // points at, and its code blocks. Read from the Markdown as it renders; nothing here acts
@@ -27,9 +26,11 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const { t } = useTranslation("session");
   const st = useStore();
   const info = useFileInfo(scope.cwd, target.path);
-  const preview = useFilePreview();
+  const own = useContext(OwnFilesOnly);
   useEffect(() => void editorList(), []);
   if (code !== undefined && !info?.kind) return <code>{code}</code>;
+  // Another subject's bot names a file: only its own folder means a file of ours (§8).
+  if (own && !inSession(scope.cwd, info?.path ?? target.path)) return <span>{children ?? target.path}</span>;
   const missing = info?.kind === null;
   const folder = info ? info.kind === "folder" : /[\\/]$/.test(target.path);
   const where = info ? (info.rel ?? info.path) : target.path;
@@ -40,8 +41,6 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const open = () => {
     if (!info) return;
     if (info.kind === null) return void openRef(st, info, target.line);
-    // Over the window where the page offers it for this file (DD-159, DD-161); a reference to lines is to the source, in the panel.
-    if (preview?.takes(info.path) && info.kind === "file" && target.line === undefined) return preview.open(info.path);
     scope.leave?.();
     if (info.kind === "folder") return inSession(scope.cwd, info.path) ? showFolder(st, scope.session, scope.cwd, info.path) : window.finx?.openFolder(info.path);
     if (page) return showPage(st, scope.session, info.path);

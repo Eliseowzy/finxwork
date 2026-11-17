@@ -185,6 +185,8 @@ pub struct Doc {
     history: Mutex<History>,
     /// One edit at a time: revisions stay in order.
     editing: tokio::sync::Mutex<()>,
+    /// A three-dimensional document's volume, meshes and layers.
+    spatial: Option<Arc<crate::spatial::SpatialDoc>>,
 }
 
 impl Doc {
@@ -209,11 +211,19 @@ impl Doc {
         self.kind.is_sheet()
     }
 
+    /// A three-dimensional document's state.
+    pub fn spatial(&self) -> Option<&Arc<crate::spatial::SpatialDoc>> {
+        self.spatial.as_ref()
+    }
+
     fn dirty(&self) -> bool {
         self.is_sheet() && self.history.lock().dirty()
     }
 
     fn check_page(&self, page: u32) -> Result<(), DocError> {
+        if self.spatial.is_some() {
+            return Ok(());
+        }
         let pages = self.pages();
         if page == 0 || page > pages {
             return Err(DocError::NoPage { page, pages });
@@ -231,9 +241,14 @@ struct Meta {
 
 /// Told what a document is after it changed.
 type Listener = Box<dyn Fn(&DocInfo) + Send + Sync>;
+/// Told the agent turned a session's 3D view (`spatial/view`).
+type ViewListener = Box<dyn Fn(&finx_protocol::doc::SpatialViewParams) + Send + Sync>;
 
 pub struct DocStore {
     listeners: Mutex<Vec<Listener>>,
+    view_listeners: Mutex<Vec<ViewListener>>,
+    /// Three-dimensional documents are named by their content: the paths they were opened from.
+    spatial_paths: Mutex<HashMap<PathBuf, String>>,
     root: PathBuf,
     worker: Worker,
     docs: Mutex<HashMap<String, Arc<Doc>>>,
@@ -252,7 +267,7 @@ impl DocStore {
     /// dropped: no page holds them any more.
     pub fn new(root: PathBuf, launcher: Launcher) -> Self {
         let _ = std::fs::remove_dir_all(root.join(".tokens"));
-        Self { listeners: Mutex::default(), root, worker: Worker::new(launcher), docs: Mutex::default(), opening: tokio::sync::Mutex::new(()) }
+        Self { listeners: Mutex::default(), view_listeners: Mutex::default(), spatial_paths: Mutex::default(), root, worker: Worker::new(launcher), docs: Mutex::default(), opening: tokio::sync::Mutex::new(()) }
     }
 
     /// Called after every change to a document, from any session or tool.
@@ -278,7 +293,8 @@ impl DocStore {
     /// The open document of a file, if any.
     pub fn by_path(&self, path: &Path) -> Option<Arc<Doc>> {
         let canonical = std::fs::canonicalize(path).ok()?;
-        self.docs.lock().get(&doc_id(&canonical)).cloned()
+        let id = self.spatial_paths.lock().get(&canonical).cloned().unwrap_or_else(|| doc_id(&canonical));
+        self.docs.lock().get(&id).cloned()
     }
 
     /// The file a document id was opened from, as its directory remembers it.
@@ -299,6 +315,9 @@ impl DocStore {
     pub async fn open(&self, path: &Path, password: Option<String>, session: &str) -> Result<(Arc<Doc>, String), DocError> {
         let _one = self.opening.lock().await;
         let canonical = std::fs::canonicalize(path).map_err(|_| DocError::NotFound(path.display().to_string()))?;
+        if let Some(source) = crate::spatial::detect(&canonical) {
+            return self.open_spatial(&canonical, source, session).await;
+        }
         let meta = std::fs::metadata(&canonical)?;
         if !meta.is_file() {
             return Err(DocError::NotFound(path.display().to_string()));
@@ -370,6 +389,7 @@ impl DocStore {
             scanned: false,
             encrypted: false,
             sheets: Vec::new(),
+            spatial: None,
         };
         let mut history = History::default();
         let (handle, password) = if kind.is_sheet() {
@@ -427,6 +447,7 @@ impl DocStore {
             views: Mutex::default(),
             history: Mutex::new(history),
             editing: tokio::sync::Mutex::new(()),
+            spatial: None,
         })
     }
 
@@ -459,6 +480,9 @@ impl DocStore {
         }
         if left == 0 {
             self.docs.lock().remove(doc_id);
+            if doc.spatial.is_some() {
+                return Ok(());
+            }
             self.worker.close(doc.handle).await;
         }
         Ok(())
@@ -544,21 +568,25 @@ impl DocStore {
         Ok(Anchor::Text { page, quads: taken.lines, text: found.text.clone(), block: Some(found.id.clone()) })
     }
 
-    /// Reads the text at a selection or in a region of a page (`doc/resolve`, §9.4.1).
-    pub async fn resolve(&self, doc: &Doc, page: u32, quads: &[Rect], rect: Option<Rect>) -> Result<(Anchor, String, Vec<Rect>), DocError> {
+    /// Reads the text at a selection or in a region of a page (`doc/resolve`, §9.4.1), and the
+    /// block it starts in: a region has one too, so a citation of it can point there.
+    pub async fn resolve(&self, doc: &Doc, page: u32, quads: &[Rect], rect: Option<Rect>) -> Result<(Anchor, String, Vec<Rect>, Option<String>), DocError> {
         let text = self.page(doc, page).await?;
         let rects: Vec<Rect> = rect.into_iter().chain(quads.iter().copied()).collect();
         let taken = layout::take(&text.chars, &rects);
         let block = taken.first.and_then(|i| layout::block_at(&text.blocks, &text.chars, i)).map(|b| b.id.clone());
         let anchor = match rect {
             Some(rect) if quads.is_empty() => Anchor::Region { page, rect },
-            _ => Anchor::Text { page, quads: taken.lines, text: taken.text.clone(), block },
+            _ => Anchor::Text { page, quads: taken.lines, text: taken.text.clone(), block: block.clone() },
         };
-        Ok((anchor, taken.text, taken.boxes))
+        Ok((anchor, taken.text, taken.boxes, block))
     }
 
     /// A page, or the part of it an anchor covers, as PNG.
     pub async fn render(&self, doc: &Doc, anchor: &Anchor, dpi: u32) -> Result<Rendered, DocError> {
+        if doc.spatial.is_some() || anchor.is_spatial() {
+            return Err(DocError::NotEditable("a three-dimensional document is shown with spatial_slice, not as pages".into()));
+        }
         let page = anchor.page();
         doc.check_page(page)?;
         let clip = match anchor {
@@ -566,6 +594,7 @@ impl DocStore {
             Anchor::Region { rect, .. } => Some(*rect),
             // The lines, with a margin around them.
             Anchor::Text { quads, .. } => quads.iter().copied().reduce(|a, b| a.union(&b)).map(|r| Rect { x0: r.x0 - 24.0, y0: r.y0 - 24.0, x1: r.x1 + 24.0, y1: r.y1 + 24.0 }),
+            _ => None,
         };
         Ok(self.worker.request(Request::Render { handle: doc.handle, page, clip, dpi, max_side: MAX_RENDER_SIDE }).await?)
     }
@@ -677,6 +706,10 @@ impl DocStore {
     /// inserted or deleted, the change made again or the copy before it put back), and the
     /// history moved.
     async fn step(&self, doc: &Doc, step: Step) -> Result<(u64, Impact, bool), DocError> {
+        if doc.spatial.is_some() {
+            let revision = self.spatial_step(doc, step).await?;
+            return Ok((revision, Impact { converged: true, ..Default::default() }, false));
+        }
         Self::sheet(doc)?;
         let _one = doc.editing.lock().await;
         let revision = {
@@ -834,7 +867,7 @@ impl DocStore {
 }
 
 #[derive(Clone, Copy)]
-enum Step {
+pub(crate) enum Step {
     Undo,
     Redo,
 }
@@ -856,7 +889,7 @@ fn worker_error(e: WorkerError) -> DocError {
     }
 }
 
-fn now_ms() -> u128 {
+pub(crate) fn now_ms() -> u128 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
 }
 
@@ -886,6 +919,182 @@ fn context(text: &str, query: &str) -> String {
         out.push('…');
     }
     out
+}
+
+// ---- three-dimensional documents (spatial-design §3, §13) ----
+
+impl DocStore {
+    /// `$FINX_HOME/cache/spatial`, beside the documents' root.
+    pub fn spatial_cache_root(&self) -> PathBuf {
+        self.root.parent().unwrap_or(&self.root).join("cache").join("spatial")
+    }
+
+    /// Called when the agent turns a session's 3D view.
+    pub fn on_spatial_view(&self, f: impl Fn(&finx_protocol::doc::SpatialViewParams) + Send + Sync + 'static) {
+        self.view_listeners.lock().push(Box::new(f));
+    }
+
+    /// Asks the session's 3D view to turn to `target` (`spatial/view`).
+    pub fn spatial_view(&self, doc: &Doc, session: &str, target: Anchor) {
+        let p = finx_protocol::doc::SpatialViewParams { session_id: session.to_string(), doc_id: doc.id.clone(), target };
+        for f in self.view_listeners.lock().iter() {
+            f(&p);
+        }
+    }
+
+    pub fn spatial_of(doc: &Doc) -> Result<Arc<crate::spatial::SpatialDoc>, DocError> {
+        doc.spatial.clone().ok_or_else(|| DocError::NotEditable(format!("{} is not a three-dimensional document", doc.path.display())))
+    }
+
+    async fn open_spatial(&self, canonical: &Path, source: crate::spatial::SpatialSource, session: &str) -> Result<(Arc<Doc>, String), DocError> {
+        if let Some(id) = self.spatial_paths.lock().get(canonical).cloned()
+            && let Some(doc) = self.docs.lock().get(&id).cloned()
+        {
+            let token = self.attach(&doc, session)?;
+            return Ok((doc, token));
+        }
+        let path = canonical.to_path_buf();
+        let cache_root = self.spatial_cache_root();
+        let prepared = tokio::task::spawn_blocking(move || crate::spatial::prepare(&path, source, &cache_root))
+            .await
+            .map_err(|e| DocError::Io(std::io::Error::other(e)))??;
+        let id = prepared.id.clone();
+        self.spatial_paths.lock().insert(canonical.to_path_buf(), id.clone());
+        let existing = self.docs.lock().get(&id).cloned();
+        let doc = match existing {
+            Some(doc) => doc,
+            None => {
+                let dir = self.root.join(&id);
+                std::fs::create_dir_all(&dir)?;
+                let meta = std::fs::metadata(canonical)?;
+                let stamp = Meta { path: canonical.to_path_buf(), size: meta.len(), modified_ms: modified_ms(&meta) };
+                atomic::write(&dir.join("meta.json"), &serde_json::to_vec_pretty(&stamp).map_err(std::io::Error::other)?)?;
+                let sp = Arc::new(crate::spatial::load(&dir, prepared)?);
+                let revision = sp.history.lock().applied as u64;
+                let info = DocInfo {
+                    doc_id: id.clone(),
+                    path: canonical.display().to_string(),
+                    format: DocKind::Spatial.format(),
+                    layout: DocKind::Spatial.layout(),
+                    pages: None,
+                    outline: Vec::new(),
+                    capabilities: vec![Capability::View],
+                    revision,
+                    dirty: false,
+                    save_in_place: false,
+                    scanned: false,
+                    encrypted: false,
+                    sheets: Vec::new(),
+                    spatial: Some(sp.layers()),
+                };
+                let doc = Arc::new(Doc {
+                    id: id.clone(),
+                    path: canonical.to_path_buf(),
+                    dir,
+                    kind: DocKind::Spatial,
+                    handle: 0,
+                    password: None,
+                    info: Mutex::new(info),
+                    pages: Mutex::default(),
+                    views: Mutex::default(),
+                    history: Mutex::default(),
+                    editing: tokio::sync::Mutex::new(()),
+                    spatial: Some(sp),
+                });
+                self.docs.lock().insert(id, doc.clone());
+                doc
+            }
+        };
+        let token = self.attach(&doc, session)?;
+        Ok((doc, token))
+    }
+
+    fn spatial_refresh(&self, doc: &Doc, sp: &crate::spatial::SpatialDoc, bump: bool) -> Result<u64, DocError> {
+        atomic::write(&doc.dir.join("layers.json"), &serde_json::to_vec_pretty(&*sp.layers.lock()).map_err(std::io::Error::other)?)?;
+        let revision = {
+            let mut info = doc.info.lock();
+            if bump {
+                info.revision += 1;
+            }
+            info.spatial = Some(sp.layers());
+            info.revision
+        };
+        self.changed(doc);
+        Ok(revision)
+    }
+
+    fn spatial_record(&self, doc: &Doc, sp: &crate::spatial::SpatialDoc) -> Result<(), DocError> {
+        let h = sp.history.lock();
+        let mut lines = String::new();
+        for r in &h.revisions[..h.applied] {
+            lines.push_str(&serde_json::to_string(r).map_err(std::io::Error::other)?);
+            lines.push('\n');
+        }
+        atomic::write(&doc.dir.join("revisions.jsonl"), lines.as_bytes())?;
+        Ok(())
+    }
+
+    fn spatial_push(&self, doc: &Doc, sp: &crate::spatial::SpatialDoc, session: &str, ops: Vec<finx_protocol::doc::DocOp>, undo: Vec<finx_protocol::doc::DocOp>) -> Result<(), DocError> {
+        {
+            let mut h = sp.history.lock();
+            let n = h.applied;
+            h.revisions.truncate(n);
+            h.revisions.push(crate::spatial::SpatialRevision { ops, undo, session: session.to_string(), at_ms: now_ms() });
+            h.applied += 1;
+        }
+        self.spatial_record(doc, sp)
+    }
+
+    /// Changes a three-dimensional document's layers as one revision (`doc/ops`, and the tools).
+    pub async fn spatial_ops(&self, doc: &Doc, session: &str, ops: Vec<finx_protocol::doc::DocOp>, base: Option<u64>) -> Result<u64, DocError> {
+        let sp = Self::spatial_of(doc)?;
+        let _one = doc.editing.lock().await;
+        let now = doc.info.lock().revision;
+        if let Some(base) = base
+            && base != now
+        {
+            return Err(DocError::Stale { base, now });
+        }
+        let undo = sp.layers.lock().apply_all(&ops)?;
+        let mut kept = ops;
+        // What was stored, with the kernel's numbers: redo gives the same.
+        {
+            let l = sp.layers.lock();
+            for op in &mut kept {
+                if let finx_protocol::doc::DocOp::SpatialMeasure { measure } = op
+                    && let Some(m) = l.measures.iter().find(|m| m.id == measure.id)
+                {
+                    *measure = m.clone();
+                }
+            }
+        }
+        self.spatial_push(doc, &sp, session, kept, undo)?;
+        self.spatial_refresh(doc, &sp, true)
+    }
+
+    async fn spatial_step(&self, doc: &Doc, step: Step) -> Result<u64, DocError> {
+        let sp = Self::spatial_of(doc)?;
+        let _one = doc.editing.lock().await;
+        let ops = {
+            let h = sp.history.lock();
+            let found = match step {
+                Step::Undo => h.applied.checked_sub(1).map(|i| h.revisions[i].undo.clone()),
+                Step::Redo => h.revisions.get(h.applied).map(|r| r.ops.clone()),
+            };
+            found.ok_or_else(|| DocError::NotEditable(format!("nothing to {}", step.name())))?
+        };
+        sp.layers.lock().apply_all(&ops)?;
+        {
+            let mut h = sp.history.lock();
+            match step {
+                Step::Undo => h.applied -= 1,
+                Step::Redo => h.applied += 1,
+            }
+        }
+        self.spatial_record(doc, &sp)?;
+        self.spatial_refresh(doc, &sp, true)
+    }
+
 }
 
 #[cfg(test)]

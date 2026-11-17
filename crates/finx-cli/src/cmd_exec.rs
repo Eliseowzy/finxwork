@@ -62,6 +62,7 @@ pub async fn exec(
         trusted: rt.trusted,
         interactive_approvals: interactive,
         bot: None,
+        peer: None,
     };
     let kernel = Kernel::start(options, deps).await?;
     drive(kernel, prompt, args, interactive, save, &rt.warnings).await
@@ -101,6 +102,7 @@ pub async fn resume(
         trusted: rt.trusted,
         interactive_approvals: interactive,
         bot_name: None,
+        peer: None,
     };
     let kernel = Kernel::resume(options, deps).await?;
     setup::check_credentials(&rt, &kernel.info().model)?;

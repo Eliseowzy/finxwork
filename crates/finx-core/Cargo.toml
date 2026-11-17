@@ -7,9 +7,11 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+bytes.workspace = true
 serde_ignored.workspace = true
 strsim.workspace = true
 finx-slide.workspace = true
+finx-spatial.workspace = true
 ooxml-metafile.workspace = true
 quick-xml.workspace = true
 async-trait.workspace = true
@@ -48,13 +50,16 @@ tracing.workspace = true
 uuid.workspace = true
 yaml-rust2.workspace = true
 zip.workspace = true
+png.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 libc.workspace = true
 
 [dev-dependencies]
 finx-mock.workspace = true
-png.workspace = true
+dicom-core = "0.10"
+dicom-dictionary-std = "0.10"
+dicom-object = "0.10"
 
 [build-dependencies]
 ring.workspace = true

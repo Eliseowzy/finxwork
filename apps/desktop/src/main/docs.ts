@@ -37,7 +37,8 @@ export function serveDocs() {
     }
     const range = parseRange(req.headers.get("range"), size);
     if (range === "bad") return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${size}` } });
-    const base = { ...headers, "content-type": "application/pdf", "accept-ranges": "bytes" };
+    const contentType = file.endsWith(".pdf") ? "application/pdf" : file.endsWith(".json") ? "application/json" : "application/octet-stream";
+    const base = { ...headers, "content-type": contentType, "accept-ranges": "bytes" };
     if (req.method === "HEAD") return new Response(null, { status: 200, headers: { ...base, "content-length": String(size) } });
     const { start, end } = range ?? { start: 0, end: size - 1 };
     const body = size === 0 ? null : (Readable.toWeb(fs.createReadStream(file, { start, end })) as ReadableStream);

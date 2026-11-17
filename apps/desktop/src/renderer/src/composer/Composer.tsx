@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { homePath } from "@finx/client";
+import { homePath, type MessageQuote } from "@finx/client";
 import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } from "@finx/protocol";
 import { permissionDesc, permissionTitle, modelTitle, thinkingFor, thinkingTitle } from "../format";
 import { Icon, type IconName } from "../icons";
@@ -12,6 +12,7 @@ import { ConnectorsItem } from "./ConnectorsMenu";
 import { QuickSwitches } from "./QuickSwitches";
 import { SkillsItem } from "./SkillsMenu";
 import { keyEvent } from "./KeySetup";
+import { focusComposerEvent } from "./inbox";
 import { ModelList } from "./ModelList";
 import { PromptEditor, type EditorHandle } from "./PromptEditor";
 import { Tile } from "./Tile";
@@ -68,7 +69,7 @@ export type Form =
  * shows as tiles above the text. What the message goes with is a row of
  * quiet buttons under it, outside.
  */
-export function Composer({ form, value, onChange, onSend, placeholder, canSend = true, attachments, onAttachments, settings, commands }: {
+export function Composer({ form, value, onChange, onSend, placeholder, canSend = true, attachments, onAttachments, onQuote, quoteGone, settings, commands, files = true }: {
   form: Form;
   value: string;
   onChange: (v: string) => void;
@@ -77,10 +78,16 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   canSend?: boolean;
   attachments: Attachment[];
   onAttachments: (a: Attachment[]) => void;
+  /** A quote of the conversation was clicked: show where it was said (message-quote-design §4.4). */
+  onQuote?: (q: MessageQuote) => void;
+  /** Whether a quote's message is out of the conversation: its tile is grey and opens nothing. */
+  quoteGone?: (q: MessageQuote) => boolean;
   /** None for a bot's conversation. */
   settings?: Settings;
   /** What `/` offers: the built-in commands and the skills (`skills/list`). */
   commands: CommandInfo[];
+  /** Whether files and folders can be added here; another subject's bot takes only pictures and quotes. */
+  files?: boolean;
 }) {
   const { t } = useTranslation("session");
   const area = useRef<EditorHandle>(null);
@@ -92,7 +99,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
     latest.current.onAttachments(addAttachments(latest.current.attachments, more));
     area.current?.focus();
   };
-  const dropping = useFileDrop((data) => void droppedAttachments(data).then(attach));
+  const dropping = useFileDrop((data) => void droppedAttachments(data).then((more) => attach(files ? more : more.filter((a) => a.kind === "image"))));
   const col = useRef<HTMLDivElement>(null);
   const ready = canSend && (value.trim() !== "" || attachments.length > 0);
   // Not away from a field being typed in, such as a title being renamed (a double-click on a row opens its page too).
@@ -100,6 +107,12 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   useEffect(() => {
     if (!(document.activeElement instanceof HTMLInputElement)) area.current?.focus();
   }, [again]);
+  // A quote added from the conversation puts the caret back here (message-quote-design §4.4).
+  useEffect(() => {
+    const focus = () => area.current?.focus();
+    window.addEventListener(focusComposerEvent, focus);
+    return () => window.removeEventListener(focusComposerEvent, focus);
+  }, []);
   const onHeight = form.mode === "new" ? undefined : form.onHeight;
   useEffect(() => {
     const el = col.current;
@@ -128,7 +141,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
             if (!got) return;
             e.preventDefault();
             e.stopPropagation();
-            void got.then(attach);
+            void got.then((more) => attach(files ? more : more.filter((a) => a.kind === "image")));
           }}
         >
           {dropping && (
@@ -140,9 +153,9 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
               <span className="cmp-drop-hint">{t("composer.dropHint")}</span>
             </div>
           )}
-          {attachments.length > 0 && <Tiles items={attachments} onRemove={(i) => (onAttachments(attachments.filter((_, j) => j !== i)), area.current?.focus())} />}
+          {attachments.length > 0 && <Tiles items={attachments} onRemove={(i) => (onAttachments(attachments.filter((_, j) => j !== i)), area.current?.focus())} onQuote={onQuote} quoteGone={quoteGone} />}
           <div className="cmp-row">
-            <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} commands={commands} onSkill={(name) => area.current?.insertSkill(name)} />
+            {files && <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} commands={commands} onSkill={(name) => area.current?.insertSkill(name)} />}
             <PromptEditor ref={area} value={value} onChange={onChange} onEnter={send} onUp={form.mode === "session" ? form.onEditLast : undefined} onEscape={form.mode === "session" ? form.onEscape : undefined} readOnly={form.mode === "session" && form.locked} placeholder={placeholder} label={t("composer.label")} commands={commands} />
             {stop ? (
               <button className="send stop" onClick={stop} title={t("composer.stop")} aria-label={t("composer.stop")}>
@@ -174,12 +187,16 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
 }
 
 /** What is attached, as tiles inside the composer; × takes one off. */
-function Tiles({ items, onRemove }: { items: Attachment[]; onRemove: (i: number) => void }) {
+function Tiles({ items, onRemove, onQuote, quoteGone }: { items: Attachment[]; onRemove: (i: number) => void; onQuote?: (q: MessageQuote) => void; quoteGone?: (q: MessageQuote) => boolean }) {
   return (
     <div className="cmp-att">
-      {items.map((a, i) => (
-        <Tile key={a.path} kind={a.kind} path={a.kind === "web" || a.kind === "doc" || a.kind === "tabs" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} quote={a.kind === "doc" ? a.quote : undefined} shot={(a.kind === "doc" || a.kind === "web") && a.image ? `data:image/png;base64,${a.image}` : undefined} onRemove={() => onRemove(i)} />
-      ))}
+      {items.map((a, i) =>
+        a.kind === "said" ? (
+          <Tile key={a.path} kind="said" said={a.quote} name={a.name} gone={quoteGone?.(a.quote)} onOpen={() => onQuote?.(a.quote)} onRemove={() => onRemove(i)} />
+        ) : (
+          <Tile key={a.path} kind={a.kind} path={a.kind === "web" || a.kind === "doc" || a.kind === "tabs" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} quote={a.kind === "doc" ? a.quote : undefined} shot={(a.kind === "doc" || a.kind === "web") && a.image ? `data:image/png;base64,${a.image}` : undefined} onRemove={() => onRemove(i)} />
+        ),
+      )}
     </div>
   );
 }

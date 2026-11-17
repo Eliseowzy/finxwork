@@ -202,6 +202,7 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     };
     let options = StartOptions {
         model: "test/scripted".into(),
@@ -214,6 +215,7 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         trusted: true,
         interactive_approvals: interactive,
         bot: None,
+        peer: None,
     };
     let kernel = Kernel::start(options, deps).await.unwrap();
     Some(Harness {

@@ -10,9 +10,9 @@
 ## 方案摘要
 
 - **现状**：FinxWork 的 PPT 编辑器能看、能改字、能拖形状、能调页序，工具栏只有加粗/斜体/字号/颜色/对齐/十几种形状/排列四件套。对照 PowerPoint "开始"一栏，大约做到了 25%；"插入 / 设计 / 切换 / 动画 / 审阅 / 视图"基本是空的。智能体还不能操作打开着的文稿。
-- **底子比看上去好**：BetterOffice 引擎（WASM/Yrs）已经有表格行列、批注、节点式 z 序、版式切换、备注、复制页、**智能体提议（propose / preview / accept / reject）和审阅界面**、带版本校验的批量编辑（`applyEdits`，失败码含 `StaleVersion`、`ContentMismatch`）。很多能力"引擎有、界面没接"。
+- **底子比看上去好**：NimbleOffice 引擎（WASM/Yrs）已经有表格行列、批注、节点式 z 序、版式切换、备注、复制页、**智能体提议（propose / preview / accept / reject）和审阅界面**、带版本校验的批量编辑（`applyEdits`，失败码含 `StaleVersion`、`ContentMismatch`）。很多能力"引擎有、界面没接"。
 - **两条线并行**：
-  1. **编辑能力**：自己做工具栏外壳（不用 BetterOffice 自带的），按"常用 80%"补齐：格式刷、项目符号/编号/行距/缩进、对齐与分布、组合、表格、图表、主题与版式、动画与切换、批注、大纲视图。缺的在 fork 里补。
+  1. **编辑能力**：自己做工具栏外壳（不用 NimbleOffice 自带的），按"常用 80%"补齐：格式刷、项目符号/编号/行距/缩进、对齐与分布、组合、表格、图表、主题与版式、动画与切换、批注、大纲视图。缺的在 fork 里补。
   2. **AI 能力**：不做"聊天框旁边放个 PPT"，而是让 AI 长在画布上——选中即改、一页三个版式候选、整份"体检"并一键修、从材料生成（用用户自己的模板）、图表数字链接到表格、讲稿与彩排。所有 AI 改动都是**可预览、可逐页接受、一步撤销**的提议。
 - **架构关键决策**（§6）：内核在 doc-worker 里持有权威的 DeckSession，编辑器作为 Yrs 副本加入；人和智能体走同一套操作，智能体的写入默认是提议。地址用稳定 ID 不用下标。
 - **和 WorkBuddy 的差异**（§2）：它是"腾讯文档编辑器 + 85 个按下标寻址的工具 + 一套 JSX 生成 DSL"，生成时**禁止模型看渲染结果**、改稿只能事后按版本撤销。我们反过来：本机光栅化让模型看图自检；所有修改先成提议再落地；生成落到用户模板的版式和占位符上，生成物是"正常的、可继续编辑的 PPT"。
@@ -42,15 +42,15 @@
 
 | 层 | 现状 | 位置 |
 |---|---|---|
-| 编辑器 | `@betteroffice/pptx-react` 0.5.1，Canvas 绘制、Worker 内 WASM 引擎 | `apps/desktop/src/renderer/src/docs/pptx/PresentationView.tsx` |
-| 工具栏 | 撤销重做、字体、字号、加粗斜体下划线、文字颜色、四种对齐、填充/边框颜色与宽度、圆角与形状调整、18 种预设形状、插图、文本框、置顶置底、新建页（按版式）、删页、放映、备注、导出 PNG | BetterOffice 内置，`zh-CN.ts` 是汉化 |
+| 编辑器 | `@nimbleoffice/pptx-react` 0.5.1，Canvas 绘制、Worker 内 WASM 引擎 | `apps/desktop/src/renderer/src/docs/pptx/PresentationView.tsx` |
+| 工具栏 | 撤销重做、字体、字号、加粗斜体下划线、文字颜色、四种对齐、填充/边框颜色与宽度、圆角与形状调整、18 种预设形状、插图、文本框、置顶置底、新建页（按版式）、删页、放映、备注、导出 PNG | NimbleOffice 内置，`zh-CN.ts` 是汉化 |
 | 宿主 | `pptx/read`、`pptx/write`（哈希冲突检查 + 原子写）、`pptx/font`（本机字体）、`pptx/metafile`（EMF/WMF→SVG） | `crates/finx-core/src/pptx.rs`、`crates/finx-protocol/src/pptx.rs` |
 | 原生引擎 | `finx-slide`：渲染 PNG、导出 Markdown、查找替换、外科式保存 | `crates/finx-slide` |
 | 智能体 | 只能把文件当普通文件处理；不能操作面板里打开着的文稿 | 设计文档"当前边界"已写明 |
 
 ### 1.2 引擎里有、界面没接的
 
-从 `@betteroffice/pptx` 的接口看（`dist/*.d.ts`），下面这些已经能调用，只差界面或工具：
+从 `@nimbleoffice/pptx` 的接口看（`dist/*.d.ts`），下面这些已经能调用，只差界面或工具：
 
 - **结构**：`insertSlide`、`duplicateSlide`、`deleteSlide`、`moveSlide`、`setSlideLayout`、`layouts`、`setSlideNotes`、`setSlideBackground`（批量步骤里）
 - **对象**：`addShape`、`addTextBox`、`addPicture`、`removeShape`、`moveShape`、`resizeShape`、`setShapeRect`、`setShapeFill`、`setShapeStroke`、`setShapeAdjust`、四种 z 序
@@ -123,7 +123,7 @@ WorkBuddy（Electron）
 4. **工具太碎**：85 个工具、每个都要先查 schema，一次简单改稿要好几轮往返，慢且费 token。
 5. **生成物是"DSL 画出来的"**：Flexbox 盒子编译成绝对定位的形状，和用户公司模板的母版、占位符无关。生成后再套公司模板、或在 PowerPoint 里改版式，会很别扭。
 6. **AI 只在聊天里**：画布上没有 AI 入口（从前端字符串里没找到选区浮条、版式建议一类的界面），所有操作都得回到对话框打字。
-7. **渲染保真度**：对照测试里均差最大（12.7 vs BetterOffice 8.3），自动缩放过激。
+7. **渲染保真度**：对照测试里均差最大（12.7 vs NimbleOffice 8.3），自动缩放过激。
 8. **闭源、依赖腾讯文档本机服务**：不是我们能复用的东西，但说明"嵌一个现成编辑器 + 套工具"能很快出效果，护城河在 AI 流程和规范，不在编辑器本身。
 
 ---
@@ -239,7 +239,7 @@ WorkBuddy（Electron）
 
 #### 工具栏外壳
 
-- **自己做外壳**，BetterOffice 只当画布和命令层用。原因：它的工具栏布局、交互、汉化都不受我们控制；AI 入口要嵌进去；我们要上下文选项卡。
+- **自己做外壳**，NimbleOffice 只当画布和命令层用。原因：它的工具栏布局、交互、汉化都不受我们控制；AI 入口要嵌进去；我们要上下文选项卡。
 - **结构**：`开始 · 插入 · 设计 · 动画 · 放映 · 视图`，加上下文选项卡（选中形状出"形状格式"，选中表格出"表格"，选中图表出"图表"）。"切换"并进"动画"，"审阅"并进右侧的批注与 AI 面板。
 - **文件面板比 PowerPoint 窗口窄**：默认用单行紧凑工具栏（图标 + 下拉），面板拉宽或全屏时展开成两行功能区。宽度断点自适应，放不下的进"更多"。
 - **AI 不是第七个选项卡**：是工具栏最右侧常驻的"✦"按钮（打开 ⌘K）、选区浮条、右键菜单里的一组动作。
@@ -357,7 +357,7 @@ WorkBuddy（Electron）
 │ 对话 ── 引用块 / 出处标记 / 提议卡片                                              │
 │ 文件面板 · 演示文稿                                                               │
 │   FinX 外壳：功能区 · 上下文选项卡 · 选区浮条 · ⌘K · 右侧面板（设计建议/体检/批注）│
-│   BetterOffice 画布（pptx-react）── Worker（WASM 引擎，Yrs 副本）                  │
+│   NimbleOffice 画布（pptx-react）── Worker（WASM 引擎，Yrs 副本）                  │
 │        ▲ Yrs update / 提议 / 选区 ▼                                               │
 └────────┼─────────────────────────────────────────────────────────────────────────┘
 ┌────────┼──────────────────────────────── finx serve ─────────────────────────────┐
@@ -366,7 +366,7 @@ WorkBuddy（Electron）
 │ finx-docs：DocStore ── DeckBackend                                                │
 │ doc-worker 进程：pptx-edit DeckSession（权威）· 版式求解器 · 体检规则 · 光栅化    │
 └──────────────────────────────────────────────────────────────────────────────────┘
-finx-slide（纯 Rust）：BetterOffice fork 门面 · fonts · check（体检规则）· layout（版式求解）
+finx-slide（纯 Rust）：NimbleOffice fork 门面 · fonts · check（体检规则）· layout（版式求解）
                        · template（模板分析）· link（数据链接）
 ```
 
@@ -380,7 +380,7 @@ finx-slide（纯 Rust）：BetterOffice fork 门面 · fonts · check（体检�
 | B. 内核权威 + 前端副本 | doc-worker 里开 `DeckSession`（pptx-edit，同一份 Rust 代码），编辑器用 `collaboration` 选项作为 Yrs 副本加入；人和智能体的编辑都经 CRDT 合并 | 面板开不开都能改；与表格的 DocStore 架构一致；保存只在内核；天然支持以后多窗口、多智能体并行 | 要接 Yrs 同步通道（引擎有 `encodeStateVector`/`applyUpdate`/`peer.rs`）；首次打开多一次同步 |
 | C. 两份各自编辑、按文件合并 | 智能体改磁盘文件，前端检测冲突后重载 | 最简单 | 用户正在编辑时体验很差（现在的冲突提示就是这样） |
 
-**建议 B**（PD-01，详细方案见 [presentation-kernel-authority.md](presentation-kernel-authority.md)），A 作为过渡：P0 前两周先做 A 跑通工具与提议，同时做 B 的同步通道，第三周切到 B。理由：AI 原生意味着智能体会经常在用户不看的时候改（生成、批量体检修复），A 撑不住；B 的每个零件 BetterOffice 都有。
+**建议 B**（PD-01，详细方案见 [presentation-kernel-authority.md](presentation-kernel-authority.md)），A 作为过渡：P0 前两周先做 A 跑通工具与提议，同时做 B 的同步通道，第三周切到 B。理由：AI 原生意味着智能体会经常在用户不看的时候改（生成、批量体检修复），A 撑不住；B 的每个零件 NimbleOffice 都有。
 
 B 的细节：
 - **打开**：`pptx/read` 改为 `deck/open`：内核读文件、建 DeckSession，返回 Yrs 状态 + 字体族；前端用 `collaboration.onReplica` 加入。字体和元文件的通道不变。
@@ -570,7 +570,6 @@ type DeckOp =
 
 | 风险 | 影响 | 应对 |
 |---|---|---|
-| BetterOffice 上游节奏与 fork 分叉 | 补的能力越多，合并越难 | 改动按上游风格提 PR；能在宿主/求解器做的不进引擎 |
 | 前端 WASM 是发布版、原生是 fork，两边能力不一致 | 前端看到的和内核存的不一样 | 方案 B 后，前端 WASM 也从 fork 构建（自己出 npm 包或 vendored），一份代码两处用 |
 | 动画/图表/主题的写入复杂度 | 写坏文件 | 不认识就保留原 XML；拒绝清单；保存后自检 |
 | 生成质量不稳 | 口碑 | 大纲先行让用户把关；版式交给确定性求解器；体检兜底；先上 P1 再上生成 |
@@ -582,7 +581,7 @@ type DeckOp =
 ## 11. 需要你拍板的问题
 
 1. **PD-01 内核权威（方案 B）**：同意的话 P0 就改架构；不同意则先 A，生成与无头体检延后。
-2. **工具栏外壳自研**：意味着 BetterOffice 自带工具栏全部隐藏，汉化文件 `zh-CN.ts` 大部分作废。
+2. **工具栏外壳自研**：意味着 NimbleOffice 自带工具栏全部隐藏，汉化文件 `zh-CN.ts` 大部分作废。
 3. **前端引擎改为从 fork 构建**：解决两边能力不一致，但要维护 WASM 构建与发布。
 4. **AI 修改的默认审批**：默认"提议、人确认"，还是低风险类（错别字、对齐）默认直接应用？
 5. **首批场景包**：建议通用、投研、学术、工作汇报；是否要加医疗汇报（和 CT 能力呼应）？

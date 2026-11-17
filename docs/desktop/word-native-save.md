@@ -6,7 +6,7 @@
 ## 1. 现在怎么保存
 
 内核的 deck-worker 自己写 .docx：`finx_word::Word::save()` 调 fork 的新 crate `docx-native-save`，
-它是 BetterOffice TypeScript 写回（`saveYrsDocx` + `yrsToDocument` 及其依赖，约 9 千行 TS）逐模块的 Rust 移植。
+它是 NimbleOffice TypeScript 写回（`saveYrsDocx` + `yrsToDocument` 及其依赖，约 9 千行 TS）逐模块的 Rust 移植。
 
 ```
 docx/save ──▶ WordStore::stage ──▶ deck-worker: Request::WordWrite ──▶ Word::save（原生）

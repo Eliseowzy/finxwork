@@ -1,3 +1,4 @@
+import { PageMenuHost } from "./pageMenu";
 import { useEffect, useRef, useState } from "react";
 import { useCommands } from "./commands";
 import { SheetHost, ToastView } from "./components";
@@ -77,6 +78,7 @@ export function MainWindow() {
   return (
     <div className={`mainwrap ${sidebar === "docked" ? "" : "noside"} ${sidebar === "over" ? "peek" : ""} ${narrow ? "narrow" : ""}`}>
       <Sidebar />
+      <PageMenuHost />
       {/* Over the conversation, the sidebar goes again with a click beside it. */}
       {sidebar === "over" && <div className="peek-scrim" onClick={() => setSidebar(st, false)} />}
       {/* The toast sits in the content, under its title bar: never over the composer at the bottom. */}

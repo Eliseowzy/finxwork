@@ -35,8 +35,9 @@ export function BotPanel({ bot, view, session, onClose }: { bot: BotSummary; vie
       <div className="bpn-body">
         <BotHero key={bot.id} bot={bot} />
         <div className="form">
-          {view && session && <ModelSection view={view} session={session} />}
-          {view && session && <PermissionSection view={view} session={session} />}
+          {bot.source && <ExternalSection bot={bot} />}
+          {!bot.source && view && session && <ModelSection view={view} session={session} />}
+          {!bot.source && view && session && <PermissionSection view={view} session={session} />}
           <section>
             <h3 className="fhead">{t("panel.notifications")}</h3>
             <div className="fgroup">
@@ -68,6 +69,110 @@ export function BotPanel({ bot, view, session, onClose }: { bot: BotSummary; vie
         </div>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Another subject's bot in its settings (bot-contacts-design §4.4, §5.6): who provides it, where
+ * its words go, what it can do, and its credential; no model and no permissions, because neither
+ * is ours.
+ */
+function ExternalSection({ bot }: { bot: BotSummary }) {
+  const { t } = useTranslation("bots");
+  const st = useStore();
+  const source = bot.source!;
+  const [credential, setCredential] = useState("");
+  const local = /^(localhost|127\.|\[::1\]|::1)/.test(source.host);
+  return (
+    <section className="bs-ext">
+      {source.description && (
+        <>
+          <h3 className="fhead">{t("external.description")}</h3>
+          <div className="fgroup">
+            <p className="bs-desc">{source.description}</p>
+          </div>
+        </>
+      )}
+      <div className="fgroup">
+        {source.provider && (
+          <div className="frow">
+            <span className="fl">{t("external.provider")}</span>
+            <div className="fv">{source.provider}</div>
+          </div>
+        )}
+        <div className="frow">
+          <span className="fl">{t("external.host")}</span>
+          <div className="fv">
+            <span className="mono">{source.host}</span>
+            {local && <span className="bs-tag">{t("external.local")}</span>}
+          </div>
+        </div>
+      </div>
+      {source.skills.length > 0 && (
+        <>
+          <h3 className="fhead">{t("external.skills")}</h3>
+          <div className="fgroup">
+            {source.skills.map((skill) => (
+              <div className="frow bs-skill" key={skill.name}>
+                <div>
+                  <div className="bs-skill-n">{skill.name}</div>
+                  {skill.description && <div className="fdesc">{skill.description}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {source.needs_review && (
+        <div className="knote" role="status">
+          <p className="knote-b">{t("external.needsReview", { what: source.needs_review })}</p>
+          <div className="appr-f">
+            <span className="appr-sp" />
+            <button className="btn primary" onClick={() => void st.run(() => st.call("bots/update", { bot_id: bot.id, accept_review: true }))}>
+              {t("external.review")}
+            </button>
+          </div>
+        </div>
+      )}
+      {source.offered_name && (
+        <div className="knote" role="status">
+          <p className="knote-b">{t("external.offeredName", { name: source.offered_name })}</p>
+          <div className="appr-f">
+            <span className="appr-sp" />
+            <button className="btn" onClick={() => void st.run(() => st.call("bots/update", { bot_id: bot.id, adopt_name: true }))}>
+              {t("external.adoptName")}
+            </button>
+          </div>
+        </div>
+      )}
+      {(source.card_problem === "moved" || source.card_problem === "unreachable") && (
+        <p className="set-note bs-problem">{t(source.card_problem === "moved" ? "external.moved" : "external.unreachable")}</p>
+      )}
+      {source.auth !== "none" && (
+        <section>
+          <h3 className="fhead">{t("external.credential")}</h3>
+          <div className="fgroup">
+            <div className="frow">
+              <input className="field" type="password" value={credential} placeholder={source.auth} onChange={(e) => setCredential(e.target.value)} />
+              <button
+                className="btn"
+                disabled={!credential.trim()}
+                onClick={() => {
+                  const value = credential.trim();
+                  void st.run(async () => {
+                    await st.call("credentials/set", { name: `bot.${bot.id}`, value });
+                    setCredential("");
+                  }, t("external.credentialSaved"));
+                }}
+              >
+                {t("external.credentialSave")}
+              </button>
+            </div>
+            <p className="set-note">{t("external.credentialHint")}</p>
+          </div>
+        </section>
+      )}
+    </section>
   );
 }
 

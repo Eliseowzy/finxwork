@@ -294,6 +294,8 @@ export type Bridge = {
   onSettingsOpen(cb: (open: boolean) => void): () => void;
   /** A native menu at the pointer; resolves to the chosen item's id. */
   popupMenu(items: MenuItem[]): Promise<string | null>;
+  /** A menu the page drew itself has opened: end-to-end tests write its items down and may answer with an item's id (null otherwise). */
+  menuShown?(items: MenuItem[]): Promise<string | null>;
   onCommand(cb: (c: Command) => void): () => void;
   setMenuState(state: MenuState): void;
   pickDirectory(): Promise<string | null>;
@@ -317,6 +319,8 @@ export type Bridge = {
   attachPaths(paths: string[]): Promise<PastedItem[]>;
   /** Shows a file or folder in Finder (Explorer, the file manager). */
   revealPath(path: string): void;
+  /** A 3D model's bytes (.stl, .obj, .ply, .glb) for the spatial view; null when it cannot be read. */
+  readModel(path: string): Promise<Uint8Array | null>;
   /** Paths a reply wrote, looked up under `base` (its session's folder): what each is, never what is in it. */
   pathInfo(base: string, paths: string[]): Promise<PathInfo[]>;
   /** Opens a file or folder a reply pointed at outside the app: in `app` (an editor's id), else its default app; at `line` where an editor takes one. */

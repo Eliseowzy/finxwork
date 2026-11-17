@@ -109,6 +109,24 @@ export type Anchor = {
   page: number;
   quads: Rect[];
   text: string;
+} | {
+  kind: "spatial_point";
+  position_mm: number[];
+} | {
+  index: number;
+  kind: "spatial_slice";
+  plane: SpatialPlane;
+  rect?: SliceRect | null;
+} | {
+  id: string;
+  kind: "spatial_part";
+} | {
+  id: string;
+  kind: "spatial_finding";
+} | {
+  camera?: SpatialCamera | null;
+  kind: "spatial_view";
+  slice?: SpatialSliceAt | null;
 };
 
 export type AnimationClass = "entrance" | "emphasis" | "exit";
@@ -224,6 +242,19 @@ export type AvatarInput = {
 /** The characters an avatar can show, told apart by their eyes and drawn by the client. Each alias is what the bots made before these eyes have in their `bot.json`. */
 export type AvatarShape = "tall" | "dot" | "smile" | "wink" | "lid" | "bar" | "side" | "odd";
 
+/** What an external bot's card says it can receive. Phase one: only text and images. */
+export type BotAccept = "text" | "image";
+
+/** Parameters of `bots/add`: the link, the card the owner saw, and a credential when the card wants one. */
+export type BotAddParams = {
+  card_sha256: string;
+  credential?: string | null;
+  url: string;
+};
+
+/** How an external bot takes a credential. */
+export type BotAuth = "none" | "api_key" | "bearer";
+
 export type BotAvatarResult = {
   /** `data:image/png;base64,…` */
   data: string;
@@ -250,6 +281,14 @@ export type BotOpenParams = {
   events?: EventFilter;
   history_limit?: number | null;
 };
+
+/** Parameters of `bots/preview`: the link the owner pasted. */
+export type BotPreviewParams = {
+  url: string;
+};
+
+/** The protocol an external bot speaks. */
+export type BotProtocol = "a2a";
 
 /** Result of `bots/create` and `bots/update`. */
 export type BotResult = {
@@ -297,6 +336,35 @@ export type BotRoutineSetEnabledParams = {
   routine_id: string;
 };
 
+/** One of an external bot's skills, as its card names it. */
+export type BotSkill = {
+  description: string;
+  name: string;
+};
+
+/** An external bot: where it answers, and what its card said (§3). Its conversation is a session whose header names the other side; no model runs here. */
+export type BotSource = {
+  accepts: BotAccept[];
+  auth: BotAuth;
+  card_problem?: CardProblem | null;
+  description: string;
+  /** The host the words go to, with its port. */
+  host: string;
+  kind: BotSourceKind;
+  /** What changed in the card and waits for the owner (§5.6). */
+  needs_review?: string | null;
+  /** The first-message notice was read (§4.3). */
+  noticed?: boolean;
+  /** The name the card has now, when it differs from the bot's (§5.6). */
+  offered_name?: string | null;
+  protocol: BotProtocol;
+  provider?: string | null;
+  skills: BotSkill[];
+};
+
+/** What a bot is: this computer's kernel, or another subject's service (§3). */
+export type BotSourceKind = "remote";
+
 export type BotSummary = {
   /** Sub-agents at work. */
   agents_working?: number;
@@ -319,6 +387,8 @@ export type BotSummary = {
   routines_error?: string | null;
   /** Its conversation, once there is one. */
   session_id?: string | null;
+  /** Another subject's bot (bot-contacts-design §3): absent for this computer's own. */
+  source?: BotSource | null;
   /** It is answering: its conversation runs a task. */
   typing?: boolean;
   /** Messages and approval requests since the user last looked (`bots/read`). */
@@ -328,10 +398,16 @@ export type BotSummary = {
 };
 
 export type BotUpdateParams = {
+  /** The owner looked at what changed in the card (§5.6): its credential scheme, say. */
+  accept_review?: boolean | null;
+  /** The owner took the name the card now gives (§5.6). */
+  adopt_name?: boolean | null;
   avatar?: AvatarInput | null;
   bot_id: string;
   muted?: boolean | null;
   name?: string | null;
+  /** The first-message notice was read (§4.3). */
+  noticed?: boolean | null;
   pinned?: boolean | null;
 };
 
@@ -511,6 +587,9 @@ export type CandidateSource = "template" | "structure" | "data";
 
 /** What a document supports (§4.5); toolbars and tool descriptions follow it. */
 export type Capability = "view" | "text" | "search" | "outline" | "edit_values" | "edit_formulas" | "cells" | "calc";
+
+/** A change in an external bot's card that stops the conversation until the owner looks (§5.6). */
+export type CardProblem = "moved" | "unreachable";
 
 /** The skill catalog in the system prompt. */
 export type CatalogInfo = {
@@ -1526,7 +1605,7 @@ export type DeckOpenResult = {
   /** From the file's canonical path: the same in every session. */
   deck_id: string;
   dirty: boolean;
-  /** The engine build (`betteroffice 0.5.1+finx.3`): a replica built from another is refused. */
+  /** The engine build (`nimbleoffice 0.5.1+finx.3`): a replica built from another is refused. */
   engine: string;
   /** Explicit font families in the package, plus the host's Latin and CJK fallbacks. */
   font_families: string[];
@@ -1906,7 +1985,7 @@ export type DocFindParams = {
   session_id: string;
 };
 
-export type DocFormat = "pdf" | "xlsx" | "xlsm" | "csv" | "xls";
+export type DocFormat = "pdf" | "xlsx" | "xlsm" | "csv" | "xls" | "spatial";
 
 export type DocFoundResult = {
   /** At most 500 for a trace, `limit` for a search; `more` when there were others. */
@@ -1939,9 +2018,11 @@ export type DocInfo = {
   scanned?: boolean;
   /** A spreadsheet's sheets, in workbook order. */
   sheets?: SheetInfo[];
+  /** A three-dimensional document's layers. */
+  spatial?: SpatialInfo | null;
 };
 
-export type DocLayout = "paged" | "flow" | "grid";
+export type DocLayout = "paged" | "flow" | "grid" | "space";
 
 /** A citation's target in an open document: `p12.b3` (a block) or `p12` (a page). */
 export type DocLocateParams = {
@@ -1953,6 +2034,28 @@ export type DocLocateParams = {
 export type DocLocateResult = {
   /** A block's text and lines, or the page. */
   anchor: Anchor;
+};
+
+/** One change to a three-dimensional document's layers (§13). Each adds the item, or replaces the one with its id; a finding's `source` cannot change once made. */
+export type DocOp = {
+  op: "spatial_structure";
+  structure: SpatialStructure;
+} | {
+  marker: SpatialMarker;
+  op: "spatial_marker";
+} | {
+  measure: SpatialMeasure;
+  op: "spatial_measure";
+} | {
+  finding: SpatialFinding;
+  op: "spatial_finding";
+} | {
+  op: "spatial_profile";
+  profile: SpatialProfile;
+} | {
+  id: string;
+  layer: SpatialLayer;
+  op: "spatial_remove";
 };
 
 export type DocOpenParams = {
@@ -1969,6 +2072,19 @@ export type DocOpenResult = {
   password?: string | null;
   /** Reads the working copy: `finxdoc://<token>/current.pdf` (§7.3). */
   token: string;
+};
+
+/** `doc/ops`: a person's marks and measures in the 3D view, as one revision. */
+export type DocOpsParams = {
+  base_revision?: number | null;
+  doc_id: string;
+  ops: DocOp[];
+  session_id: string;
+};
+
+export type DocOpsResult = {
+  info: DocInfo;
+  revision: number;
 };
 
 export type DocRecalcParams = {
@@ -1993,6 +2109,8 @@ export type DocResolveParams = {
 
 export type DocResolveResult = {
   anchor: Anchor;
+  /** The block the text starts in (`p12.b3`), for a region as for a selection: what a citation of it names. */
+  block?: string | null;
   /** The boxes of the characters the kernel took: the interface draws the selection with them. */
   boxes: Rect[];
   /** The pages after the first, for a selection that goes on (`more`); `text` is all of it. */
@@ -2614,6 +2732,9 @@ export type FillSpec = {
   source: PictureSource;
 };
 
+/** Who a finding (or a marker) comes from; set when it is made, never changed (§3). */
+export type FindingSource = "ai" | "user" | "reference";
+
 /** The date in the footer. */
 export type FooterDate = {
   kind: "hidden";
@@ -3096,6 +3217,8 @@ export type McpToolsResult = {
 export type McpToolsSource = "session" | "cache" | "none";
 
 export type McpTransportKind = "stdio" | "http" | "sse";
+
+export type MeshSource = "file" | "structure";
 
 /** A message of the conversation. The parts are shared: the session history and every request built from it point at the same data, so cloning a message is cheap. */
 export type Message = {
@@ -3607,6 +3730,22 @@ export type Rect = {
   y1: number;
 };
 
+/** What `bots/preview` reads from a link, before the owner adds the bot (§4.2, §5.2). */
+export type RemotePreview = {
+  accepts: BotAccept[];
+  auth: BotAuth;
+  /** Of the fields that matter, as in §5.2: the owner's confirmation carries it back. */
+  card_sha256: string;
+  description: string;
+  /** With its port. */
+  host: string;
+  /** `data:image/png;base64,…`: the card's icon, downloaded and made 256 px. */
+  icon?: string | null;
+  name: string;
+  provider?: string | null;
+  skills: BotSkill[];
+};
+
 /** A JSON-RPC request id. */
 export type RequestId = number | string;
 
@@ -3770,6 +3909,8 @@ export type ServerCapabilities = {
   auth: boolean;
   /** Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4). */
   bots: boolean;
+  /** Adding another subject's bot: `bots/preview`, `bots/add` (`[bots] external`). */
+  bots_external: boolean;
   /** Services added by their address (docs/kernel/custom-endpoint-design.md §9): `providers/add`, `providers/update`, `providers/remove`, `models/configure`, `custom` on providers and `canonical` on models. */
   custom_endpoints: boolean;
   /** The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6). */
@@ -4106,6 +4247,8 @@ export type SkillEntry = {
   /** Where finx installed it from (`.finx-source.json`). */
   source?: SkillSource | null;
   state: SkillState;
+  /** Kinds of document the skill is of help with, from the header's `metadata.suggest-for` (`spatial-volume`): a view of one offers to turn the skill on when it is off. */
+  suggest_for?: string[];
 };
 
 export type SkillFileInfo = {
@@ -4244,6 +4387,14 @@ export type SkillsSetEnabledResult = {
   removed_names?: string[];
 };
 
+/** A box on a slice, in voxels of the slice's two axes: `[u0, u1)`, `[v0, v1)`. */
+export type SliceRect = {
+  u0: number;
+  u1: number;
+  v0: number;
+  v1: number;
+};
+
 export type SlideChangeKind = "changed" | "inserted" | "deleted" | "moved";
 
 /** What a batch or proposal does to one slide, for the canvas markers and the approval card. */
@@ -4324,6 +4475,154 @@ export type SnapshotResult = {
   snapshot: SessionSnapshot;
 };
 
+/** A 3D camera, LPS mm. */
+export type SpatialCamera = {
+  position: number[];
+  target: number[];
+  up?: number[] | null;
+};
+
+export type SpatialFinding = {
+  /** What it rests on, in words a person can check (a slice, a structure, a computed value). */
+  evidence?: string[];
+  id: string;
+  measures?: SpatialMeasureValue[];
+  name: string;
+  position_mm?: number[] | null;
+  radius_mm?: number | null;
+  /** The report's item it stands for (a reference finding's line, or one an AI finding locates). */
+  report_item?: string | null;
+  source: FindingSource;
+  summary: string;
+  view?: SpatialViewAt | null;
+};
+
+/** A three-dimensional document's layers (`DocInfo.spatial`). */
+export type SpatialInfo = {
+  findings: SpatialFinding[];
+  kind: SpatialKind;
+  markers: SpatialMarker[];
+  measures: SpatialMeasure[];
+  meshes: SpatialMesh[];
+  profile?: SpatialProfile | null;
+  structures: SpatialStructure[];
+  volume?: SpatialVolume | null;
+};
+
+export type SpatialKind = "volume" | "mesh";
+
+/** What a layer is, to remove one. */
+export type SpatialLayer = "structure" | "marker" | "measure" | "finding";
+
+export type SpatialMarker = {
+  id: string;
+  label: string;
+  position_mm: number[];
+  source: FindingSource;
+};
+
+/** A length between two points; `length_mm` is the kernel's. */
+export type SpatialMeasure = {
+  from_mm: number[];
+  id: string;
+  label?: string;
+  length_mm?: number;
+  source: FindingSource;
+  to_mm: number[];
+};
+
+/** A number a finding states, worked out by the kernel. */
+export type SpatialMeasureValue = {
+  name: string;
+  unit?: string | null;
+  value: number;
+};
+
+export type SpatialMesh = {
+  /** `#rrggbb`. */
+  color: string;
+  id: string;
+  /** Levels of detail at `spatial/mesh/<id>/<lod>.bin`, 0 the finest. */
+  lods: number;
+  name: string;
+  opacity: number;
+  source: MeshSource;
+};
+
+export type SpatialPlane = "axial" | "coronal" | "sagittal";
+
+/** A skill's display settings (spatial-design §5.2 `profile`). */
+export type SpatialProfile = {
+  /** Shown whenever there is an `ai` finding. */
+  disclaimer?: string | null;
+  /** `patient` (L/R, A/P, S/I shown) or `none`. */
+  orientation?: string | null;
+  unit?: string | null;
+  /** `[name, width, level]`, in order. */
+  windows?: unknown[][];
+};
+
+/** A series found in the files opened. */
+export type SpatialSeries = {
+  description: string;
+  /** Why it cannot be a volume. */
+  reason?: string | null;
+  slices: number;
+  spacing_mm?: number | null;
+  uid: string;
+  usable: boolean;
+};
+
+export type SpatialSliceAt = {
+  index: number;
+  plane: SpatialPlane;
+};
+
+export type SpatialStructure = {
+  color: string;
+  hidden?: boolean;
+  id: string;
+  /** Its mask, in the cache: `masks/<id>.bin`. */
+  mask?: string | null;
+  name: string;
+  opacity: number;
+  /** Where it came from: `script:run_<n>`, `user`. */
+  origin?: string | null;
+  stats?: StructureStats;
+};
+
+/** Where a finding is looked at from. */
+export type SpatialViewAt = {
+  camera?: SpatialCamera | null;
+  slice?: SpatialSliceAt | null;
+};
+
+/** `spatial/view`: the agent asks the person's view to turn to something (it does not move by itself otherwise). */
+export type SpatialViewParams = {
+  doc_id: string;
+  session_id: string;
+  target: Anchor;
+};
+
+export type SpatialVolume = {
+  dims: number[];
+  /** The directions of i, j and k, LPS. */
+  direction: number[][];
+  /** Levels of the brick pyramid. */
+  levels: number;
+  /** The first voxel's centre, LPS mm. */
+  origin: number[];
+  /** The series shown: its uid. */
+  picked: string;
+  /** Why that one. */
+  reason: string;
+  series: SpatialSeries[];
+  /** mm along i, j, k. */
+  spacing: number[];
+  /** The values' unit when calibrated (`HU`); none for raw grey levels. */
+  unit?: string | null;
+};
+
 export type Speaker = "user" | "bot";
 
 export type StopReason = "stop" | "length" | "tool_use" | "error" | "aborted";
@@ -4342,6 +4641,12 @@ export type StrikeStyle = "none" | "single" | "double";
 
 /** What `doc/structure` does: Excel's 插入 / 删除 of whole rows or columns. */
 export type StructureKind = "insert_rows" | "delete_rows" | "insert_columns" | "delete_columns";
+
+export type StructureStats = {
+  centroid?: number[] | null;
+  max_diameter_mm: number;
+  volume_mm3: number;
+};
 
 /** One change to a table's structure or look. Cell text is edited as text: every cell is a story (`deck/read` lists their `story_id`s), or `set_cells`. */
 export type TableEdit = {
@@ -4739,11 +5044,13 @@ export interface Methods {
   "ai/action": [AiActionParams, AiActionResult];
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
+  "bots/add": [BotAddParams, BotResult];
   "bots/avatar": [BotIdParams, BotAvatarResult];
   "bots/clear": [BotIdParams, Empty];
   "bots/create": [BotCreateParams, BotResult];
   "bots/delete": [BotIdParams, Empty];
   "bots/open": [BotOpenParams, SessionNewResult];
+  "bots/preview": [BotPreviewParams, RemotePreview];
   "bots/read": [BotIdParams, Empty];
   "bots/routine": [BotRoutineParams, BotRoutineResult];
   "bots/routine_delete": [BotRoutineParams, Empty];
@@ -4810,6 +5117,7 @@ export interface Methods {
   "doc/find": [DocFindParams, DocFoundResult];
   "doc/locate": [DocLocateParams, DocLocateResult];
   "doc/open": [DocOpenParams, DocOpenResult];
+  "doc/ops": [DocOpsParams, DocOpsResult];
   "doc/recalc": [DocRecalcParams, DocApplyResult];
   "doc/redo": [DocIdParams, DocApplyResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
@@ -4909,6 +5217,7 @@ export interface ServerNotifications {
   "session/event": SessionEventParams;
   "sessions/changed": SessionsChangedParams;
   "skills/changed": SkillsChangedParams;
+  "spatial/view": SpatialViewParams;
 }
 
 /** Notifications: their params. */
@@ -4959,6 +5268,13 @@ export const RPC_ERROR_KINDS = {
   "-32045": "routines_unavailable",
   "-32046": "no_model",
   "-32047": "endpoint_unusable",
+  "-32048": "bot_card_unreachable",
+  "-32049": "bot_card_invalid",
+  "-32050": "bot_card_unsupported",
+  "-32051": "bot_card_moved",
+  "-32052": "bot_card_changed",
+  "-32053": "bot_auth_required",
+  "-32054": "bot_not_supported",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

@@ -87,6 +87,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, servers: Vec<McpSe
         decks: None,
         words: None,
         routines: None,
+        peer: None,
     }
 }
 
@@ -109,6 +110,7 @@ fn start_options(work: &Path, home: &FinxHome, config: Config) -> StartOptions {
         trusted: false,
         interactive_approvals: false,
         bot: None,
+        peer: None,
     }
 }
 
@@ -590,6 +592,7 @@ async fn resumed_sessions_reconnect_and_keep_one_prompt_entry() {
         trusted: false,
         interactive_approvals: false,
         bot_name: None,
+        peer: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &h.work, &h.home, vec![config])).await.unwrap();
     let result = kernel.run(vec![UserContent::Text { text: "add".into() }]).await.unwrap();

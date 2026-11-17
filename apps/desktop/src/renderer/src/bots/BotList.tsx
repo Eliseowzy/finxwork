@@ -64,7 +64,14 @@ const BotRow = memo(function BotRow({ b, sel, renaming, store }: { b: BotSummary
         void botContextMenu(store.current, b);
       }}
     >
-      <BotAvatar bot={b} size={36} busy={busy} />
+      <span className="bavatar">
+        <BotAvatar bot={b} size={36} busy={busy} />
+        {b.source && (
+          <span className="bext" title={t("external.mark")} aria-label={t("external.mark")}>
+            <Icon name="globe" />
+          </span>
+        )}
+      </span>
       <div className="bmain">
         <div className="bl1">
           {renaming ? (
