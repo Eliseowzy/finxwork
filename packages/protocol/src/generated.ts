@@ -248,12 +248,12 @@ export type BotAccept = "text" | "image";
 /** Parameters of `bots/add`: the link, the card the owner saw, and a credential when the card wants one. */
 export type BotAddParams = {
   card_sha256: string;
-  credential?: string | null;
+  credential?: BotCredential | null;
   url: string;
 };
 
 /** How an external bot takes a credential. */
-export type BotAuth = "none" | "api_key" | "bearer";
+export type BotAuth = "none" | "api_key" | "bearer" | "basic";
 
 export type BotAvatarResult = {
   /** `data:image/png;base64,…` */
@@ -268,6 +268,22 @@ export type BotCreateParams = {
   name: string;
   /** How hard its conversation starts out thinking; the configured level without it. */
   thinking?: ThinkingLevel | null;
+};
+
+/** A credential for an external bot, shaped by its card's scheme: one secret for an API key or a bearer token, a user name and a password for HTTP Basic. It goes to the keychain only. */
+export type BotCredential = {
+  kind: "secret";
+  value: string;
+} | {
+  kind: "basic";
+  password: string;
+  username: string;
+};
+
+/** Parameters of `bots/credential`: a new credential for an external bot, in the shape its card asks for now. It also settles a credential scheme change waiting for the owner (§5.6). */
+export type BotCredentialParams = {
+  bot_id: string;
+  credential: BotCredential;
 };
 
 /** Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. */
@@ -5048,10 +5064,12 @@ export interface Methods {
   "bots/avatar": [BotIdParams, BotAvatarResult];
   "bots/clear": [BotIdParams, Empty];
   "bots/create": [BotCreateParams, BotResult];
+  "bots/credential": [BotCredentialParams, BotResult];
   "bots/delete": [BotIdParams, Empty];
   "bots/open": [BotOpenParams, SessionNewResult];
   "bots/preview": [BotPreviewParams, RemotePreview];
   "bots/read": [BotIdParams, Empty];
+  "bots/reread": [BotIdParams, BotResult];
   "bots/routine": [BotRoutineParams, BotRoutineResult];
   "bots/routine_delete": [BotRoutineParams, Empty];
   "bots/routine_run": [BotRoutineRunParams, BotRoutineRunResult];

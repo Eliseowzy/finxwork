@@ -222,6 +222,10 @@ pub mod method {
     pub const BOTS_PREVIEW: &str = "bots/preview";
     /// Adds another subject's bot (bot-contacts-design §4.2, §5.2).
     pub const BOTS_ADD: &str = "bots/add";
+    /// Replaces an external bot's credential (bot-contacts-design §5.6).
+    pub const BOTS_CREDENTIAL: &str = "bots/credential";
+    /// Reads an external bot's card again now, instead of waiting a day (§5.6).
+    pub const BOTS_REREAD: &str = "bots/reread";
     /// A bot's uploaded avatar.
     pub const BOTS_AVATAR: &str = "bots/avatar";
     /// Loads or attaches a bot's conversation, making it when there is none yet.

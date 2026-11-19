@@ -29,6 +29,9 @@
       "$ref": "#/definitions/BotCreateParams"
     },
     {
+      "$ref": "#/definitions/BotCredentialParams"
+    },
+    {
       "$ref": "#/definitions/BotIdParams"
     },
     {
@@ -1812,9 +1815,13 @@
           "type": "string"
         },
         "credential": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BotCredential"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "url": {
@@ -1829,12 +1836,23 @@
     },
     "BotAuth": {
       "description": "How an external bot takes a credential.",
-      "enum": [
-        "none",
-        "api_key",
-        "bearer"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "none",
+            "api_key",
+            "bearer"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "HTTP Basic: a user name and a password.",
+          "enum": [
+            "basic"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "BotAvatarResult": {
       "properties": {
@@ -1879,6 +1897,67 @@
       "required": [
         "avatar",
         "name"
+      ],
+      "type": "object"
+    },
+    "BotCredential": {
+      "description": "A credential for an external bot, shaped by its card's scheme: one secret for an API key or a bearer token, a user name and a password for HTTP Basic. It goes to the keychain only.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "secret"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "basic"
+              ],
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "password",
+            "username"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BotCredentialParams": {
+      "description": "Parameters of `bots/credential`: a new credential for an external bot, in the shape its card asks for now. It also settles a credential scheme change waiting for the owner (§5.6).",
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "credential": {
+          "$ref": "#/definitions/BotCredential"
+        }
+      },
+      "required": [
+        "bot_id",
+        "credential"
       ],
       "type": "object"
     },
@@ -21899,6 +21978,10 @@
       "params": "BotCreateParams",
       "result": "BotResult"
     },
+    "bots/credential": {
+      "params": "BotCredentialParams",
+      "result": "BotResult"
+    },
     "bots/delete": {
       "params": "BotIdParams",
       "result": "Empty"
@@ -21914,6 +21997,10 @@
     "bots/read": {
       "params": "BotIdParams",
       "result": "Empty"
+    },
+    "bots/reread": {
+      "params": "BotIdParams",
+      "result": "BotResult"
     },
     "bots/routine": {
       "params": "BotRoutineParams",
@@ -22480,10 +22567,12 @@
       "bots/avatar": "experimental",
       "bots/clear": "experimental",
       "bots/create": "experimental",
+      "bots/credential": "experimental",
       "bots/delete": "experimental",
       "bots/open": "experimental",
       "bots/preview": "experimental",
       "bots/read": "experimental",
+      "bots/reread": "experimental",
       "bots/routine": "experimental",
       "bots/routine_delete": "experimental",
       "bots/routine_run": "experimental",

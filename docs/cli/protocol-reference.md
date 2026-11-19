@@ -92,10 +92,12 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `bots/avatar` | `BotIdParams` | `BotAvatarResult` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/clear` | `BotIdParams` | `Empty` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/create` | `BotCreateParams` | `BotResult` |  |
+| `bots/credential` | `BotCredentialParams` | `BotResult` | Parameters of `bots/credential`: a new credential for an external bot, in the shape its card asks for now. It also settles a credential scheme change waiting for the owner (§5.6). |
 | `bots/delete` | `BotIdParams` | `Empty` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/open` | `BotOpenParams` | `SessionNewResult` | Parameters of `bots/open`, which answers as `session/new` does. |
 | `bots/preview` | `BotPreviewParams` | `RemotePreview` | Parameters of `bots/preview`: the link the owner pasted. |
 | `bots/read` | `BotIdParams` | `Empty` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
+| `bots/reread` | `BotIdParams` | `BotResult` | Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. |
 | `bots/routine` | `BotRoutineParams` | `BotRoutineResult` | Parameters of `bots/routine`, `bots/routine_run_now`, `bots/routine_stop` and `bots/routine_delete`. |
 | `bots/routine_delete` | `BotRoutineParams` | `Empty` | Parameters of `bots/routine`, `bots/routine_run_now`, `bots/routine_stop` and `bots/routine_delete`. |
 | `bots/routine_run` | `BotRoutineRunParams` | `BotRoutineRunResult` |  |
