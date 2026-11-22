@@ -488,6 +488,12 @@
       "$ref": "#/definitions/ModelsCatalogResult"
     },
     {
+      "$ref": "#/definitions/ModelsCompleteParams"
+    },
+    {
+      "$ref": "#/definitions/ModelsCompleteResult"
+    },
+    {
       "$ref": "#/definitions/ModelsConfigureParams"
     },
     {
@@ -14786,6 +14792,56 @@
       ],
       "type": "object"
     },
+    "ModelsCompleteParams": {
+      "description": "Parameters of `models/complete`: a stateless single-turn text completion with no session.",
+      "properties": {
+        "max_tokens": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "`provider/model-id`; omitted uses the current default model.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "system": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "ModelsCompleteResult": {
+      "description": "Result of `models/complete`.",
+      "properties": {
+        "model": {
+          "description": "`provider/model-id` that answered.",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "text"
+      ],
+      "type": "object"
+    },
     "ModelsConfigureParams": {
       "description": "`models/configure`: what a model is like, for one nothing describes (§7.3). A field left out stays as it is; `null` removes it. With `clear`, the model's entry goes and it is found by its name again.",
       "properties": {
@@ -22381,6 +22437,10 @@
       "params": "ModelsCatalogParams",
       "result": "ModelsCatalogResult"
     },
+    "models/complete": {
+      "params": "ModelsCompleteParams",
+      "result": "ModelsCompleteResult"
+    },
     "models/configure": {
       "params": "ModelsConfigureParams",
       "result": "ModelsConfigureResult"
@@ -22670,6 +22730,7 @@
       "mcp/probe_cancel": "stable",
       "mcp/tools": "stable",
       "models/catalog": "experimental",
+      "models/complete": "stable",
       "models/configure": "experimental",
       "models/list": "stable",
       "models/refresh": "stable",

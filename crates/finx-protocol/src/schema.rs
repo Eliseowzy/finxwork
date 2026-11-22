@@ -185,6 +185,11 @@ pub fn document() -> Value {
             name::<api::ResourceReadResult>(g),
         ),
         (method::MODELS_LIST, None, name::<api::ModelsListResult>(g)),
+        (
+            method::MODELS_COMPLETE,
+            Some(name::<api::ModelsCompleteParams>(g)),
+            name::<api::ModelsCompleteResult>(g),
+        ),
         (method::SERVER_SHUTDOWN, None, name::<api::Empty>(g)),
         (
             method::SESSIONS_SUBSCRIBE,

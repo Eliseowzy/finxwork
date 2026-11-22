@@ -13,6 +13,7 @@ use finx_protocol::files::FilesWatchParams;
 use finx_protocol::files::FilesWriteParams;
 use finx_protocol::api::InitializeParams;
 use finx_protocol::api::InitializeResult;
+use finx_protocol::api::ModelsCompleteParams;
 use finx_protocol::api::ModelsListResult;
 use finx_protocol::api::ModelsRefreshParams;
 use finx_protocol::api::ModelsShowParams;
@@ -679,6 +680,11 @@ impl NativeProtocol {
                             .await
                             .map_err(|e| RpcError::internal(e.to_string()));
                     conn.send(reply(&id, result));
+                });
+            }
+            method::MODELS_COMPLETE => {
+                self.call(id, params, conn, |server, p: ModelsCompleteParams| async move {
+                    server.complete_model(p).await
                 });
             }
             method::SERVER_SHUTDOWN => {

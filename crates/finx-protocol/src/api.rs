@@ -58,6 +58,7 @@ pub mod method {
     pub const MODELS_SHOW: &str = "models/show";
     pub const MODELS_CONFIGURE: &str = "models/configure";
     pub const MODELS_CATALOG: &str = "models/catalog";
+    pub const MODELS_COMPLETE: &str = "models/complete";
     pub const PROVIDERS_ADD: &str = "providers/add";
     pub const PROVIDERS_UPDATE: &str = "providers/update";
     pub const PROVIDERS_REMOVE: &str = "providers/remove";
@@ -1547,6 +1548,27 @@ pub struct ModelsShowParams {
     pub model: String,
     /// In the model menu or not.
     pub shown: bool,
+}
+
+/// Parameters of `models/complete`: a stateless single-turn text completion with no session.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelsCompleteParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    pub prompt: String,
+    /// `provider/model-id`; omitted uses the current default model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+}
+
+/// Result of `models/complete`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelsCompleteResult {
+    pub text: String,
+    /// `provider/model-id` that answered.
+    pub model: String,
 }
 
 /// How a provider authenticates.

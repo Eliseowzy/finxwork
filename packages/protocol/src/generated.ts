@@ -3323,6 +3323,22 @@ export type ModelsCatalogResult = {
   models: CatalogModel[];
 };
 
+/** Parameters of `models/complete`: a stateless single-turn text completion with no session. */
+export type ModelsCompleteParams = {
+  max_tokens?: number | null;
+  /** `provider/model-id`; omitted uses the current default model. */
+  model?: string | null;
+  prompt: string;
+  system?: string | null;
+};
+
+/** Result of `models/complete`. */
+export type ModelsCompleteResult = {
+  /** `provider/model-id` that answered. */
+  model: string;
+  text: string;
+};
+
 /** `models/configure`: what a model is like, for one nothing describes (§7.3). A field left out stays as it is; `null` removes it. With `clear`, the model's entry goes and it is found by its name again. */
 export type ModelsConfigureParams = {
   /** The canonical model it is like (`openai/gpt-4o`), or any name that finds one. */
@@ -5167,6 +5183,7 @@ export interface Methods {
   "mcp/probe_cancel": [McpProbeCancelParams, Empty];
   "mcp/tools": [McpServerParams, McpToolsResult];
   "models/catalog": [ModelsCatalogParams, ModelsCatalogResult];
+  "models/complete": [ModelsCompleteParams, ModelsCompleteResult];
   "models/configure": [ModelsConfigureParams, ModelsConfigureResult];
   "models/list": [Record<string, never>, ModelsListResult];
   "models/refresh": [ModelsRefreshParams, ModelsRefreshResult];
