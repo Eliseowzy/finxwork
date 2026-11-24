@@ -46,6 +46,7 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `files/write` | `FilesWriteParams` | `FilesWriteResult` | Parameters of `files/write`. |
 | `initialize` | `InitializeParams` | `InitializeResult` |  |
 | `mcp/check` | `McpServerParams` | `McpCheckResult` |  |
+| `mcp/check_update` | `McpServerParams` | `McpUpdateCheckResult` |  |
 | `mcp/list` | `McpListParams` | `McpListResult` |  |
 | `mcp/login` | `McpLoginParams` | `McpLoginResult` | `mcp/login`: starts signing in to a server. With `server`, the server is not in the configuration yet: the token is saved under `name`, and adding it comes after. |
 | `mcp/login_cancel` | `McpLogoutParams` | `Empty` |  |
@@ -53,6 +54,8 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `mcp/probe` | `McpProbeParams` | `McpProbeResult` | `mcp/probe`: checks a server before it is added, writing nothing (mcp-design §13.6). |
 | `mcp/probe_cancel` | `McpProbeCancelParams` | `Empty` |  |
 | `mcp/tools` | `McpServerParams` | `McpToolsResult` |  |
+| `mcp/upgrade` | `McpServerParams` | `McpUpgradeResult` |  |
+| `models/complete` | `ModelsCompleteParams` | `ModelsCompleteResult` | Parameters of `models/complete`: a stateless single-turn text completion with no session. |
 | `models/list` | — | `ModelsListResult` |  |
 | `models/refresh` | `ModelsRefreshParams` | `ModelsRefreshResult` | Parameters of `models/refresh`. |
 | `models/show` | `ModelsShowParams` | `Empty` | Parameters of `models/show`. |
