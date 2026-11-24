@@ -262,6 +262,8 @@ pub fn document() -> Value {
         (method::MCP_LIST, Some(name::<customize::McpListParams>(g)), name::<customize::McpListResult>(g)),
         (method::MCP_TOOLS, Some(name::<customize::McpServerParams>(g)), name::<customize::McpToolsResult>(g)),
         (method::MCP_CHECK, Some(name::<customize::McpServerParams>(g)), name::<customize::McpCheckResult>(g)),
+        (method::MCP_CHECK_UPDATE, Some(name::<customize::McpServerParams>(g)), name::<customize::McpUpdateCheckResult>(g)),
+        (method::MCP_UPGRADE, Some(name::<customize::McpServerParams>(g)), name::<customize::McpUpgradeResult>(g)),
         (method::MCP_PROBE, Some(name::<customize::McpProbeParams>(g)), name::<customize::McpProbeResult>(g)),
         (method::MCP_PROBE_CANCEL, Some(name::<customize::McpProbeCancelParams>(g)), name::<api::Empty>(g)),
         (method::MCP_LOGIN, Some(name::<customize::McpLoginParams>(g)), name::<customize::McpLoginResult>(g)),

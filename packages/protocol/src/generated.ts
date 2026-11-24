@@ -909,6 +909,8 @@ export type ConnectionIdParams = {
 
 /** Public connection management DTOs. Never contain credentials or session tokens. */
 export type ConnectionModel = {
+  /** Wire API when it differs from the connection's default (e.g. `anthropic-messages`). */
+  api?: string | null;
   context_window?: number | null;
   /** The level the application itself uses when none is chosen. */
   default_thinking: ThinkingLevel;
@@ -3206,10 +3208,14 @@ export type McpServerView = {
   /** The layer that defines the server (its command or URL). */
   layer: ConfigLayer;
   name: string;
+  /** The server's reported or installed version, when known. */
+  server_version?: string | null;
   status: McpServerStatusView;
   /** The command line, or the URL without its query. */
   summary: string;
   transport: McpTransportKind;
+  /** Whether checking for updates is supported for this connector. */
+  update_supported?: boolean;
 };
 
 export type McpStatusSource = "session" | "cache";
@@ -3233,6 +3239,27 @@ export type McpToolsResult = {
 export type McpToolsSource = "session" | "cache" | "none";
 
 export type McpTransportKind = "stdio" | "http" | "sse";
+
+export type McpUpdateCheckResult = {
+  /** Whether one-click upgrade (`mcp/upgrade`) can be performed for this update. */
+  can_upgrade: boolean;
+  current_version?: string | null;
+  detail?: string | null;
+  latest_version?: string | null;
+  name: string;
+  package?: string | null;
+  release_url?: string | null;
+  status: McpUpdateStatus;
+};
+
+export type McpUpdateStatus = "up_to_date" | "update_available" | "unsupported" | "unknown";
+
+export type McpUpgradeResult = {
+  current_version?: string | null;
+  previous_version?: string | null;
+  server: McpServerView;
+  tools: McpToolSummary[];
+};
 
 export type MeshSource = "file" | "structure";
 
@@ -5175,6 +5202,7 @@ export interface Methods {
   "files/write": [FilesWriteParams, FilesWriteResult];
   "initialize": [InitializeParams, InitializeResult];
   "mcp/check": [McpServerParams, McpCheckResult];
+  "mcp/check_update": [McpServerParams, McpUpdateCheckResult];
   "mcp/list": [McpListParams, McpListResult];
   "mcp/login": [McpLoginParams, McpLoginResult];
   "mcp/login_cancel": [McpLogoutParams, Empty];
@@ -5182,6 +5210,7 @@ export interface Methods {
   "mcp/probe": [McpProbeParams, McpProbeResult];
   "mcp/probe_cancel": [McpProbeCancelParams, Empty];
   "mcp/tools": [McpServerParams, McpToolsResult];
+  "mcp/upgrade": [McpServerParams, McpUpgradeResult];
   "models/catalog": [ModelsCatalogParams, ModelsCatalogResult];
   "models/complete": [ModelsCompleteParams, ModelsCompleteResult];
   "models/configure": [ModelsConfigureParams, ModelsConfigureResult];

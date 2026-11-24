@@ -175,6 +175,8 @@ pub mod method {
     pub const MCP_LIST: &str = "mcp/list";
     pub const MCP_TOOLS: &str = "mcp/tools";
     pub const MCP_CHECK: &str = "mcp/check";
+    pub const MCP_CHECK_UPDATE: &str = "mcp/check_update";
+    pub const MCP_UPGRADE: &str = "mcp/upgrade";
     /// Server notification to connections that called `mcp/list`.
     pub const MCP_CHANGED: &str = "mcp/changed";
     pub const MCP_PROBE: &str = "mcp/probe";
@@ -1908,6 +1910,9 @@ pub struct ConnectionModel {
     /// The name in each language the application offers, by language tag.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub names: std::collections::BTreeMap<String, String>,
+    /// Wire API when it differs from the connection's default (e.g. `anthropic-messages`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<String>,
     pub context_window: Option<u32>,
     pub max_output_tokens: Option<u32>,
     #[serde(default)] pub reasoning: bool,

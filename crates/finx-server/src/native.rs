@@ -534,6 +534,8 @@ impl NativeProtocol {
             }
             method::MCP_TOOLS => self.call(id, params, conn, |server, p: McpServerParams| async move { server.mcp_tools(p).await }),
             method::MCP_CHECK => self.call(id, params, conn, |server, p: McpServerParams| async move { server.mcp_check(p).await }),
+            method::MCP_CHECK_UPDATE => self.call(id, params, conn, |server, p: McpServerParams| async move { server.mcp_check_update(p).await }),
+            method::MCP_UPGRADE => self.call(id, params, conn, |server, p: McpServerParams| async move { server.mcp_upgrade(p).await }),
             method::MCP_PROBE => {
                 let conn2 = conn.clone();
                 self.call(id, params, conn, move |server, p: McpProbeParams| async move { server.mcp_probe(p, &conn2).await })

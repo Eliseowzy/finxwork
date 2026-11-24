@@ -482,6 +482,12 @@
       "$ref": "#/definitions/McpToolsResult"
     },
     {
+      "$ref": "#/definitions/McpUpdateCheckResult"
+    },
+    {
+      "$ref": "#/definitions/McpUpgradeResult"
+    },
+    {
       "$ref": "#/definitions/ModelsCatalogParams"
     },
     {
@@ -4421,6 +4427,13 @@
     "ConnectionModel": {
       "description": "Public connection management DTOs. Never contain credentials or session tokens.",
       "properties": {
+        "api": {
+          "description": "Wire API when it differs from the connection's default (e.g. `anthropic-messages`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "context_window": {
           "format": "uint32",
           "minimum": 0.0,
@@ -14281,6 +14294,13 @@
         "name": {
           "type": "string"
         },
+        "server_version": {
+          "description": "The server's reported or installed version, when known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "$ref": "#/definitions/McpServerStatusView"
         },
@@ -14290,6 +14310,10 @@
         },
         "transport": {
           "$ref": "#/definitions/McpTransportKind"
+        },
+        "update_supported": {
+          "description": "Whether checking for updates is supported for this connector.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -14428,6 +14452,95 @@
           "type": "string"
         }
       ]
+    },
+    "McpUpdateCheckResult": {
+      "properties": {
+        "can_upgrade": {
+          "default": false,
+          "description": "Whether one-click upgrade (`mcp/upgrade`) can be performed for this update.",
+          "type": "boolean"
+        },
+        "current_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "package": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "release_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/McpUpdateStatus"
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ],
+      "type": "object"
+    },
+    "McpUpdateStatus": {
+      "enum": [
+        "up_to_date",
+        "update_available",
+        "unsupported",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "McpUpgradeResult": {
+      "properties": {
+        "current_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previous_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "server": {
+          "$ref": "#/definitions/McpServerView"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/definitions/McpToolSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "server",
+        "tools"
+      ],
+      "type": "object"
     },
     "MeshSource": {
       "enum": [
@@ -22405,6 +22518,10 @@
       "params": "McpServerParams",
       "result": "McpCheckResult"
     },
+    "mcp/check_update": {
+      "params": "McpServerParams",
+      "result": "McpUpdateCheckResult"
+    },
     "mcp/list": {
       "params": "McpListParams",
       "result": "McpListResult"
@@ -22432,6 +22549,10 @@
     "mcp/tools": {
       "params": "McpServerParams",
       "result": "McpToolsResult"
+    },
+    "mcp/upgrade": {
+      "params": "McpServerParams",
+      "result": "McpUpgradeResult"
     },
     "models/catalog": {
       "params": "ModelsCatalogParams",
@@ -22722,6 +22843,7 @@
       "files/write": "stable",
       "initialize": "stable",
       "mcp/check": "stable",
+      "mcp/check_update": "stable",
       "mcp/list": "stable",
       "mcp/login": "stable",
       "mcp/login_cancel": "stable",
@@ -22729,6 +22851,7 @@
       "mcp/probe": "stable",
       "mcp/probe_cancel": "stable",
       "mcp/tools": "stable",
+      "mcp/upgrade": "stable",
       "models/catalog": "experimental",
       "models/complete": "stable",
       "models/configure": "experimental",
