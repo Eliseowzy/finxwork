@@ -662,6 +662,11 @@ button.insp-row:active{background:var(--fill2)}
 .bgp.brp.sized{width:var(--brp-w)}
 /* Taking the window: the conversation's column stays mounted, out of sight; the strip starts a step from the edge, as the conversation's bar does. */
 .spage.brmax>.scol{display:none}
+.spage.brmax>.bgp.brp:not(.max){display:none}
+/* File panel and browser side by side: keep the conversation readable and let both panels share the rest without overflowing. */
+.spage.dual>.scol{min-width:160px}
+.spage.dual>.bgp.brp{flex:0 1 auto;min-width:280px}
+.spage.dual>.bgp.brp:not(.sized):not(.max){width:clamp(320px,38%,640px)}
 .bgp.brp.max{flex:1;width:auto;min-width:0;border-left:0}
 .brp.max .brp-strip{padding-left:22px}
 /* Drag to resize; while dragging the page's own view steps aside (it would take the pointer). */

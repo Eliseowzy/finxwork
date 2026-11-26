@@ -704,7 +704,9 @@
     "fill": "Fill",
     "fillDown": "Fill down",
     "fillRight": "Fill right",
-    "trace": "Trace"
+    "trace": "Trace",
+    "multiCopyRefused": "Cannot copy misaligned multiple selections; select matching rows or columns",
+    "multiNotSupported": "That command cannot be used on multiple selections"
   },
   "yours": {
     "tabs_one": "{{count}} tab",

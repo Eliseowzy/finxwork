@@ -681,7 +681,9 @@
     "fill": "填充",
     "fillDown": "向下填充",
     "fillRight": "向右填充",
-    "trace": "追踪"
+    "trace": "追踪",
+    "multiCopyRefused": "无法复制不对齐的多重选区，请选择同行或同列的区域",
+    "multiNotSupported": "此操作不支持多重选区"
   },
   "yours": {
     "tabs_other": "{{count}} 个标签页",

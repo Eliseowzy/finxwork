@@ -57,10 +57,10 @@ const conversationRoom = () => 160;
  * then starts with the sidebar's toggle when the sidebar is hidden, as the conversation's bar
  * does.
  */
-export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: string; tabs: BrowserTab[]; max: boolean; onMax: (max: boolean) => void; onClose: () => void }) {
+export function BrowserPanel({ session, tabs, max, dual = false, onMax, onClose }: { session: string; tabs: BrowserTab[]; max: boolean; dual?: boolean; onMax: (max: boolean) => void; onClose: () => void }) {
   const { t } = useTranslation("session");
   const room = useRef<HTMLDivElement>(null);
-  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.browserPanelWidth", conversationRoom);
+  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.browserPanelWidth", () => conversationRoom() + (dual ? 280 : 0));
   const current = tabs.find((x) => x.shown) ?? tabs[tabs.length - 1];
   /** What the person is typing in the address field; null shows the tab's address. */
   const [draft, setDraft] = useState<string | null>(null);
@@ -108,7 +108,7 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
       observer.disconnect();
       window.removeEventListener("resize", report);
     };
-  }, [session, covered, pdfBilingual, editing]);
+  }, [session, covered, pdfBilingual, editing, dual]);
   // Gone (another session, or the panel closed): no room for a tab here.
   useEffect(() => () => window.finx?.setBrowserPanel({ session: null, rect: null }), [session]);
 
