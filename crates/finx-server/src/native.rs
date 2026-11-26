@@ -690,8 +690,14 @@ impl NativeProtocol {
                 });
             }
             method::SERVER_SHUTDOWN => {
-                conn.send(finx_rpc::response(id, &json!({})));
-                server.request_shutdown();
+                // Flush the reply before triggering shutdown so the transport does not exit
+                // and drop the socket before the client receives the acknowledgement.
+                let flushed = conn.send_and_flush(finx_rpc::response(id, &json!({})));
+                let server = server.clone();
+                tokio::spawn(async move {
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), flushed).await;
+                    server.request_shutdown();
+                });
             }
             method::SESSIONS_SUBSCRIBE => {
                 match finx_rpc::params::<Option<SessionListParams>>(params) {
